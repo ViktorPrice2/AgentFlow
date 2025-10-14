@@ -2,14 +2,19 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 import { createPluginRegistry } from '../core/pluginLoader.js';
 import { registerIpcHandlers } from '../core/api.js';
+import { createProviderManager } from '../core/providers/manager.js';
 
 const isDevelopment = process.env.NODE_ENV === 'development';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 let pluginRegistry;
+let providerManager;
 const rendererDistPath = path.join(__dirname, '../renderer/dist/index.html');
+
+dotenv.config({ path: path.join(process.cwd(), '.env') });
 
 const resolveRendererPath = () => {
   if (isDevelopment) {
@@ -90,8 +95,13 @@ const createMainWindow = async () => {
 const bootstrapCore = async () => {
   if (!pluginRegistry) {
     pluginRegistry = await createPluginRegistry();
-    registerIpcHandlers({ ipcMain, pluginRegistry });
   }
+
+  if (!providerManager) {
+    providerManager = await createProviderManager();
+  }
+
+  registerIpcHandlers({ ipcMain, pluginRegistry, providerManager });
 };
 
 app.whenReady().then(async () => {

@@ -1,0 +1,14 @@
+{"ts":"2025-10-14T09:11:58.260Z","event":"pipeline:start","data":{"runId":"3954b8fd-bb78-42e6-ba18-7495e426f381","pipelineId":"phase4-demo","name":null}}
+{"ts":"2025-10-14T09:11:58.262Z","event":"node:start","data":{"nodeId":"writer","attempt":1,"kind":"task","agentName":"WriterAgent"}}
+{"ts":"2025-10-14T09:11:58.263Z","event":"agent:writer:completed","data":{"runId":"3954b8fd-bb78-42e6-ba18-7495e426f381","outputs":["title","caption","description"]}}
+{"ts":"2025-10-14T09:11:58.264Z","event":"node:completed","data":{"nodeId":"writer","attempts":1}}
+{"ts":"2025-10-14T09:11:58.264Z","event":"node:start","data":{"nodeId":"guard","attempt":1,"kind":"guard","agentName":"StyleGuard"}}
+{"ts":"2025-10-14T09:11:58.266Z","event":"agent:styleGuard:completed","data":{"runId":"3954b8fd-bb78-42e6-ba18-7495e426f381","passed":true,"failed":[]}}
+{"ts":"2025-10-14T09:11:58.267Z","event":"node:completed","data":{"nodeId":"guard","attempts":1}}
+{"ts":"2025-10-14T09:11:58.267Z","event":"node:start","data":{"nodeId":"human","attempt":1,"kind":"humanGate","agentName":"HumanGate"}}
+{"ts":"2025-10-14T09:11:58.267Z","event":"agent:humanGate:decision","data":{"runId":"3954b8fd-bb78-42e6-ba18-7495e426f381","approved":true}}
+{"ts":"2025-10-14T09:11:58.268Z","event":"node:completed","data":{"nodeId":"human","attempts":1}}
+{"ts":"2025-10-14T09:11:58.268Z","event":"node:start","data":{"nodeId":"uploader","attempt":1,"kind":"task","agentName":"UploaderAgent"}}
+{"ts":"2025-10-14T09:11:58.269Z","event":"agent:uploader:completed","data":{"runId":"3954b8fd-bb78-42e6-ba18-7495e426f381","items":["primary"]}}
+{"ts":"2025-10-14T09:11:58.270Z","event":"node:completed","data":{"nodeId":"uploader","attempts":1}}
+{"ts":"2025-10-14T09:11:58.270Z","event":"pipeline:completed","data":{"runId":"3954b8fd-bb78-42e6-ba18-7495e426f381"}}

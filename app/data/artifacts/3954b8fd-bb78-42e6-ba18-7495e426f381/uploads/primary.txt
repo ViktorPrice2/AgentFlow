@@ -1,0 +1,4 @@
+Project: Demo Project
+Topic: Летний запуск
+Title: Demo Project — Летний запуск
+Caption: Дружелюбный Поделись новостями

@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('AgentAPI', {
   version: () => 'Phase 3 stub',
   listAgents: () => ipcRenderer.invoke('AgentFlow:agents:list'),
   upsertAgent: (agent) => ipcRenderer.invoke('AgentFlow:agents:upsert', agent),
+  listProviderStatus: () => ipcRenderer.invoke('AgentFlow:providers:status'),
   runPipelineSimple: (input) => ipcRenderer.invoke('AgentFlow:pipeline:runSimple', input),
   runPipeline: (pipelineDefinition, payload) =>
     ipcRenderer.invoke('AgentFlow:pipeline:run', pipelineDefinition, payload),

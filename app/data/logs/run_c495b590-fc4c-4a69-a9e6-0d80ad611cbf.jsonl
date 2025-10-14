@@ -1,0 +1,14 @@
+{"ts":"2025-10-14T09:40:15.312Z","event":"pipeline:start","data":{"runId":"c495b590-fc4c-4a69-a9e6-0d80ad611cbf","pipelineId":"612d2784-9401-485b-a448-5666a8350b5f-1760434808491","name":"уц"}}
+{"ts":"2025-10-14T09:40:15.315Z","event":"node:start","data":{"nodeId":"writer","attempt":1,"kind":"task","agentName":"WriterAgent"}}
+{"ts":"2025-10-14T09:40:15.316Z","event":"agent:writer:completed","data":{"runId":"c495b590-fc4c-4a69-a9e6-0d80ad611cbf","outputs":["title","caption","description"]}}
+{"ts":"2025-10-14T09:40:15.316Z","event":"node:completed","data":{"nodeId":"writer","attempts":1}}
+{"ts":"2025-10-14T09:40:15.317Z","event":"node:start","data":{"nodeId":"guard","attempt":1,"kind":"guard","agentName":"StyleGuard"}}
+{"ts":"2025-10-14T09:40:15.318Z","event":"agent:styleGuard:completed","data":{"runId":"c495b590-fc4c-4a69-a9e6-0d80ad611cbf","passed":true,"failed":[]}}
+{"ts":"2025-10-14T09:40:15.318Z","event":"node:completed","data":{"nodeId":"guard","attempts":1}}
+{"ts":"2025-10-14T09:40:15.318Z","event":"node:start","data":{"nodeId":"human","attempt":1,"kind":"humanGate","agentName":"HumanGate"}}
+{"ts":"2025-10-14T09:40:15.319Z","event":"agent:humanGate:decision","data":{"runId":"c495b590-fc4c-4a69-a9e6-0d80ad611cbf","approved":true}}
+{"ts":"2025-10-14T09:40:15.320Z","event":"node:completed","data":{"nodeId":"human","attempts":1}}
+{"ts":"2025-10-14T09:40:15.320Z","event":"node:start","data":{"nodeId":"uploader","attempt":1,"kind":"task","agentName":"UploaderAgent"}}
+{"ts":"2025-10-14T09:40:15.322Z","event":"agent:uploader:completed","data":{"runId":"c495b590-fc4c-4a69-a9e6-0d80ad611cbf","items":["primary"]}}
+{"ts":"2025-10-14T09:40:15.323Z","event":"node:completed","data":{"nodeId":"uploader","attempts":1}}
+{"ts":"2025-10-14T09:40:15.323Z","event":"pipeline:completed","data":{"runId":"c495b590-fc4c-4a69-a9e6-0d80ad611cbf"}}

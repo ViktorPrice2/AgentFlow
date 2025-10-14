@@ -17,13 +17,13 @@ const defaultAgentConfigs = [
     },
     params: {
       outputs: ['title', 'caption', 'description'],
-      summaryTemplate: 'Сгенерированы материалы по теме «{{topic}}»'
+      summaryTemplate: 'Generated draft for {{project.name}} about {{topic}}'
     },
     templates: {
       title: '{{project.name}} — {{topic}}',
       caption: '{{tone}} {{message}}',
       description: '{{outline}}',
-      summary: 'Подготовлены заготовки для проекта {{project.name}}'
+      summary: 'Prepared placeholders for {{project.name}}'
     }
   },
   {
@@ -32,7 +32,7 @@ const defaultAgentConfigs = [
     type: 'uploader',
     version: '0.1.0',
     source: 'auto',
-    instructions: 'Artifact writer',
+    instructions: 'Simulated uploader',
     params: {
       defaultStatus: 'simulation',
       destinations: [
@@ -45,9 +45,9 @@ const defaultAgentConfigs = [
     },
     templates: {
       primaryDocument:
-        'Проект: {{project.name}}\nТема: {{topic}}\nЗаголовок: {{writer.outputs.title}}\nОписание: {{writer.outputs.caption}}',
-      status: 'Артефактов сформировано: {{uploaded.length}}',
-      summary: 'Артефактов сформировано: {{uploaded.length}}'
+        'Project: {{project.name}}\nTopic: {{topic}}\nTitle: {{writer.outputs.title}}\nCaption: {{writer.outputs.caption}}',
+      status: 'Artifacts generated: {{uploaded.length}}',
+      summary: 'Artifacts generated: {{uploaded.length}}'
     }
   },
   {
@@ -62,16 +62,16 @@ const defaultAgentConfigs = [
         {
           id: 'no-medical',
           path: 'writer.outputs.caption',
-          disallow: ['медицина', 'лекарство'],
+          disallow: ['medicine', 'pill'],
           reasonKey: 'disallow'
         }
       ],
-      failTemplate: 'Выявлены нарушения правил стиля'
+      failTemplate: 'Style issues detected'
     },
     templates: {
-      disallow: 'Недопустимое слово: {{matchedToken}}',
-      pass: 'Стиль соответствует установленным требованиям',
-      fail: 'Стиль не соответствует установленным требованиям'
+      disallow: 'Disallowed word: {{matchedToken}}',
+      pass: 'Style requirements satisfied',
+      fail: 'Style requirements not satisfied'
     }
   },
   {
@@ -83,12 +83,12 @@ const defaultAgentConfigs = [
     instructions: 'Approval gate',
     params: {
       autoApprove: true,
-      statusTemplate: 'Статус: {{autoApprove}}'
+      statusTemplate: 'Status: {{autoApprove}}'
     },
     templates: {
-      approved: 'Согласовано автоматически',
-      pending: 'Ожидает подтверждения',
-      status: 'Статус: {{autoApprove}}'
+      approved: 'Approved automatically',
+      pending: 'Waiting for human approval',
+      status: 'Status: {{autoApprove}}'
     }
   }
 ];
@@ -143,13 +143,17 @@ export function getAgentConfigSnapshot() {
   return Array.from(agentConfigs.values()).map((agent) => cloneConfig(agent));
 }
 
-export function registerIpcHandlers({ ipcMain, pluginRegistry }) {
+export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }) {
   if (!ipcMain) {
     throw new Error('ipcMain instance is required');
   }
 
   if (!pluginRegistry) {
     throw new Error('pluginRegistry instance is required');
+  }
+
+  if (!providerManager) {
+    throw new Error('providerManager instance is required');
   }
 
   ensureDefaultAgentConfigs();
@@ -167,8 +171,15 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry }) {
     };
   });
 
+  ipcMain.handle('AgentFlow:providers:status', async () => {
+    return providerManager.getProviderStatus();
+  });
+
   ipcMain.handle('AgentFlow:pipeline:runSimple', async (_event, input) => {
-    const result = await runDemoPipeline(pluginRegistry, input);
+    const result = await runDemoPipeline(pluginRegistry, input, {
+      providerManager,
+      agentConfigs
+    });
 
     return {
       ok: true,
@@ -179,7 +190,8 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry }) {
   ipcMain.handle('AgentFlow:pipeline:run', async (_event, pipelineDefinition, inputPayload) => {
     const result = await runPipeline(pipelineDefinition, inputPayload, {
       pluginRegistry,
-      agentConfigs
+      agentConfigs,
+      providerManager
     });
 
     return {

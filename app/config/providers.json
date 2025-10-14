@@ -1,0 +1,52 @@
+{
+  "providers": [
+    {
+      "id": "openai",
+      "type": "llm",
+      "models": ["gpt-4o-mini", "gpt-4o"],
+      "apiKeyRef": "OPENAI_API_KEY",
+      "baseUrl": "https://api.openai.com/v1"
+    },
+    {
+      "id": "gemini",
+      "type": "llm",
+      "models": ["gemini-2.0-flash"],
+      "apiKeyRef": "GOOGLE_API_KEY",
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta"
+    },
+    {
+      "id": "ollama",
+      "type": "llm",
+      "models": ["llama3.1:8b"],
+      "baseUrl": "http://localhost:11434"
+    },
+    {
+      "id": "stability",
+      "type": "image",
+      "models": ["sd3.5"],
+      "apiKeyRef": "STABILITY_API_KEY",
+      "baseUrl": "https://api.stability.ai"
+    },
+    {
+      "id": "higgs",
+      "type": "video",
+      "models": ["studio-v"],
+      "apiKeyRef": "HIGGSFIELD_API_KEY",
+      "baseUrl": "https://api.higgsfield.ai"
+    }
+  ],
+  "defaults": {
+    "llm": {
+      "provider": "openai",
+      "model": "gpt-4o-mini"
+    },
+    "image": {
+      "provider": "stability",
+      "model": "sd3.5"
+    },
+    "video": {
+      "provider": "higgs",
+      "model": "studio-v"
+    }
+  }
+}

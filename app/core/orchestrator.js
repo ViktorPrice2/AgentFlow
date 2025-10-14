@@ -8,7 +8,8 @@ const ARTIFACTS_DIR = path.join(DATA_DIR, 'artifacts');
 
 const defaultOptions = {
   agentConfigs: new Map(),
-  override: undefined
+  override: undefined,
+  providerManager: null
 };
 
 async function ensureDir(dirPath) {
@@ -152,7 +153,7 @@ function buildContext(runId, pipeline, options, logFn, artifactCollector) {
           Object.entries(options.agentConfigs || {}).map(([key, value]) => [key, value])
         );
 
-  return {
+  const context = {
     runId,
     project: pipeline?.project || null,
     env: process.env,
@@ -171,6 +172,12 @@ function buildContext(runId, pipeline, options, logFn, artifactCollector) {
       return artifactInfo;
     }
   };
+
+  if (options.providerManager) {
+    context.providers = options.providerManager.createExecutionContext(context);
+  }
+
+  return context;
 }
 
 /**
@@ -373,7 +380,7 @@ export async function runPipeline(pipeline, input = {}, options = {}) {
  * @param {object} input
  * @returns {Promise<object>}
  */
-export async function runDemoPipeline(pluginRegistry, input = {}) {
+export async function runDemoPipeline(pluginRegistry, input = {}, options = {}) {
   const demoPipeline = {
     id: 'demo',
     name: 'Writer → Uploader',
@@ -384,5 +391,5 @@ export async function runDemoPipeline(pluginRegistry, input = {}) {
     edges: [{ from: 'writer', to: 'uploader' }]
   };
 
-  return runPipeline(demoPipeline, input, { pluginRegistry });
+  return runPipeline(demoPipeline, input, { pluginRegistry, ...options });
 }
