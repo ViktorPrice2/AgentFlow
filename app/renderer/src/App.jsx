@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import './App.css';
 import {
   isAgentApiAvailable,
@@ -6,12 +6,22 @@ import {
   listPipelines,
   listProviderStatus,
   runPipeline,
-  upsertPipeline
+  upsertPipeline,
+  listProjects as fetchProjects,
+  upsertProject as saveProject,
+  listBriefs as fetchBriefs,
+  upsertBrief as saveBrief,
+  generateBriefPlan,
+  getBotStatus,
+  startBot as startBotApi,
+  stopBot as stopBotApi,
+  setBotToken as setBotTokenApi,
+  onBriefUpdated
 } from './api/agentApi.js';
 import { Navigation } from './components/Navigation.jsx';
 import { Toast } from './components/Toast.jsx';
 import { ProjectsPage } from './pages/ProjectsPage.jsx';
-import { BriefPage } from './pages/BriefPage.jsx';
+import { BriefPage, DEFAULT_BRIEF } from './pages/BriefPage.jsx';
 import { AgentsPage } from './pages/AgentsPage.jsx';
 import { PipelinesPage } from './pages/PipelinesPage.jsx';
 import { RunsPage } from './pages/RunsPage.jsx';

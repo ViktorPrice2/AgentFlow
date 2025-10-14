@@ -6,6 +6,10 @@ import dotenv from 'dotenv';
 import { createPluginRegistry } from '../core/pluginLoader.js';
 import { registerIpcHandlers } from '../core/api.js';
 import { createProviderManager } from '../core/providers/manager.js';
+import { runMigrations } from '../db/migrate.js';
+import { registerBotIpcHandlers } from './ipc/botIpc.js';
+import { registerDataIpcHandlers } from './ipc/dataIpc.js';
+import { stopBot } from '../services/tg-bot/index.js';
 
 const isDevelopment = process.env.NODE_ENV === 'development';
 const __filename = fileURLToPath(import.meta.url);
@@ -13,6 +17,7 @@ const __dirname = path.dirname(__filename);
 let pluginRegistry;
 let providerManager;
 const rendererDistPath = path.join(__dirname, '../renderer/dist/index.html');
+const cleanupHandlers = [];
 
 dotenv.config({ path: path.join(process.cwd(), '.env') });
 
@@ -105,7 +110,19 @@ const bootstrapCore = async () => {
 };
 
 app.whenReady().then(async () => {
+  await runMigrations();
   await bootstrapCore();
+
+  const dataCleanup = registerDataIpcHandlers(ipcMain);
+  if (typeof dataCleanup === 'function') {
+    cleanupHandlers.push(dataCleanup);
+  }
+
+  const botCleanup = registerBotIpcHandlers(ipcMain);
+  if (typeof botCleanup === 'function') {
+    cleanupHandlers.push(botCleanup);
+  }
+
   await createMainWindow();
 
   app.on('activate', () => {
@@ -120,5 +137,20 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
+  }
+});
+
+app.on('before-quit', () => {
+  stopBot({ silent: true }).catch((error) => {
+    console.error('Failed to stop Telegram bot on quit:', error);
+  });
+
+  while (cleanupHandlers.length > 0) {
+    const cleanup = cleanupHandlers.pop();
+    try {
+      cleanup();
+    } catch (error) {
+      console.error('Error during IPC cleanup:', error);
+    }
   }
 });

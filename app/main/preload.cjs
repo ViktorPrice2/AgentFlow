@@ -10,5 +10,27 @@ contextBridge.exposeInMainWorld('AgentAPI', {
     ipcRenderer.invoke('AgentFlow:pipeline:run', pipelineDefinition, payload),
   listPipelines: () => ipcRenderer.invoke('AgentFlow:pipeline:list'),
   upsertPipeline: (pipelineDefinition) =>
-    ipcRenderer.invoke('AgentFlow:pipeline:upsert', pipelineDefinition)
+    ipcRenderer.invoke('AgentFlow:pipeline:upsert', pipelineDefinition),
+  listProjects: () => ipcRenderer.invoke('AgentFlow:projects:list'),
+  upsertProject: (project) => ipcRenderer.invoke('AgentFlow:projects:upsert', project),
+  getProject: (projectId) => ipcRenderer.invoke('AgentFlow:projects:get', projectId),
+  listBriefs: (projectId) => ipcRenderer.invoke('AgentFlow:briefs:list', projectId),
+  getBrief: (briefId) => ipcRenderer.invoke('AgentFlow:briefs:get', briefId),
+  upsertBrief: (brief) => ipcRenderer.invoke('AgentFlow:briefs:upsert', brief),
+  generateBriefPlan: (payload) => ipcRenderer.invoke('AgentFlow:briefs:plan', payload),
+  botStatus: () => ipcRenderer.invoke('AgentFlow:bot:status'),
+  botSetToken: (token) => ipcRenderer.invoke('AgentFlow:bot:setToken', token),
+  botStart: () => ipcRenderer.invoke('AgentFlow:bot:start'),
+  botStop: () => ipcRenderer.invoke('AgentFlow:bot:stop'),
+  onBriefUpdated: (handler) => {
+    if (typeof handler !== 'function') {
+      return () => {};
+    }
+
+    const channel = 'AgentFlow:brief:updated';
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(channel, listener);
+
+    return () => ipcRenderer.removeListener(channel, listener);
+  }
 });
