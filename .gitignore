@@ -2,11 +2,16 @@
 node_modules/
 **/node_modules/
 
-# Electron / native binaries (avoid committing electron.exe etc.)
+# App-specific node modules (avoid committing electron binary)
 app/node_modules/
-app/node_modules/electron/
-app/node_modules/**/dist/
-app/node_modules/**/dist/**
+app/node_modules/**
+
+# Electron binary artifacts
+**/electron/dist/
+**/electron/dist/**
+**/electron.exe
+**/dist/electron.exe
+app/**/electron.exe
 
 # Build / output
 dist/
