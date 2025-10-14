@@ -3,6 +3,7 @@ import { ipcMain } from 'electron';
 import { loadAgents } from './pluginLoader.js';
 import Database from 'better-sqlite3';
 import { getDatabaseFilePath } from '../db/migrate.js';
+import { randomUUID } from 'node:crypto';
 
 const agentConfigs = new Map();
 const pipelines = new Map();
@@ -355,5 +356,60 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
     // return { a,b,diff }
     const diff = jsonDiff(a || {}, b || {});
     return { a, b, diff };
+  });
+
+  // Schedules IPC handlers
+  ipcMain.handle('schedules:list', async () => {
+    const db = new Database(getDatabaseFilePath(), { readonly: true });
+    try {
+      const rows = db.prepare('SELECT * FROM Schedules ORDER BY createdAt DESC').all();
+      return { ok: true, schedules: rows };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    } finally {
+      db.close();
+    }
+  });
+
+  ipcMain.handle('schedules:add', async (evt, payload = {}) => {
+    const id = randomUUID();
+    const db = new Database(getDatabaseFilePath());
+    try {
+      db.prepare('INSERT INTO Schedules (id, projectId, pipelineId, cron, enabled, metadata, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)')
+        .run(id, payload.projectId || null, payload.pipelineId || null, payload.cron || '0 0 * * *', payload.enabled ? 1 : 0, payload.metadata ? JSON.stringify(payload.metadata) : null);
+      // reload scheduler if present
+      try { global.scheduler && global.scheduler.reload && await global.scheduler.reload(); } catch {}
+      return { ok: true, id };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    } finally {
+      db.close();
+    }
+  });
+
+  ipcMain.handle('schedules:remove', async (evt, id) => {
+    const db = new Database(getDatabaseFilePath());
+    try {
+      db.prepare('DELETE FROM Schedules WHERE id = ?').run(id);
+      try { global.scheduler && global.scheduler.reload && await global.scheduler.reload(); } catch {}
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    } finally {
+      db.close();
+    }
+  });
+
+  ipcMain.handle('schedules:toggle', async (evt, { id, enabled }) => {
+    const db = new Database(getDatabaseFilePath());
+    try {
+      db.prepare('UPDATE Schedules SET enabled = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?').run(enabled ? 1 : 0, id);
+      try { global.scheduler && global.scheduler.reload && await global.scheduler.reload(); } catch {}
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    } finally {
+      db.close();
+    }
   });
 }

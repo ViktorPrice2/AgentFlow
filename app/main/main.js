@@ -10,6 +10,7 @@ import { runMigrations } from '../db/migrate.js';
 import { registerBotIpc } from './ipc/botIpc.js';
 import { registerDataIpcHandlers } from './ipc/dataIpc.js';
 import { stopBot } from '../services/tg-bot/index.js';
+import createScheduler from '../core/scheduler.js';
 
 const isDevelopment = process.env.NODE_ENV === 'development';
 const __filename = fileURLToPath(import.meta.url);
@@ -117,9 +118,18 @@ app.whenReady().then(async () => {
   // register bot IPC and pass mainWindow for notifications
   registerBotIpc(mainWindow);
 
-  // Initialize provider manager (attach to global for other modules)
+  // Initialize provider manager
   const providersConfigPath = path.join(process.cwd(), 'app', 'config', 'providers.json');
   global.providerManager = createProviderManager(providersConfigPath);
+
+  // Initialize scheduler and start
+  try {
+    global.scheduler = createScheduler();
+    await global.scheduler.start();
+    console.info('[main] scheduler started');
+  } catch (e) {
+    console.warn('[main] scheduler failed to start', e);
+  }
 
   // register core ipc handlers
   registerIpcHandlers();
