@@ -1,0 +1,6 @@
+{"ts":"2025-10-14T07:49:33.438Z","event":"pipeline:start","data":{"runId":"72becec6-17f4-4cc4-8483-44b3e9bbcaa7","pipelineId":"demo","name":"Writer → Uploader"}}
+{"ts":"2025-10-14T07:49:33.439Z","event":"node:start","data":{"nodeId":"writer","attempt":1,"kind":"task","agentName":"WriterStub"}}
+{"ts":"2025-10-14T07:49:33.440Z","event":"node:completed","data":{"nodeId":"writer","attempts":1}}
+{"ts":"2025-10-14T07:49:33.440Z","event":"node:start","data":{"nodeId":"uploader","attempt":1,"kind":"task","agentName":"UploaderStub"}}
+{"ts":"2025-10-14T07:49:33.442Z","event":"node:completed","data":{"nodeId":"uploader","attempts":1}}
+{"ts":"2025-10-14T07:49:33.442Z","event":"pipeline:completed","data":{"runId":"72becec6-17f4-4cc4-8483-44b3e9bbcaa7"}}
