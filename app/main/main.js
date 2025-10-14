@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createPluginRegistry } from '../core/pluginLoader.js';
@@ -8,16 +9,66 @@ const isDevelopment = process.env.NODE_ENV === 'development';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 let pluginRegistry;
+const rendererDistPath = path.join(__dirname, '../renderer/dist/index.html');
 
 const resolveRendererPath = () => {
   if (isDevelopment) {
     return process.env.ELECTRON_RENDERER_URL || 'http://localhost:5173';
   }
 
-  return path.join(__dirname, '../renderer/dist/index.html');
+  return rendererDistPath;
 };
 
-const createMainWindow = () => {
+const loadRenderer = async (window) => {
+  const target = resolveRendererPath();
+
+  if (isDevelopment && target.startsWith('http')) {
+    try {
+      await window.loadURL(target);
+      window.webContents.openDevTools({ mode: 'detach' });
+      return;
+    } catch (error) {
+      console.warn('Renderer dev server not reachable, falling back to dist build.', error);
+    }
+  }
+
+  try {
+    await fs.access(rendererDistPath);
+    await window.loadFile(rendererDistPath);
+  } catch (error) {
+    const fallbackHtml = `
+      <!doctype html>
+      <html lang="ru">
+        <head>
+          <meta charset="UTF-8" />
+          <title>AgentFlow Desktop</title>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #111827; color: #f9fafb; display:flex; align-items:center; justify-content:center; height:100vh; margin:0; }
+            .panel { max-width: 560px; padding: 32px; background: rgba(15, 23, 42, 0.85); border-radius: 16px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); }
+            h1 { margin-top: 0; font-size: 28px; }
+            ol { margin: 16px 0 0; padding-left: 20px; line-height: 1.6; }
+            code { background: rgba(148, 163, 184, 0.2); padding: 2px 6px; border-radius: 4px; }
+          </style>
+        </head>
+        <body>
+          <div class="panel">
+            <h1>Renderer недоступен</h1>
+            <p>Запустите UI перед Electron или соберите Vite-проект:</p>
+            <ol>
+              <li>В терминале: <code>npm install</code></li>
+              <li>Затем: <code>npm run dev</code></li>
+              <li>Если нужен оффлайн режим: <code>npm run build:ui</code></li>
+            </ol>
+          </div>
+        </body>
+      </html>
+    `;
+
+    await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(fallbackHtml)}`);
+  }
+};
+
+const createMainWindow = async () => {
   const window = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -25,20 +76,13 @@ const createMainWindow = () => {
     minHeight: 600,
     title: 'AgentFlow Desktop',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false
     }
   });
 
-  const target = resolveRendererPath();
-
-  if (isDevelopment && target.startsWith('http')) {
-    window.loadURL(target);
-    window.webContents.openDevTools({ mode: 'detach' });
-  } else if (target.endsWith('.html')) {
-    window.loadFile(target);
-  }
+  await loadRenderer(window);
 
   return window;
 };
@@ -52,11 +96,13 @@ const bootstrapCore = async () => {
 
 app.whenReady().then(async () => {
   await bootstrapCore();
-  createMainWindow();
+  await createMainWindow();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
+      createMainWindow().catch((error) => {
+        console.error('Failed to create renderer window on activate:', error);
+      });
     }
   });
 });

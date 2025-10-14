@@ -1,0 +1,5 @@
+{
+  "name": "UploaderAgent",
+  "version": "0.1.0",
+  "description": "Artifact writer for simulated uploads"
+}

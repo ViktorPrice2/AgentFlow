@@ -3,6 +3,110 @@ import { runPipeline, runDemoPipeline } from './orchestrator.js';
 const agentConfigs = new Map();
 const pipelines = new Map();
 
+const defaultAgentConfigs = [
+  {
+    id: 'WriterAgent',
+    name: 'WriterAgent',
+    type: 'writer',
+    version: '0.1.0',
+    source: 'auto',
+    instructions: 'Template-driven writer',
+    engine: {
+      provider: 'mock',
+      model: 'template'
+    },
+    params: {
+      outputs: ['title', 'caption', 'description'],
+      summaryTemplate: 'Сгенерированы материалы по теме «{{topic}}»'
+    },
+    templates: {
+      title: '{{project.name}} — {{topic}}',
+      caption: '{{tone}} {{message}}',
+      description: '{{outline}}',
+      summary: 'Подготовлены заготовки для проекта {{project.name}}'
+    }
+  },
+  {
+    id: 'UploaderAgent',
+    name: 'UploaderAgent',
+    type: 'uploader',
+    version: '0.1.0',
+    source: 'auto',
+    instructions: 'Artifact writer',
+    params: {
+      defaultStatus: 'simulation',
+      destinations: [
+        {
+          id: 'primary',
+          pathTemplate: 'uploads/{{destination.id}}.txt',
+          templateKey: 'primaryDocument'
+        }
+      ]
+    },
+    templates: {
+      primaryDocument:
+        'Проект: {{project.name}}\nТема: {{topic}}\nЗаголовок: {{writer.outputs.title}}\nОписание: {{writer.outputs.caption}}',
+      status: 'Артефактов сформировано: {{uploaded.length}}',
+      summary: 'Артефактов сформировано: {{uploaded.length}}'
+    }
+  },
+  {
+    id: 'StyleGuard',
+    name: 'StyleGuard',
+    type: 'guard',
+    version: '0.1.0',
+    source: 'auto',
+    instructions: 'Rule-based guard',
+    params: {
+      rules: [
+        {
+          id: 'no-medical',
+          path: 'writer.outputs.caption',
+          disallow: ['медицина', 'лекарство'],
+          reasonKey: 'disallow'
+        }
+      ],
+      failTemplate: 'Выявлены нарушения правил стиля'
+    },
+    templates: {
+      disallow: 'Недопустимое слово: {{matchedToken}}',
+      pass: 'Стиль соответствует установленным требованиям',
+      fail: 'Стиль не соответствует установленным требованиям'
+    }
+  },
+  {
+    id: 'HumanGate',
+    name: 'HumanGate',
+    type: 'human',
+    version: '0.1.0',
+    source: 'auto',
+    instructions: 'Approval gate',
+    params: {
+      autoApprove: true,
+      statusTemplate: 'Статус: {{autoApprove}}'
+    },
+    templates: {
+      approved: 'Согласовано автоматически',
+      pending: 'Ожидает подтверждения',
+      status: 'Статус: {{autoApprove}}'
+    }
+  }
+];
+
+function cloneConfig(config) {
+  return JSON.parse(JSON.stringify(config));
+}
+
+function ensureDefaultAgentConfigs() {
+  defaultAgentConfigs.forEach((config) => {
+    if (!agentConfigs.has(config.id)) {
+      agentConfigs.set(config.id, cloneConfig(config));
+    }
+  });
+}
+
+ensureDefaultAgentConfigs();
+
 function storeAgentConfig(agent) {
   const id = agent.id || agent.name;
 
@@ -10,7 +114,8 @@ function storeAgentConfig(agent) {
     throw new Error('Agent config must include id or name');
   }
 
-  agentConfigs.set(id, { ...agent, id });
+  const cloned = cloneConfig({ ...agent, id });
+  agentConfigs.set(id, cloned);
 
   return agentConfigs.get(id);
 }
@@ -32,6 +137,12 @@ function buildAgentList(pluginRegistry) {
   };
 }
 
+export function getAgentConfigSnapshot() {
+  ensureDefaultAgentConfigs();
+
+  return Array.from(agentConfigs.values()).map((agent) => cloneConfig(agent));
+}
+
 export function registerIpcHandlers({ ipcMain, pluginRegistry }) {
   if (!ipcMain) {
     throw new Error('ipcMain instance is required');
@@ -40,6 +151,8 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry }) {
   if (!pluginRegistry) {
     throw new Error('pluginRegistry instance is required');
   }
+
+  ensureDefaultAgentConfigs();
 
   ipcMain.handle('AgentFlow:agents:list', async () => {
     return buildAgentList(pluginRegistry);

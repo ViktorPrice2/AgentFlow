@@ -10,7 +10,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "cross-env NODE_ENV=development electron .",
+    "dev": "concurrently -k -p \"[{name}]\" -n renderer,main \"npm run dev:renderer\" \"npm run dev:main\"",
+    "dev:renderer": "cd renderer && npm run dev",
+    "dev:main": "cross-env NODE_ENV=development ELECTRON_RENDERER_URL=http://localhost:5173 electron .",
     "build:ui": "cd renderer && npm run build",
     "build": "npm run build:ui && electron-builder",
     "postinstall": "cd renderer && npm install"
@@ -26,6 +28,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.0.1",
+    "concurrently": "^8.2.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "vite": "^5.3.3"
