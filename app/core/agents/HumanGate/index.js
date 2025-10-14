@@ -45,52 +45,13 @@ function resolveBoolean(value, fallback) {
   return fallback;
 }
 
-export async function execute(payload, ctx) {
-  const agentConfig = ctx.getAgentConfig?.('HumanGate');
-
-  if (!agentConfig) {
-    throw new Error('HumanGate configuration not found');
-  }
-
-  const { merged, templates, override } = mergeInputs(payload, agentConfig);
-  const autoApprove = resolveBoolean(
-    override.autoApprove ?? agentConfig.params?.autoApprove,
-    true
-  );
-  const delayMs = Number.parseInt(
-    override.delayMs ?? agentConfig.params?.delayMs ?? 0,
-    10
-  );
-
-  if (delayMs > 0 && Number.isFinite(delayMs)) {
-    await sleep(delayMs);
-  }
-
-  const note = renderTemplateWithFallback(
-    autoApprove ? templates.approved : templates.pending,
-    autoApprove ? agentConfig.params?.approvedTemplate : agentConfig.params?.pendingTemplate,
-    { ...merged, autoApprove }
-  );
-
-  const status = renderTemplateWithFallback(
-    templates.status,
-    agentConfig.params?.statusTemplate,
-    { ...merged, autoApprove }
-  );
-
-  await ctx.log?.('agent:humanGate:decision', {
-    runId: ctx.runId,
-    approved: autoApprove
-  });
-
-  return {
-    ...payload,
-    human: {
-      required: true,
-      approved: autoApprove,
-      decidedAt: new Date().toISOString(),
-      note: note || null,
-      status: status || null
-    }
-  };
+export async function execute(payload = {}, ctx) {
+  // If step.override.forceRequire === true, require human; for MVP auto-approve
+  const required = payload.step && payload.step.override && payload.step.override.requireHuman ? true : false;
+  const approved = true; // simulate immediate approval
+  await ctx.log('humangate', { required, approved });
+  const next = { ...payload, _human: { required, approved } };
+  return next;
 }
+
+export default { execute };

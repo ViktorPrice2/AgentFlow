@@ -1,4 +1,8 @@
 import { runPipeline, runDemoPipeline } from './orchestrator.js';
+import { ipcMain } from 'electron';
+import { loadAgents } from './pluginLoader.js';
+import Database from 'better-sqlite3';
+import { getDatabaseFilePath } from '../db/migrate.js';
 
 const agentConfigs = new Map();
 const pipelines = new Map();
@@ -159,7 +163,14 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
   ensureDefaultAgentConfigs();
 
   ipcMain.handle('AgentFlow:agents:list', async () => {
-    return buildAgentList(pluginRegistry);
+    try {
+      const agents = await loadAgents();
+      // return only JSON-serializable data (no functions)
+      return { ok: true, agents: agents.map((a) => ({ id: a.id, manifest: a.manifest })) };
+    } catch (err) {
+      // return serializable error info
+      return { ok: false, error: String(err) };
+    }
   });
 
   ipcMain.handle('AgentFlow:agents:upsert', async (_event, agentConfig) => {
@@ -217,5 +228,132 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
 
   ipcMain.handle('AgentFlow:pipeline:list', async () => {
     return Array.from(pipelines.values());
+  });
+
+  /* Register simple IPC handlers for core operations */
+  ipcMain.handle('core:listAgents', async () => {
+    const agents = await loadAgents();
+    return agents.map((a) => ({ id: a.id, manifest: a.manifest }));
+  });
+
+  ipcMain.handle('core:runPipelineSimple', async (evt, pipeline) => {
+    const agents = await loadAgents();
+    const agentMap = new Map(agents.map((a) => [a.manifest.name || a.id, a.execute]));
+    const nodes = (pipeline.nodes || []).map((n) => {
+      const exec = agentMap.get(n.agentName) || agentMap.get(n.agent) || null;
+      return { ...n, _execute: exec };
+    });
+    const prepared = { ...pipeline, nodes };
+    const res = await runPipeline(prepared, pipeline.input || {});
+    return res;
+  });
+
+  ipcMain.handle('core:upsertAgent', async (evt, agentConfig) => {
+    // placeholder persistence
+    return { ok: true };
+  });
+
+  // --- New: diff:entity handler ------------------------------------------------
+  function openDb() {
+    const dbFile = getDatabaseFilePath();
+    return new Database(dbFile, { readonly: true });
+  }
+
+  function parseMaybeJson(text) {
+    if (!text) return null;
+    try { return JSON.parse(text); } catch { return null; }
+  }
+
+  function jsonDiff(a, b) {
+    // recursive shallow+deep diff: returns object of changed keys
+    if (a === b) return {};
+    if (typeof a !== 'object' || a === null || typeof b !== 'object' || b === null) {
+      return { from: a, to: b };
+    }
+    const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+    const result = {};
+    for (const k of keys) {
+      const va = a ? a[k] : undefined;
+      const vb = b ? b[k] : undefined;
+      if (typeof va === 'object' && va !== null && typeof vb === 'object' && vb !== null) {
+        const sub = jsonDiff(va, vb);
+        if (Object.keys(sub).length > 0) result[k] = sub;
+      } else if (va !== vb) {
+        result[k] = { from: va === undefined ? null : va, to: vb === undefined ? null : vb };
+      }
+    }
+    return result;
+  }
+
+  async function getSnapshot(type, ref, options = {}) {
+    // ref can be:
+    //  - numeric history id (string or number) -> read from *History table by id
+    //  - 'current:<entityId>' -> read from main table by id
+    //  - 'version:<version>:<entityId>' -> find latest history row with matching version and entityId
+    // options.entityId may be provided for convenience
+    const db = openDb();
+    try {
+      // numeric id -> history
+      if (!ref && options.entityId) ref = `current:${options.entityId}`;
+      if (String(ref).match(/^\d+$/)) {
+        const hid = Number(ref);
+        if (type === 'agent') {
+          const row = db.prepare('SELECT data FROM AgentsHistory WHERE id = ?').get(hid);
+          return row ? parseMaybeJson(row.data) : null;
+        } else if (type === 'pipeline') {
+          const row = db.prepare('SELECT data FROM PipelinesHistory WHERE id = ?').get(hid);
+          return row ? parseMaybeJson(row.data) : null;
+        }
+      }
+
+      if (typeof ref === 'string') {
+        if (ref.startsWith('current:')) {
+          const entityId = ref.split(':')[1];
+          if (!entityId) return null;
+          if (type === 'agent') {
+            const row = db.prepare('SELECT id, projectId, name, type, version, source, config, createdAt, updatedAt FROM Agents WHERE id = ?').get(entityId);
+            if (!row) return null;
+            // parse config JSON if present
+            const parsed = { ...row, config: parseMaybeJson(row.config) ?? row.config };
+            return parsed;
+          } else if (type === 'pipeline') {
+            const row = db.prepare('SELECT id, projectId, name, version, definition, createdAt, updatedAt FROM Pipelines WHERE id = ?').get(entityId);
+            if (!row) return null;
+            return { ...row, definition: parseMaybeJson(row.definition) ?? row.definition };
+          }
+        }
+
+        if (ref.startsWith('version:')) {
+          // format: version:<version>:<entityId>
+          const parts = ref.split(':');
+          const ver = parts[1];
+          const entityId = parts[2];
+          if (type === 'agent') {
+            const row = db.prepare('SELECT data FROM AgentsHistory WHERE entityId = ? AND version = ? ORDER BY createdAt DESC LIMIT 1').get(entityId, ver);
+            return row ? parseMaybeJson(row.data) : null;
+          } else if (type === 'pipeline') {
+            const row = db.prepare('SELECT data FROM PipelinesHistory WHERE entityId = ? AND version = ? ORDER BY createdAt DESC LIMIT 1').get(entityId, ver);
+            return row ? parseMaybeJson(row.data) : null;
+          }
+        }
+      }
+
+      return null;
+    } finally {
+      db.close();
+    }
+  }
+
+  ipcMain.handle('diff:entity', async (evt, params = {}) => {
+    // params: { type: 'agent'|'pipeline', idA, idB, entityId? }
+    const { type, idA, idB, entityId } = params || {};
+    if (!type || (!idA && !idB)) throw new Error('invalid-params');
+
+    const a = await getSnapshot(type, idA, { entityId });
+    const b = await getSnapshot(type, idB, { entityId });
+
+    // return { a,b,diff }
+    const diff = jsonDiff(a || {}, b || {});
+    return { a, b, diff };
   });
 }

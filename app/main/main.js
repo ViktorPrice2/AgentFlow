@@ -7,7 +7,7 @@ import { createPluginRegistry } from '../core/pluginLoader.js';
 import { registerIpcHandlers } from '../core/api.js';
 import { createProviderManager } from '../core/providers/manager.js';
 import { runMigrations } from '../db/migrate.js';
-import { registerBotIpcHandlers } from './ipc/botIpc.js';
+import { registerBotIpc } from './ipc/botIpc.js';
 import { registerDataIpcHandlers } from './ipc/dataIpc.js';
 import { stopBot } from '../services/tg-bot/index.js';
 
@@ -112,6 +112,17 @@ const bootstrapCore = async () => {
 app.whenReady().then(async () => {
   await runMigrations();
   await bootstrapCore();
+  const mainWindow = await createMainWindow();
+
+  // register bot IPC and pass mainWindow for notifications
+  registerBotIpc(mainWindow);
+
+  // Initialize provider manager (attach to global for other modules)
+  const providersConfigPath = path.join(process.cwd(), 'app', 'config', 'providers.json');
+  global.providerManager = createProviderManager(providersConfigPath);
+
+  // register core ipc handlers
+  registerIpcHandlers();
 
   const dataCleanup = registerDataIpcHandlers(ipcMain);
   if (typeof dataCleanup === 'function') {

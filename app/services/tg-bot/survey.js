@@ -50,15 +50,28 @@ const QUESTION_DEFINITIONS = [
   }
 ];
 
+function safeParseContent(content) {
+  // accept object or JSON string, return object or null
+  if (!content) return null;
+  if (typeof content === 'object') return content;
+  try {
+    return JSON.parse(content);
+  } catch {
+    // not JSON — return null to avoid crash
+    return null;
+  }
+}
+
 export function buildSurvey(project, lastBrief = null) {
   const projectName = project?.name || 'проект';
+  const lastContent = safeParseContent(lastBrief?.content);
 
   return QUESTION_DEFINITIONS.map((question) => ({
     id: question.id,
     field: question.field,
     prompt: question.prompt(projectName),
     hint: question.hint,
-    previous: lastBrief?.content?.[question.field] ?? null
+    previous: lastContent ? (lastContent[question.field] ?? null) : null
   }));
 }
 
@@ -93,5 +106,19 @@ export function buildBriefContent(answers) {
     callToAction: answers.callToAction ?? '',
     keyMessages: answers.keyMessages ?? '',
     successMetrics: answers.successMetrics ?? ''
+  };
+}
+
+// Compatibility wrapper: older code expects generateSurvey(projectId, meta)
+export function generateSurvey(projectIdOrObj, meta = {}) {
+  // accept either project object or projectId string
+  const project = typeof projectIdOrObj === 'string' ? { id: projectIdOrObj, name: projectIdOrObj } : (projectIdOrObj || {});
+  const questions = buildSurvey(project, meta?.lastBrief || null);
+  return {
+    id: `survey_${Date.now()}`,
+    projectId: project.id || null,
+    generatedAt: new Date().toISOString(),
+    meta,
+    questions
   };
 }

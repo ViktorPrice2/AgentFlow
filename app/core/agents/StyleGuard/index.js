@@ -108,47 +108,17 @@ function evaluateRule(rule, data, templates) {
   };
 }
 
-export async function execute(payload, ctx) {
-  const agentConfig = ctx.getAgentConfig?.('StyleGuard');
-
-  if (!agentConfig) {
-    throw new Error('StyleGuard configuration not found');
+export async function execute(payload = {}, ctx) {
+  const text = payload.content || payload.text || '';
+  const banned = ['лечит', 'гарантированно', '100% результат'];
+  const reasons = [];
+  for (const b of banned) {
+    if (text.toLowerCase().includes(b)) reasons.push(`contains: ${b}`);
   }
-
-  const { merged, templates, rules } = mergeInputs(payload, agentConfig);
-
-  if (rules.length === 0) {
-    throw new Error('StyleGuard rules are not configured');
-  }
-
-  const evaluations = rules.map((rule) => evaluateRule(rule, merged, templates));
-  const failed = evaluations.filter((result) => !result.pass);
-  const guardPassed = failed.length === 0;
-
-  const summaryTemplateKey = guardPassed ? 'pass' : 'fail';
-  const summary = renderTemplateWithFallback(
-    templates[summaryTemplateKey],
-    agentConfig.params?.[`${summaryTemplateKey}Template`],
-    { ...merged, evaluations }
-  );
-
-  await ctx.log?.('agent:styleGuard:completed', {
-    runId: ctx.runId,
-    passed: guardPassed,
-    failed: failed.map((entry) => entry.id)
-  });
-
-  const guardPayload = {
-    ...payload,
-    guard: {
-      pass: guardPassed,
-      results: evaluations
-    }
-  };
-
-  if (summary) {
-    guardPayload.summary = summary;
-  }
-
-  return guardPayload;
+  const pass = reasons.length === 0;
+  await ctx.log('styleguard_checked', { pass, reasons });
+  const next = { ...payload, _guard: { pass, reasons } };
+  return next;
 }
+
+export default { execute };

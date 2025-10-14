@@ -1,541 +1,251 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import crypto from 'node:crypto';
-import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
 
-const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const PRIMARY_CONFIG_PATH = path.join(process.cwd(), 'config', 'providers.json');
-const FALLBACK_CONFIG_PATH = path.resolve(MODULE_DIR, '../../config/providers.json');
-const DEFAULT_TIMEOUT = 30_000;
+const DATA_DIR = path.join(process.cwd(), 'data');
+const LOGS_DIR = path.join(DATA_DIR, 'logs');
+const LOG_FILE = path.join(LOGS_DIR, 'providers.jsonl');
 
-const MOCK_TEXT = (providerId, model, prompt) =>
-  `[MOCK:${providerId}:${model}] ${prompt?.slice(0, 200) ?? 'Нет входных данных'}`;
+function nowTs() {
+  return new Date().toISOString();
+}
+async function ensureLogs() {
+  await fs.mkdir(LOGS_DIR, { recursive: true });
+}
+async function appendLog(entry) {
+  await ensureLogs();
+  const line = JSON.stringify({ ts: nowTs(), ...entry }) + '\n';
+  await fs.appendFile(LOG_FILE, line, 'utf8');
+}
 
-const MOCK_IMAGE_DATA_URI =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAI0lEQVQoU2NkYGD4z0AEYBxVSFUBCzUCJgYkgtiGSgDRIVQBAO5BCZ9gX2jhAAAAABJRU5ErkJggg==';
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
-const MOCK_VIDEO_URL = 'https://example.com/mock-video-placeholder.mp4';
+function safeGetEnv(ref) {
+  if (!ref) return null;
+  return process.env[ref] || null;
+}
 
-const DEFAULT_CONFIG = {
-  providers: [
-    {
-      id: 'openai',
-      type: 'llm',
-      models: ['gpt-4o-mini', 'gpt-4o'],
-      apiKeyRef: 'OPENAI_API_KEY',
-      baseUrl: 'https://api.openai.com/v1'
-    },
-    {
-      id: 'gemini',
-      type: 'llm',
-      models: ['gemini-2.0-flash'],
-      apiKeyRef: 'GOOGLE_API_KEY',
-      baseUrl: 'https://generativelanguage.googleapis.com/v1beta'
-    },
-    {
-      id: 'ollama',
-      type: 'llm',
-      models: ['llama3.1:8b'],
-      baseUrl: 'http://localhost:11434'
-    },
-    {
-      id: 'stability',
-      type: 'image',
-      models: ['sd3.5'],
-      apiKeyRef: 'STABILITY_API_KEY',
-      baseUrl: 'https://api.stability.ai'
-    },
-    {
-      id: 'higgs',
-      type: 'video',
-      models: ['studio-v'],
-      apiKeyRef: 'HIGGSFIELD_API_KEY',
-      baseUrl: 'https://api.higgsfield.ai'
-    }
-  ],
-  defaults: {
-    llm: {
-      provider: 'openai',
-      model: 'gpt-4o-mini'
-    },
-    image: {
-      provider: 'stability',
-      model: 'sd3.5'
-    },
-    video: {
-      provider: 'higgs',
-      model: 'studio-v'
+/* Token bucket helper */
+class TokenBucket {
+  constructor({ capacity = 5, refillPerSec = 5 } = {}) {
+    this.capacity = capacity;
+    this.refillPerSec = refillPerSec;
+    this.tokens = capacity;
+    this.lastRefill = Date.now();
+  }
+  _refill() {
+    const now = Date.now();
+    const elapsed = (now - this.lastRefill) / 1000;
+    if (elapsed <= 0) return;
+    const add = elapsed * this.refillPerSec;
+    this.tokens = Math.min(this.capacity, this.tokens + add);
+    this.lastRefill = now;
+  }
+  async removeToken() {
+    // wait until at least one token available
+    while (true) {
+      this._refill();
+      if (this.tokens >= 1) {
+        this.tokens -= 1;
+        return;
+      }
+      // sleep small fraction
+      await sleep(100);
     }
   }
-};
+}
 
-async function readConfigFile() {
-  const candidates = [];
-  const portableDir = process.env.PORTABLE_EXECUTABLE_DIR;
+/* ProviderManager */
+export function createProviderManager(
+  configPath = path.join(process.cwd(), 'app', 'config', 'providers.json')
+) {
+  let config = { providers: [] };
+  const providers = new Map();
+  const states = new Map(); // providerId -> { bucket, failures:[], openUntil }
 
-  if (portableDir) {
-    candidates.push(path.join(portableDir, 'config', 'providers.json'));
-  }
-
-  candidates.push(PRIMARY_CONFIG_PATH);
-  candidates.push(FALLBACK_CONFIG_PATH);
-
-  const visited = new Set();
-
-  for (const candidate of candidates) {
-    if (!candidate || visited.has(candidate)) {
-      continue;
-    }
-
-    visited.add(candidate);
-
+  async function loadConfig() {
     try {
-      const raw = await fs.readFile(candidate, 'utf8');
-      return JSON.parse(raw);
-    } catch (error) {
-      if (error.code === 'ENOENT') {
-        continue;
-      }
-
-      if (error.name === 'SyntaxError') {
-        console.warn(`[ProviderManager] Invalid providers config at ${candidate}: ${error.message}`);
-        continue;
-      }
-
-      console.warn(`[ProviderManager] Failed to read providers config at ${candidate}: ${error.message}`);
+      const raw = await fs.readFile(configPath, 'utf8');
+      config = JSON.parse(raw);
+    } catch (e) {
+      // default empty config
+      config = { providers: [] };
     }
-  }
-
-  return DEFAULT_CONFIG;
-}
-
-
-function buildHeaders(apiKey, extra = {}) {
-  return {
-    Authorization: apiKey ? `Bearer ${apiKey}` : undefined,
-    'Content-Type': 'application/json',
-    ...extra
-  };
-}
-
-function scrubUndefined(obj) {
-  return Object.fromEntries(Object.entries(obj).filter(([, value]) => value !== undefined));
-}
-
-class ProviderManager {
-  constructor(config) {
-    this.providers = config.providers || [];
-    this.defaults = config.defaults || {};
-    this.providerMap = new Map(this.providers.map((provider) => [provider.id, provider]));
-    this.statusCache = null;
-    this.envLoaded = false;
-  }
-
-  ensureEnvLoaded() {
-    if (this.envLoaded) {
-      return;
-    }
-
-    dotenv.config({ path: path.join(process.cwd(), '.env') });
-    this.envLoaded = true;
-  }
-
-  getProvider(providerId) {
-    return this.providerMap.get(providerId) || null;
-  }
-
-  getProviderStatus() {
-    this.ensureEnvLoaded();
-
-    if (!this.statusCache) {
-      this.statusCache = this.providers.map((provider) => {
-        const apiKey = provider.apiKeyRef ? process.env[provider.apiKeyRef] : null;
-
-        return {
-          id: provider.id,
-          type: provider.type,
-          hasKey: Boolean(apiKey),
-          apiKeyRef: provider.apiKeyRef || null,
-          models: provider.models || []
-        };
+    for (const p of config.providers || []) {
+      const id = p.id;
+      providers.set(id, p);
+      const rl = p.rateLimit || {};
+      const bucket = new TokenBucket({
+        capacity: rl.capacity ?? 5,
+        refillPerSec: rl.refillPerSec ?? (rl.rps ?? 5)
       });
+      states.set(id, { bucket, failures: [], openUntil: 0 });
     }
-
-    return this.statusCache;
+    await appendLog({ event: 'providers_loaded', data: { count: (config.providers || []).length } });
   }
 
-  getDefaultForType(type) {
-    if (!type) {
-      return null;
-    }
-
-    return this.defaults?.[type] || null;
+  function getProvider(id) {
+    return providers.get(id);
   }
 
-  selectCandidates({ override, agentConfig, requiredType }) {
-    const candidates = [];
-
-    if (override?.engine) {
-      candidates.push(override.engine);
-    }
-
-    if (agentConfig?.engine) {
-      candidates.push(agentConfig.engine);
-      if (Array.isArray(agentConfig.engine.fallback)) {
-        candidates.push(...agentConfig.engine.fallback);
-      }
-    }
-
-    const defaultCandidate = this.getDefaultForType(requiredType);
-
-    if (defaultCandidate) {
-      candidates.push(defaultCandidate);
-    }
-
-    return candidates;
+  function now() {
+    return Date.now();
   }
 
-  resolveEngine({ agentName, agentConfig, override, requiredType = 'llm' }) {
-    this.ensureEnvLoaded();
-
-    const candidates = this.selectCandidates({ override, agentConfig, requiredType });
-    let mockReason = null;
-    let mockCandidate = null;
-
-    for (const candidate of candidates) {
-      if (!candidate) {
-        continue;
-      }
-
-      const providerId = candidate.provider;
-      const provider = this.getProvider(providerId);
-
-      if (!provider) {
-        continue;
-      }
-
-      if (requiredType && provider.type !== requiredType) {
-        continue;
-      }
-
-      const model =
-        candidate.model ||
-        (Array.isArray(candidate.models) && candidate.models.length > 0
-          ? candidate.models[0]
-          : provider.models?.[0]);
-
-      const apiKey = provider.apiKeyRef ? process.env[provider.apiKeyRef] : undefined;
-      const hasKey = Boolean(apiKey) || !provider.apiKeyRef;
-
-      if (hasKey) {
-        return {
-          providerId,
-          provider,
-          model,
-          mode: 'live',
-          apiKey,
-          baseUrl: candidate.baseUrl || provider.baseUrl || '',
-          temperature: candidate.temperature,
-          maxTokens: candidate.maxTokens
-        };
-      }
-
-      if (!mockCandidate) {
-        mockCandidate = { provider, model };
-        mockReason = `missing-api-key:${provider.apiKeyRef}`;
-      }
-    }
-
-    if (mockCandidate) {
-      return {
-        providerId: mockCandidate.provider.id,
-        provider: mockCandidate.provider,
-        model: mockCandidate.model,
-        mode: 'mock',
-        reason: mockReason
-      };
-    }
-
-    return {
-      providerId: 'mock',
-      provider: {
-        id: 'mock',
-        type: requiredType,
-        models: []
-      },
-      model: 'mock',
-      mode: 'mock',
-      reason: 'no-provider-available'
-    };
-  }
-
-  createExecutionContext(ctx) {
-    return {
-      listStatus: () => this.getProviderStatus(),
-      resolveEngine: (agentName, override = {}, requiredType = 'llm') => {
-        const agentConfig = ctx.getAgentConfig ? ctx.getAgentConfig(agentName) : null;
-
-        return this.resolveEngine({ agentName, agentConfig, override, requiredType });
-      },
-      callLLM: (agentName, params = {}) =>
-        this.callLLM({
-          agentName,
-          params,
-          ctx
-        }),
-      callImage: (agentName, params = {}) =>
-        this.callImage({
-          agentName,
-          params,
-          ctx
-        }),
-      callVideo: (agentName, params = {}) =>
-        this.callVideo({
-          agentName,
-          params,
-          ctx
-        })
-    };
-  }
-
-  async callLLM({ agentName, params, ctx }) {
-    const agentConfig = ctx.getAgentConfig ? ctx.getAgentConfig(agentName) : null;
-    const engine = this.resolveEngine({
-      agentName,
-      agentConfig,
-      override: params.override,
-      requiredType: 'llm'
-    });
-
-    if (engine.mode === 'mock') {
-      const prompt =
-        params.prompt ||
-        (Array.isArray(params.messages)
-          ? params.messages.map((item) => item.content || '').join(' ')
-          : '');
-      const content = MOCK_TEXT(engine.providerId, engine.model, prompt);
-
-      await ctx.log?.('provider:mock', {
-        agentName,
-        providerId: engine.providerId,
-        type: 'llm',
-        reason: engine.reason
-      });
-
-      return {
-        mode: 'mock',
-        content,
-        providerId: engine.providerId,
-        model: engine.model
-      };
-    }
-
-    switch (engine.providerId) {
-      case 'openai':
-        return this.callOpenAI(engine, params);
-      case 'gemini':
-        return this.callGemini(engine, params);
-      case 'ollama':
-        return this.callOllama(engine, params);
-      default:
-        return {
-          mode: 'mock',
-          content: MOCK_TEXT(engine.providerId, engine.model, params.prompt),
-          providerId: engine.providerId,
-          model: engine.model,
-          reason: 'unsupported-provider'
-        };
+  function recordFailure(id) {
+    const s = states.get(id);
+    if (!s) return;
+    const ts = now();
+    s.failures.push(ts);
+    // keep only last windowSec seconds
+    const windowSec = (getProvider(id)?.circuitBreaker?.windowSec) ?? 60;
+    const cutoff = ts - windowSec * 1000;
+    s.failures = s.failures.filter((t) => t >= cutoff);
+    const threshold = (getProvider(id)?.circuitBreaker?.threshold) ?? 5;
+    if (s.failures.length >= threshold) {
+      const cooldownSec = (getProvider(id)?.circuitBreaker?.cooldownSec) ?? 30;
+      s.openUntil = ts + cooldownSec * 1000;
+      appendLog({ event: 'circuit_open', data: { provider: id, threshold, cooldownSec } }).catch(() => {});
     }
   }
 
-  async callOpenAI(engine, params) {
-    const { apiKey, baseUrl } = engine;
-    const endpoint = `${baseUrl || 'https://api.openai.com/v1'}/chat/completions`;
-    const body = scrubUndefined({
-      model: engine.model,
-      temperature: params.temperature ?? engine.temperature ?? 0.7,
-      max_tokens: params.maxTokens ?? engine.maxTokens,
-      messages: params.messages ?? [{ role: 'user', content: params.prompt || '' }]
-    });
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: scrubUndefined(buildHeaders(apiKey)),
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(DEFAULT_TIMEOUT)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OpenAI request failed: ${response.status} ${errorText}`);
-    }
-
-    const data = await response.json();
-
-    return {
-      mode: 'live',
-      providerId: engine.providerId,
-      model: engine.model,
-      content: data.choices?.[0]?.message?.content ?? '',
-      raw: data
-    };
+  function recordSuccess(id) {
+    const s = states.get(id);
+    if (!s) return;
+    s.failures = [];
+    s.openUntil = 0;
   }
 
-  async callGemini(engine, params) {
-    const { apiKey, baseUrl } = engine;
-    const endpoint = `${baseUrl || 'https://generativelanguage.googleapis.com/v1beta'}/models/${engine.model}:generateContent?key=${apiKey}`;
-    const body = {
-      contents: [
-        {
-          parts: [
-            {
-              text: params.prompt ?? (params.messages || []).map((msg) => msg.content).join('\n')
-            }
-          ]
+  function isOpen(id) {
+    const s = states.get(id);
+    if (!s) return false;
+    return s.openUntil && s.openUntil > now();
+  }
+
+  async function call(providerId, payload = {}, opts = {}) {
+    const provider = getProvider(providerId);
+    if (!provider) throw new Error(`provider-not-found:${providerId}`);
+
+    const state = states.get(providerId);
+    if (!state) throw new Error('provider-state-missing');
+
+    // circuit check
+    if (isOpen(providerId)) {
+      await appendLog({ event: 'call_rejected_circuit_open', data: { provider: providerId } });
+      throw new Error('circuit-open');
+    }
+
+    // check key presence
+    const apiKeyRef = provider.apiKeyRef;
+    const apiKey = safeGetEnv(apiKeyRef);
+    const useMock = !apiKey && provider.allowMock !== false;
+
+    // acquire token
+    await state.bucket.removeToken();
+
+    // attempt with retries/backoff
+    const maxAttempts = (provider.retry && provider.retry.maxAttempts) ?? (opts.maxAttempts ?? 3);
+    let attempt = 0;
+    let lastErr = null;
+    while (attempt < maxAttempts) {
+      attempt++;
+      try {
+        await appendLog({ event: 'call_attempt', data: { provider: providerId, attempt, mock: useMock } });
+        // dispatch by type, for MVP return mock if no key or provider has mock handler
+        if (useMock) {
+          // return lightweight mock payload
+          const res = { mock: true, provider: providerId, type: provider.type || 'unknown', payload: {} };
+          recordSuccess(providerId);
+          await appendLog({ event: 'call_mock_result', data: { provider: providerId } });
+          return res;
         }
-      ]
-    };
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(DEFAULT_TIMEOUT)
-    });
+        // real call handlers (thin wrappers)
+        let result;
+        if (provider.type === 'llm') {
+          // do not include apiKey in logs
+          result = await callLLM(provider, payload, apiKey);
+        } else if (provider.type === 'image') {
+          result = await callImage(provider, payload, apiKey);
+        } else if (provider.type === 'video') {
+          result = await callVideo(provider, payload, apiKey);
+        } else {
+          // unknown provider type → fallback to mock
+          result = { mock: true, provider: providerId };
+        }
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Gemini request failed: ${response.status} ${errorText}`);
-    }
-
-    const data = await response.json();
-    const content =
-      data?.candidates?.[0]?.content?.parts?.map((part) => part.text).join('\n') || '';
-
-    return {
-      mode: 'live',
-      providerId: engine.providerId,
-      model: engine.model,
-      content,
-      raw: data
-    };
-  }
-
-  async callOllama(engine, params) {
-    const endpoint = `${engine.baseUrl || 'http://localhost:11434'}/api/generate`;
-    const body = scrubUndefined({
-      model: engine.model,
-      prompt: params.prompt,
-      stream: false,
-      options: {
-        temperature: params.temperature ?? engine.temperature
+        recordSuccess(providerId);
+        await appendLog({ event: 'call_success', data: { provider: providerId, attempt } });
+        return result;
+      } catch (err) {
+        lastErr = err;
+        await appendLog({ event: 'call_error', data: { provider: providerId, attempt, message: String(err) } });
+        recordFailure(providerId);
+        if (attempt >= maxAttempts) break;
+        const backoff = 200 * Math.pow(2, attempt - 1);
+        await sleep(backoff);
       }
-    });
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(DEFAULT_TIMEOUT)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Ollama request failed: ${response.status} ${errorText}`);
     }
-
-    const data = await response.json();
-
-    return {
-      mode: 'live',
-      providerId: engine.providerId,
-      model: engine.model,
-      content: data.response || '',
-      raw: data
-    };
+    // exhausted
+    await appendLog({ event: 'call_failed', data: { provider: providerId, attempts: attempt } });
+    throw lastErr || new Error('call-failed');
   }
 
-  async callImage({ agentName, params, ctx }) {
-    const agentConfig = ctx.getAgentConfig ? ctx.getAgentConfig(agentName) : null;
-    const engine = this.resolveEngine({
-      agentName,
-      agentConfig,
-      override: params.override,
-      requiredType: 'image'
-    });
+  // thin LLM/Image/Video handlers (MVP)
+  async function callLLM(provider, payload, apiKey) {
+    // Minimal: for known "ollama" provider allow local HTTP; others are placeholders.
+    if (provider.id === 'ollama' && provider.baseUrl) {
+      // call local ollama (example POST) — consumer should extend per API
+      const url = `${provider.baseUrl}/api/generate`;
+      const body = { model: provider.models?.[0], prompt: payload.prompt || '' };
+      const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!resp.ok) throw new Error(`ollama-fail:${resp.status}`);
+      return resp.json();
+    }
+    // For OpenAI/Gemini etc — placeholder which should be implemented with proper SDKs.
+    return { text: `LLM response from ${provider.id} (placeholder)`, provider: provider.id };
+  }
 
-    if (engine.mode === 'mock') {
-      await ctx.log?.('provider:mock', {
-        agentName,
-        providerId: engine.providerId,
-        type: 'image',
-        reason: engine.reason
-      });
+  async function callImage(provider, payload, apiKey) {
+    // placeholder: return mock url or base64 info
+    return { image: `placeholder://${provider.id}/${Date.now()}` };
+  }
 
-      return {
-        mode: 'mock',
-        images: [
-          {
-            id: crypto.randomUUID(),
-            dataUri: MOCK_IMAGE_DATA_URI
-          }
-        ]
+  async function callVideo(provider, payload, apiKey) {
+    return { video: `placeholder://${provider.id}/${Date.now()}` };
+  }
+
+  function getStatus() {
+    const out = {};
+    for (const [id, p] of providers.entries()) {
+      const s = states.get(id);
+      out[id] = {
+        config: { id: p.id, type: p.type },
+        openUntil: s?.openUntil || 0,
+        failures: (s?.failures || []).length,
+        tokens: Math.floor(s?.bucket?.tokens ?? 0)
       };
     }
-
-    // Placeholder implementation for image providers.
-    return {
-      mode: 'live',
-      providerId: engine.providerId,
-      model: engine.model,
-      images: params.images || []
-    };
+    return out;
   }
 
-  async callVideo({ agentName, params, ctx }) {
-    const agentConfig = ctx.getAgentConfig ? ctx.getAgentConfig(agentName) : null;
-    const engine = this.resolveEngine({
-      agentName,
-      agentConfig,
-      override: params.override,
-      requiredType: 'video'
-    });
-
-    if (engine.mode === 'mock') {
-      await ctx.log?.('provider:mock', {
-        agentName,
-        providerId: engine.providerId,
-        type: 'video',
-        reason: engine.reason
-      });
-
-      return {
-        mode: 'mock',
-        videos: [
-          {
-            id: crypto.randomUUID(),
-            url: MOCK_VIDEO_URL
-          }
-        ]
-      };
+  function resetCircuit(id) {
+    const s = states.get(id);
+    if (s) {
+      s.failures = [];
+      s.openUntil = 0;
+      appendLog({ event: 'circuit_reset', data: { provider: id } }).catch(() => {});
     }
-
-    // Placeholder implementation for video providers.
-    return {
-      mode: 'live',
-      providerId: engine.providerId,
-      model: engine.model,
-      videos: params.videos || []
-    };
   }
+
+  // initialize
+  loadConfig().catch((e) => {
+    appendLog({ event: 'providers_load_error', data: { message: String(e) } }).catch(() => {});
+  });
+
+  return { call, getStatus, resetCircuit, _internal: { providers, states, config } };
 }
 
-export async function createProviderManager() {
-  const config = await readConfigFile();
-  return new ProviderManager(config);
-}
+export default createProviderManager;
