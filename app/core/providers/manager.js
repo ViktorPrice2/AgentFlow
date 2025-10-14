@@ -2,8 +2,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'node:url';
 
-const CONFIG_PATH = path.join(process.cwd(), 'config', 'providers.json');
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const PRIMARY_CONFIG_PATH = path.join(process.cwd(), 'config', 'providers.json');
+const FALLBACK_CONFIG_PATH = path.resolve(MODULE_DIR, '../../config/providers.json');
 const DEFAULT_TIMEOUT = 30_000;
 
 const MOCK_TEXT = (providerId, model, prompt) =>
@@ -13,6 +16,100 @@ const MOCK_IMAGE_DATA_URI =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAI0lEQVQoU2NkYGD4z0AEYBxVSFUBCzUCJgYkgtiGSgDRIVQBAO5BCZ9gX2jhAAAAABJRU5ErkJggg==';
 
 const MOCK_VIDEO_URL = 'https://example.com/mock-video-placeholder.mp4';
+
+const DEFAULT_CONFIG = {
+  providers: [
+    {
+      id: 'openai',
+      type: 'llm',
+      models: ['gpt-4o-mini', 'gpt-4o'],
+      apiKeyRef: 'OPENAI_API_KEY',
+      baseUrl: 'https://api.openai.com/v1'
+    },
+    {
+      id: 'gemini',
+      type: 'llm',
+      models: ['gemini-2.0-flash'],
+      apiKeyRef: 'GOOGLE_API_KEY',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta'
+    },
+    {
+      id: 'ollama',
+      type: 'llm',
+      models: ['llama3.1:8b'],
+      baseUrl: 'http://localhost:11434'
+    },
+    {
+      id: 'stability',
+      type: 'image',
+      models: ['sd3.5'],
+      apiKeyRef: 'STABILITY_API_KEY',
+      baseUrl: 'https://api.stability.ai'
+    },
+    {
+      id: 'higgs',
+      type: 'video',
+      models: ['studio-v'],
+      apiKeyRef: 'HIGGSFIELD_API_KEY',
+      baseUrl: 'https://api.higgsfield.ai'
+    }
+  ],
+  defaults: {
+    llm: {
+      provider: 'openai',
+      model: 'gpt-4o-mini'
+    },
+    image: {
+      provider: 'stability',
+      model: 'sd3.5'
+    },
+    video: {
+      provider: 'higgs',
+      model: 'studio-v'
+    }
+  }
+};
+
+async function readConfigFile() {
+  const candidates = [];
+  const portableDir = process.env.PORTABLE_EXECUTABLE_DIR;
+
+  if (portableDir) {
+    candidates.push(path.join(portableDir, 'config', 'providers.json'));
+  }
+
+  candidates.push(PRIMARY_CONFIG_PATH);
+  candidates.push(FALLBACK_CONFIG_PATH);
+
+  const visited = new Set();
+
+  for (const candidate of candidates) {
+    if (!candidate || visited.has(candidate)) {
+      continue;
+    }
+
+    visited.add(candidate);
+
+    try {
+      const raw = await fs.readFile(candidate, 'utf8');
+      return JSON.parse(raw);
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        continue;
+      }
+
+      if (error.name === 'SyntaxError') {
+        console.warn(`[ProviderManager] Invalid providers config at ${candidate}: ${error.message}`);
+        continue;
+      }
+
+      console.warn(`[ProviderManager] Failed to read providers config at ${candidate}: ${error.message}`);
+    }
+  }
+
+  return DEFAULT_CONFIG;
+}
+
 
 function buildHeaders(apiKey, extra = {}) {
   return {
@@ -439,8 +536,6 @@ class ProviderManager {
 }
 
 export async function createProviderManager() {
-  const raw = await fs.readFile(CONFIG_PATH, 'utf8');
-  const config = JSON.parse(raw);
-
+  const config = await readConfigFile();
   return new ProviderManager(config);
 }

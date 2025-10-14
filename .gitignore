@@ -1,0 +1,30 @@
+# Node & package managers
+node_modules/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+*.asar
+*.asar.unpacked/
+*.exe
+
+# App workspace artifacts
+app/dist/
+app/node_modules/
+app/renderer/dist/
+app/renderer/node_modules/
+app/data/artifacts/
+app/data/logs/
+
+# Environment & local configs
+app/.env
+.env.local
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
