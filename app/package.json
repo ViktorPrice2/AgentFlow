@@ -1,0 +1,56 @@
+{
+  "name": "agentflow-desktop",
+  "version": "0.1.0",
+  "description": "AgentFlow Desktop – modular multi-agent platform for AI marketing automation.",
+  "type": "module",
+  "main": "main/main.js",
+  "author": "AgentFlow",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "cross-env NODE_ENV=development electron .",
+    "build:ui": "cd renderer && npm run build",
+    "build": "npm run build:ui && electron-builder",
+    "postinstall": "cd renderer && npm install"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.5.0",
+    "cross-env": "^7.0.3",
+    "dotenv": "^16.4.5",
+    "electron": "^31.2.0",
+    "electron-builder": "^24.13.3",
+    "electron-updater": "^6.1.6",
+    "keytar": "^7.9.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^5.3.3"
+  },
+  "build": {
+    "appId": "com.agentflow.desktop",
+    "productName": "AgentFlow Desktop",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main/**/*",
+      "core/**/*",
+      "services/**/*",
+      "renderer/dist/**/*",
+      "data/**/*",
+      "config/**/*",
+      ".env"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false
+    }
+  }
+}
