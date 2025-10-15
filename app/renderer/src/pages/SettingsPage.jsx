@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
@@ -15,8 +16,55 @@ function getEnvironmentInfo() {
   ];
 }
 
-export function SettingsPage({ providerStatus = [], apiAvailable, onRefresh }) {
+export function SettingsPage({
+  providerStatus = [],
+  apiAvailable,
+  onRefresh,
+  telegramStatus,
+  onTelegramTokenSave,
+  onTelegramStart,
+  onTelegramStop,
+  onCopyDeeplink,
+  selectedProjectId
+}) {
   const envInfo = getEnvironmentInfo();
+  const [tokenDraft, setTokenDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const botState = telegramStatus?.status?.status || 'idle';
+  const botRunning = botState === 'running';
+  const hasToken = Boolean(telegramStatus?.hasToken);
+  const botUsername = telegramStatus?.status?.username || '—';
+  const sessions = telegramStatus?.status?.sessions ?? 0;
+  const lastError = telegramStatus?.status?.lastError || null;
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (saving) {
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await onTelegramTokenSave(tokenDraft.trim());
+      setTokenDraft('');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleClearToken = async () => {
+    if (saving) {
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await onTelegramTokenSave('');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="page-grid two-columns">
@@ -46,6 +94,76 @@ export function SettingsPage({ providerStatus = [], apiAvailable, onRefresh }) {
         </p>
         <p className="hint">
           Файл окружения: <code>.env</code>. Конфигурация провайдеров: <code>config/providers.json</code>.
+        </p>
+      </InfoCard>
+
+      <InfoCard
+        title="Telegram-бот"
+        subtitle="Управляйте встроенным ботом для сбора брифов и рассылайте ссылку команде."
+      >
+        <form className="telegram-card__form" onSubmit={handleSubmit}>
+          <div className="telegram-card__form-row">
+            <label className="telegram-card__token">
+              Токен бота
+              <input
+                type="password"
+                value={tokenDraft}
+                onChange={(event) => setTokenDraft(event.target.value)}
+                placeholder="Введите токен BotFather"
+              />
+            </label>
+            <div className="telegram-card__buttons">
+              <button type="submit" className="primary-button" disabled={saving || !tokenDraft.trim()}>
+                Сохранить токен
+              </button>
+              <button type="button" className="secondary-button" onClick={handleClearToken} disabled={saving || !hasToken}>
+                Очистить
+              </button>
+            </div>
+          </div>
+        </form>
+
+        <div className="telegram-card__status">
+          <p>
+            Статус бота:{' '}
+            <span className={`status-label ${botRunning ? 'ok' : 'warn'}`}>
+              {botRunning ? 'запущен' : 'остановлен'}
+            </span>
+          </p>
+          <p>
+            Имя в Telegram: <strong>{botUsername}</strong>
+          </p>
+          <p>
+            Активных сессий: <strong>{sessions}</strong>
+          </p>
+          <p>
+            Токен сохранён: {hasToken ? <span className="status-label ok">да</span> : <span className="status-label warn">нет</span>}
+          </p>
+          {lastError && <p className="status-label warn">Ошибка: {lastError}</p>}
+          {telegramStatus?.status?.restartPlanned && (
+            <p className="status-label info">Запланирован автоматический перезапуск</p>
+          )}
+        </div>
+
+        <div className="telegram-card__actions">
+          <button type="button" className="primary-button" onClick={onTelegramStart} disabled={!hasToken || botRunning}>
+            Запустить бота
+          </button>
+          <button type="button" className="secondary-button" onClick={onTelegramStop} disabled={!botRunning}>
+            Остановить
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={onCopyDeeplink}
+            disabled={!botRunning || !hasToken || !selectedProjectId || !telegramStatus?.status?.username}
+          >
+            Скопировать deeplink
+          </button>
+        </div>
+
+        <p className="hint">
+          Deeplink формируется для выбранного проекта: <code>{selectedProjectId || '—'}</code>.
         </p>
       </InfoCard>
 
@@ -101,5 +219,21 @@ SettingsPage.propTypes = {
     })
   ),
   apiAvailable: PropTypes.bool.isRequired,
-  onRefresh: PropTypes.func.isRequired
+  onRefresh: PropTypes.func.isRequired,
+  telegramStatus: PropTypes.shape({
+    hasToken: PropTypes.bool,
+    status: PropTypes.shape({
+      status: PropTypes.string,
+      startedAt: PropTypes.string,
+      username: PropTypes.string,
+      lastError: PropTypes.string,
+      sessions: PropTypes.number,
+      restartPlanned: PropTypes.bool
+    })
+  }),
+  onTelegramTokenSave: PropTypes.func.isRequired,
+  onTelegramStart: PropTypes.func.isRequired,
+  onTelegramStop: PropTypes.func.isRequired,
+  onCopyDeeplink: PropTypes.func.isRequired,
+  selectedProjectId: PropTypes.string
 };

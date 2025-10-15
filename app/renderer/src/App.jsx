@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import './App.css';
 import {
   isAgentApiAvailable,
@@ -6,7 +6,13 @@ import {
   listPipelines,
   listProviderStatus,
   runPipeline,
-  upsertPipeline
+  upsertPipeline,
+  getTelegramStatus,
+  setTelegramToken,
+  startTelegramBot,
+  stopTelegramBot,
+  onBriefUpdated,
+  fetchLatestBrief
 } from './api/agentApi.js';
 import { Navigation } from './components/Navigation.jsx';
 import { Toast } from './components/Toast.jsx';
@@ -30,6 +36,63 @@ const SECTIONS = [
 ];
 
 const AGENT_ONLINE = isAgentApiAvailable();
+
+const EMPTY_BRIEF = {
+  goals: '',
+  audience: '',
+  offer: '',
+  tone: '',
+  keyMessages: '',
+  callToAction: '',
+  successMetrics: '',
+  references: '',
+  budget: ''
+};
+
+function buildPlanFromBrief(briefData = {}) {
+  const lines = [];
+
+  if (briefData.goals) {
+    lines.push(`Цели: ${briefData.goals}`);
+  }
+  if (briefData.audience) {
+    lines.push(`Аудитория: ${briefData.audience}`);
+  }
+  if (briefData.offer) {
+    lines.push(`Оффер: ${briefData.offer}`);
+  }
+  if (briefData.keyMessages) {
+    lines.push(`Ключевые сообщения: ${briefData.keyMessages}`);
+  }
+  if (briefData.callToAction) {
+    lines.push(`Призыв к действию: ${briefData.callToAction}`);
+  }
+  if (briefData.successMetrics) {
+    lines.push(`Метрики: ${briefData.successMetrics}`);
+  }
+  if (briefData.references) {
+    lines.push(`Референсы: ${briefData.references}`);
+  }
+  if (briefData.budget) {
+    lines.push(`Бюджет: ${briefData.budget}`);
+  }
+
+  return lines.join('\n');
+}
+
+const DEFAULT_TELEGRAM_STATUS = {
+  ok: true,
+  status: {
+    status: 'idle',
+    startedAt: null,
+    username: null,
+    botId: null,
+    lastError: null,
+    sessions: 0,
+    restartPlanned: false
+  },
+  hasToken: false
+};
 
 function generateRunRecord(pipeline, result, project) {
   const timestamp = new Date().toISOString();
@@ -118,11 +181,28 @@ function App() {
 
   const [projects, setProjects] = usePersistentState('af.projects', []);
   const [selectedProjectId, setSelectedProjectId] = usePersistentState('af.selectedProject', null);
-  const [brief, setBrief] = usePersistentState('af.brief', {});
+  const [brief, setBrief] = usePersistentState('af.brief', EMPTY_BRIEF);
   const [runs, setRuns] = usePersistentState('af.runs', []);
+  const [telegramStatus, setTelegramStatus] = useState(DEFAULT_TELEGRAM_STATUS);
+  const [telegramBrief, setTelegramBrief] = useState(null);
+  const [planText, setPlanText] = useState('');
 
   const { agentsData, providerStatus, providerUpdatedAt, refreshAgents } = useAgentResources();
   const { pipelines, refreshPipelines } = usePipelineResources();
+
+  const refreshTelegramStatus = useCallback(async () => {
+    if (!AGENT_ONLINE) {
+      setTelegramStatus(DEFAULT_TELEGRAM_STATUS);
+      return;
+    }
+
+    try {
+      const response = await getTelegramStatus();
+      setTelegramStatus(response);
+    } catch (error) {
+      console.error('Failed to load Telegram status', error);
+    }
+  }, []);
 
   const selectedProject = useMemo(
     () => projects.find((item) => item.id === selectedProjectId) || null,
@@ -135,12 +215,42 @@ function App() {
     }
   }, [projects, selectedProject, setSelectedProjectId]);
 
-  const showToast = (message, type = 'info') => {
+  useEffect(() => {
+    refreshTelegramStatus();
+  }, [refreshTelegramStatus]);
+
+  useEffect(() => {
+    if (!AGENT_ONLINE) {
+      return () => {};
+    }
+
+    const unsubscribe = onBriefUpdated(async (payload) => {
+      if (payload?.projectId !== selectedProjectId) {
+        return;
+      }
+
+      await syncTelegramBrief(true);
+      showToast('Бриф из Telegram обновлён', 'info');
+    });
+
+    return unsubscribe;
+  }, [selectedProjectId, showToast, syncTelegramBrief]);
+
+  useEffect(() => {
+    if (!selectedProjectId) {
+      setTelegramBrief(null);
+      return;
+    }
+
+    syncTelegramBrief(true);
+  }, [selectedProjectId, syncTelegramBrief]);
+
+  const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type });
     if (message) {
       setTimeout(() => setToast({ message: null, type: 'info' }), 4000);
     }
-  };
+  }, []);
 
   const handleCreateProject = (project) => {
     setProjects((prev) => {
@@ -151,7 +261,7 @@ function App() {
   };
 
   const handleUpdateBrief = (nextBrief) => {
-    setBrief(nextBrief);
+    setBrief({ ...EMPTY_BRIEF, ...nextBrief });
   };
 
   const handleCreatePipeline = async (pipeline) => {
@@ -191,6 +301,117 @@ function App() {
     showToast('История запусков очищена', 'info');
   };
 
+  const syncTelegramBrief = useCallback(
+    async (silent = false) => {
+      if (!selectedProjectId) {
+        setTelegramBrief(null);
+        if (!silent) {
+          showToast('Выберите проект, чтобы получить бриф из Telegram', 'info');
+        }
+        return { ok: false };
+      }
+
+      try {
+        const response = await fetchLatestBrief(selectedProjectId);
+        if (response?.brief) {
+          const answers = response.brief.payload?.answers || {};
+          setBrief({ ...EMPTY_BRIEF, ...answers });
+          setTelegramBrief(response.brief);
+          if (!silent) {
+            showToast('Бриф обновлён из Telegram', 'success');
+          }
+          return { ok: true, brief: response.brief };
+        }
+
+        setTelegramBrief(null);
+        if (!silent) {
+          showToast('Для выбранного проекта ещё нет брифа из Telegram', 'info');
+        }
+        return { ok: false };
+      } catch (error) {
+        console.error('Failed to fetch Telegram brief', error);
+        if (!silent) {
+          showToast('Не удалось получить бриф из Telegram', 'error');
+        }
+        return { ok: false, error };
+      }
+    },
+    [selectedProjectId, setBrief, setTelegramBrief, showToast]
+  );
+
+  const handleRefreshTelegramBrief = useCallback(() => {
+    syncTelegramBrief(false);
+  }, [syncTelegramBrief]);
+
+  const handleGeneratePlan = useCallback(
+    (source) => {
+      const base = source?.answers || source || brief;
+      const merged = { ...EMPTY_BRIEF, ...base };
+      const plan = buildPlanFromBrief(merged);
+      setPlanText(plan);
+      showToast('План сформирован', 'success');
+    },
+    [brief, showToast]
+  );
+
+  const handleTelegramTokenSave = useCallback(
+    async (token) => {
+      try {
+        await setTelegramToken(token);
+        await refreshTelegramStatus();
+        showToast(token ? 'Токен сохранён' : 'Токен очищен', 'success');
+      } catch (error) {
+        console.error('Failed to store Telegram token', error);
+        showToast('Не удалось сохранить токен Telegram', 'error');
+      }
+    },
+    [refreshTelegramStatus, showToast]
+  );
+
+  const handleTelegramStart = useCallback(async () => {
+    try {
+      await startTelegramBot();
+      await refreshTelegramStatus();
+      showToast('Telegram-бот запущен', 'success');
+    } catch (error) {
+      console.error('Failed to start Telegram bot', error);
+      showToast('Ошибка запуска Telegram-бота', 'error');
+    }
+  }, [refreshTelegramStatus, showToast]);
+
+  const handleTelegramStop = useCallback(async () => {
+    try {
+      await stopTelegramBot();
+      await refreshTelegramStatus();
+      showToast('Telegram-бот остановлен', 'info');
+    } catch (error) {
+      console.error('Failed to stop Telegram bot', error);
+      showToast('Не удалось остановить Telegram-бот', 'error');
+    }
+  }, [refreshTelegramStatus, showToast]);
+
+  const handleCopyDeeplink = useCallback(async () => {
+    const username = telegramStatus?.status?.username;
+    if (!username || !selectedProjectId) {
+      showToast('Запустите бота и выберите проект для deeplink', 'info');
+      return;
+    }
+
+    const deeplink = `https://t.me/${username}?start=${encodeURIComponent(`project=${selectedProjectId}`)}`;
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(deeplink);
+      } else {
+        throw new Error('Clipboard API unavailable');
+      }
+      showToast('Ссылка скопирована в буфер обмена', 'success');
+    } catch (error) {
+      console.warn('Clipboard copy failed', error);
+      window.prompt('Скопируйте ссылку вручную', deeplink);
+    }
+  }, [selectedProjectId, showToast, telegramStatus]);
+
   const currentSection = useMemo(() => {
     switch (activeSection) {
       case 'projects':
@@ -210,6 +431,10 @@ function App() {
             brief={brief}
             onUpdateBrief={handleUpdateBrief}
             onNotify={showToast}
+            telegramBrief={telegramBrief}
+            onRefreshTelegramBrief={handleRefreshTelegramBrief}
+            onGeneratePlan={handleGeneratePlan}
+            planText={planText}
           />
         );
       case 'agents':
@@ -245,6 +470,12 @@ function App() {
             providerStatus={providerStatus}
             apiAvailable={AGENT_ONLINE}
             onRefresh={refreshAgents}
+            telegramStatus={telegramStatus}
+            onTelegramTokenSave={handleTelegramTokenSave}
+            onTelegramStart={handleTelegramStart}
+            onTelegramStop={handleTelegramStop}
+            onCopyDeeplink={handleCopyDeeplink}
+            selectedProjectId={selectedProjectId}
           />
         );
     }
@@ -252,13 +483,22 @@ function App() {
     activeSection,
     agentsData,
     brief,
+    handleCopyDeeplink,
+    handleGeneratePlan,
+    handleRefreshTelegramBrief,
+    handleTelegramStart,
+    handleTelegramStop,
+    handleTelegramTokenSave,
     pipelines,
     projects,
     providerStatus,
     providerUpdatedAt,
     runs,
     selectedProject,
-    selectedProjectId
+    selectedProjectId,
+    telegramBrief,
+    telegramStatus,
+    planText
   ]);
 
   return (

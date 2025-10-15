@@ -27,6 +27,20 @@ const fallbackProviderStatus = [
   { id: 'stability', type: 'image', hasKey: false, apiKeyRef: 'STABILITY_API_KEY', models: ['sd3.5'] }
 ];
 
+const fallbackTelegramStatus = {
+  ok: true,
+  status: {
+    status: 'idle',
+    startedAt: null,
+    username: null,
+    botId: null,
+    lastError: null,
+    sessions: 0,
+    restartPlanned: false
+  },
+  hasToken: false
+};
+
 export async function listAgents() {
   if (hasWindowAPI && typeof agentApi.listAgents === 'function') {
     return agentApi.listAgents();
@@ -94,6 +108,59 @@ export async function runPipeline(pipeline, payload) {
       nodes: []
     }
   };
+}
+
+export async function getTelegramStatus() {
+  if (hasWindowAPI && agentApi.telegram && typeof agentApi.telegram.status === 'function') {
+    return agentApi.telegram.status();
+  }
+
+  await fallbackDelay();
+  return fallbackTelegramStatus;
+}
+
+export async function setTelegramToken(token) {
+  if (hasWindowAPI && agentApi.telegram && typeof agentApi.telegram.setToken === 'function') {
+    return agentApi.telegram.setToken(token);
+  }
+
+  await fallbackDelay();
+  return { ok: true };
+}
+
+export async function startTelegramBot() {
+  if (hasWindowAPI && agentApi.telegram && typeof agentApi.telegram.start === 'function') {
+    return agentApi.telegram.start();
+  }
+
+  await fallbackDelay();
+  return fallbackTelegramStatus;
+}
+
+export async function stopTelegramBot() {
+  if (hasWindowAPI && agentApi.telegram && typeof agentApi.telegram.stop === 'function') {
+    return agentApi.telegram.stop();
+  }
+
+  await fallbackDelay();
+  return fallbackTelegramStatus;
+}
+
+export function onBriefUpdated(callback) {
+  if (hasWindowAPI && agentApi.telegram && typeof agentApi.telegram.onBriefUpdated === 'function') {
+    return agentApi.telegram.onBriefUpdated(callback);
+  }
+
+  return () => {};
+}
+
+export async function fetchLatestBrief(projectId) {
+  if (hasWindowAPI && agentApi.briefs && typeof agentApi.briefs.getLatest === 'function') {
+    return agentApi.briefs.getLatest(projectId);
+  }
+
+  await fallbackDelay();
+  return { ok: true, brief: null };
 }
 
 export function isAgentApiAvailable() {
