@@ -3,15 +3,22 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
+import keytar from 'keytar';
+import Database from 'better-sqlite3';
 import { createPluginRegistry } from '../core/pluginLoader.js';
 import { registerIpcHandlers } from '../core/api.js';
 import { createProviderManager } from '../core/providers/manager.js';
+import { runMigrations, getDatabasePath } from '../db/migrate.js';
+import { createTelegramBotService } from '../services/tg-bot/index.js';
 
 const isDevelopment = process.env.NODE_ENV === 'development';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 let pluginRegistry;
 let providerManager;
+let telegramService;
+const KEYTAR_SERVICE = 'AgentFlowDesktop';
+const KEYTAR_ACCOUNT = 'telegramBotToken';
 const rendererDistPath = path.join(__dirname, '../renderer/dist/index.html');
 
 dotenv.config({ path: path.join(process.cwd(), '.env') });
@@ -104,8 +111,127 @@ const bootstrapCore = async () => {
   registerIpcHandlers({ ipcMain, pluginRegistry, providerManager });
 };
 
+const ensureTelegramService = () => {
+  if (!telegramService) {
+    telegramService = createTelegramBotService({
+      onBriefSaved: (payload) => {
+        BrowserWindow.getAllWindows().forEach((window) => {
+          if (!window.isDestroyed()) {
+            window.webContents.send('AgentFlow:brief:updated', payload);
+          }
+        });
+      }
+    });
+  }
+
+  return telegramService;
+};
+
+const getStoredToken = async () => {
+  try {
+    return await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT);
+  } catch (error) {
+    console.error('Failed to read Telegram token from keytar', error);
+    throw error;
+  }
+};
+
+const setStoredToken = async (token) => {
+  if (!token) {
+    await keytar.deletePassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT);
+    return;
+  }
+
+  await keytar.setPassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT, token);
+};
+
+const getLatestBrief = (projectId) => {
+  if (!projectId) {
+    return null;
+  }
+
+  const db = new Database(getDatabasePath());
+  try {
+    const row = db
+      .prepare(
+        `SELECT id, projectId, title, summary, payload, updatedAt FROM Briefs WHERE projectId = ? ORDER BY updatedAt DESC LIMIT 1`
+      )
+      .get(projectId);
+
+    if (!row) {
+      return null;
+    }
+
+    let parsedPayload = null;
+
+    try {
+      parsedPayload = row.payload ? JSON.parse(row.payload) : null;
+    } catch (error) {
+      console.warn('Failed to parse brief payload', error);
+    }
+
+    return {
+      id: row.id,
+      projectId: row.projectId,
+      title: row.title,
+      summary: row.summary,
+      payload: parsedPayload,
+      updatedAt: row.updatedAt
+    };
+  } finally {
+    db.close();
+  }
+};
+
+const registerTelegramIpc = () => {
+  ipcMain.handle('AgentFlow:bot:status', async () => {
+    const service = ensureTelegramService();
+    const status = service.getStatus();
+    const token = await getStoredToken();
+
+    return {
+      ok: true,
+      status,
+      hasToken: Boolean(token)
+    };
+  });
+
+  ipcMain.handle('AgentFlow:bot:setToken', async (_event, token) => {
+    await setStoredToken(token);
+    return { ok: true };
+  });
+
+  ipcMain.handle('AgentFlow:bot:start', async () => {
+    const token = await getStoredToken();
+
+    if (!token) {
+      throw new Error('Не задан токен Telegram. Укажите его в настройках.');
+    }
+
+    const service = ensureTelegramService();
+    const status = await service.start(token);
+    return { ok: true, status };
+  });
+
+  ipcMain.handle('AgentFlow:bot:stop', async () => {
+    if (!telegramService) {
+      return { ok: true, status: { status: 'idle' } };
+    }
+
+    const status = await telegramService.stop();
+    return { ok: true, status };
+  });
+
+  ipcMain.handle('AgentFlow:briefs:getLatest', async (_event, projectId) => {
+    const brief = getLatestBrief(projectId);
+    return { ok: true, brief };
+  });
+};
+
 app.whenReady().then(async () => {
+  await runMigrations();
   await bootstrapCore();
+  registerTelegramIpc();
   await createMainWindow();
 
   app.on('activate', () => {
@@ -120,5 +246,15 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
+  }
+});
+
+app.on('before-quit', async () => {
+  if (telegramService) {
+    try {
+      await telegramService.stop();
+    } catch (error) {
+      console.error('Failed to stop Telegram bot on quit', error);
+    }
   }
 });
