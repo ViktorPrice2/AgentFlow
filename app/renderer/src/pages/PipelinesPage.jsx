@@ -2,6 +2,9 @@ import { useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
+import { VersionDiffModal } from '../components/VersionDiffModal.jsx';
+import { diffEntity } from '../api/agentApi.js';
+import { resolveNextVersion } from '../../shared/semver.js';
 
 const DEFAULT_NODES = [
   { id: 'writer', agentName: 'WriterAgent', kind: 'task' },
@@ -22,6 +25,19 @@ const INITIAL_FORM_STATE = {
   override: ''
 };
 
+function toPipelineId(name, projectId) {
+  const normalizedName = (name || 'pipeline')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/(^-|-$)/g, '') || 'pipeline';
+
+  if (!projectId) {
+    return normalizedName;
+  }
+
+  return `${projectId}-${normalizedName}`;
+}
+
 export function PipelinesPage({
   pipelines = [],
   project = null,
@@ -33,6 +49,11 @@ export function PipelinesPage({
   onNotify
 }) {
   const [formState, setFormState] = useState(INITIAL_FORM_STATE);
+  const [pendingPipeline, setPendingPipeline] = useState(null);
+  const [diffPreview, setDiffPreview] = useState(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [isDiffLoading, setIsDiffLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const runContext = useMemo(() => {
     if (!project) {
@@ -65,23 +86,71 @@ export function PipelinesPage({
       }
     }
 
+    const pipelineId = toPipelineId(formState.name.trim(), project?.id || null);
+    const existing = pipelines.find((item) => item.id === pipelineId) || null;
+    const nextVersion = resolveNextVersion(null, existing?.version);
+
     const pipeline = {
-      id: `${project?.id || 'pipeline'}-${Date.now()}`,
+      id: pipelineId,
       name: formState.name.trim(),
       description: formState.description.trim(),
       projectId: project?.id || null,
-      nodes: DEFAULT_NODES,
-      edges: DEFAULT_EDGES,
+      version: nextVersion,
+      nodes: DEFAULT_NODES.map((node) => ({ ...node })),
+      edges: DEFAULT_EDGES.map((edge) => ({ ...edge })),
       override: overrideData
     };
 
-    onCreatePipeline(pipeline);
-    onNotify('Пайплайн сохранён', 'success');
-    setFormState(INITIAL_FORM_STATE);
+    setIsDiffLoading(true);
+
+    try {
+      const diff = await diffEntity({
+        type: 'pipeline',
+        idA: existing ? { entityId: existing.id, draft: existing } : null,
+        idB: { draft: pipeline }
+      });
+
+      setPendingPipeline(pipeline);
+      setDiffPreview({
+        diff: diff.diff,
+        currentVersion: existing?.version || '—',
+        nextVersion
+      });
+      setModalVisible(true);
+    } catch (error) {
+      console.error('Failed to compute pipeline diff', error);
+      onNotify('Не удалось подготовить сравнение версий', 'error');
+    } finally {
+      setIsDiffLoading(false);
+    }
   };
 
   const handleRun = (pipeline) => {
     onRunPipeline(pipeline, runContext);
+  };
+
+  const handleModalClose = () => {
+    setModalVisible(false);
+    setPendingPipeline(null);
+    setDiffPreview(null);
+  };
+
+  const handleConfirmSave = async () => {
+    if (!pendingPipeline) {
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      await onCreatePipeline(pendingPipeline);
+      handleModalClose();
+      setFormState(INITIAL_FORM_STATE);
+    } catch (error) {
+      console.error('Failed to persist pipeline version', error);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -106,7 +175,10 @@ export function PipelinesPage({
               <article key={pipeline.id} className="pipeline-card">
                 <header>
                   <h4>{pipeline.name}</h4>
-                  <span>{pipeline.projectId ? `Проект: ${pipeline.projectId}` : 'Без проекта'}</span>
+                  <div className="pipeline-meta">
+                    <span>{pipeline.projectId ? `Проект: ${pipeline.projectId}` : 'Без проекта'}</span>
+                    <span className="pipeline-version">v{pipeline.version || '0.0.1'}</span>
+                  </div>
                 </header>
                 <p>{pipeline.description || 'Описание не указано'}</p>
                 <ul className="pipeline-flow">
@@ -167,12 +239,24 @@ export function PipelinesPage({
               placeholder='{"writer":{"params":{"tone":"friendly"}}}'
             />
           </label>
-          <button type="submit" className="primary-button" disabled={!project}>
+          <button type="submit" className="primary-button" disabled={!project || isDiffLoading}>
             Сохранить пайплайн
           </button>
           {!project ? <p className="hint">Выберите проект, чтобы привязать сценарий.</p> : null}
+          {isDiffLoading ? <p className="hint">Готовим сравнение изменений…</p> : null}
         </form>
       </InfoCard>
+
+      <VersionDiffModal
+        open={modalVisible}
+        entityName={pendingPipeline?.name || formState.name || 'Пайплайн'}
+        currentVersion={diffPreview?.currentVersion || '—'}
+        nextVersion={diffPreview?.nextVersion || '0.1.0'}
+        diff={diffPreview?.diff}
+        onConfirm={handleConfirmSave}
+        onCancel={handleModalClose}
+        saving={isSaving}
+      />
     </div>
   );
 }

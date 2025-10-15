@@ -1,7 +1,21 @@
 import { runPipeline, runDemoPipeline } from './orchestrator.js';
+import {
+  listAgentConfigs as listStoredAgentConfigs,
+  upsertAgentConfig as persistAgentConfig,
+  listAgentHistory,
+  getAgentHistoryById,
+  getAgentConfig as getStoredAgentConfig
+} from '../db/repositories/agentsRepository.js';
+import {
+  listPipelines as listStoredPipelines,
+  upsertPipeline as persistPipeline,
+  listPipelineHistory,
+  getPipelineHistoryById,
+  getPipeline as getStoredPipeline
+} from '../db/repositories/pipelinesRepository.js';
+import { computeJsonDiff } from '../shared/jsonDiff.js';
 
 const agentConfigs = new Map();
-const pipelines = new Map();
 
 const defaultAgentConfigs = [
   {
@@ -120,14 +134,64 @@ function storeAgentConfig(agent) {
   return agentConfigs.get(id);
 }
 
-function buildAgentList(pluginRegistry) {
+function mapAgentForDiff(agent) {
+  if (!agent) {
+    return null;
+  }
+
+  return {
+    id: agent.id,
+    projectId: agent.projectId,
+    name: agent.name,
+    type: agent.type ?? 'custom',
+    version: agent.version ?? '0.0.1',
+    source: agent.source ?? 'manual',
+    config: agent.config ?? {}
+  };
+}
+
+function mapPipelineForDiff(pipeline) {
+  if (!pipeline) {
+    return null;
+  }
+
+  return {
+    id: pipeline.id,
+    projectId: pipeline.projectId ?? null,
+    name: pipeline.name,
+    version: pipeline.version ?? '0.0.1',
+    description: pipeline.description ?? '',
+    nodes: Array.isArray(pipeline.nodes) ? pipeline.nodes : [],
+    edges: Array.isArray(pipeline.edges) ? pipeline.edges : [],
+    override: pipeline.override ?? null
+  };
+}
+
+async function buildAgentList(pluginRegistry) {
   const staticAgents = pluginRegistry.listAgents();
-  const configuredAgents = Array.from(agentConfigs.values()).map((agent) => ({
+  const storedAgents = await listStoredAgentConfigs();
+
+  storedAgents.forEach((agent) => {
+    const config = mapAgentForDiff(agent);
+    if (config) {
+      storeAgentConfig({
+        ...config.config,
+        id: config.id,
+        name: config.name,
+        type: config.type,
+        version: config.version,
+        source: config.source,
+        description: agent.config?.description ?? agent.name
+      });
+    }
+  });
+
+  const configuredAgents = storedAgents.map((agent) => ({
     id: agent.id,
     name: agent.name,
     type: agent.type ?? 'custom',
     version: agent.version ?? '0.0.1',
-    description: agent.description ?? '',
+    description: agent.config?.description ?? '',
     source: agent.source ?? 'manual'
   }));
 
@@ -164,6 +228,19 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
 
   ipcMain.handle('AgentFlow:agents:upsert', async (_event, agentConfig) => {
     const stored = storeAgentConfig(agentConfig);
+    const persisted = await persistAgentConfig(agentConfig);
+
+    if (persisted?.config) {
+      storeAgentConfig({
+        ...persisted.config,
+        id: persisted.id,
+        name: persisted.name,
+        type: persisted.type,
+        version: persisted.version,
+        source: persisted.source,
+        description: persisted.config?.description ?? persisted.name
+      });
+    }
 
     return {
       ok: true,
@@ -201,21 +278,96 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
   });
 
   ipcMain.handle('AgentFlow:pipeline:upsert', async (_event, pipelineDefinition) => {
-    const id = pipelineDefinition.id || pipelineDefinition.name || `pipeline-${pipelines.size + 1}`;
-    const stored = {
-      ...pipelineDefinition,
-      id
-    };
-
-    pipelines.set(id, stored);
+    const saved = await persistPipeline(pipelineDefinition);
 
     return {
       ok: true,
-      pipeline: stored
+      pipeline: saved
     };
   });
 
   ipcMain.handle('AgentFlow:pipeline:list', async () => {
-    return Array.from(pipelines.values());
+    return listStoredPipelines();
   });
+
+  ipcMain.handle('AgentFlow:agents:history', async (_event, { agentId, limit = 20 }) => {
+    if (!agentId) {
+      return [];
+    }
+
+    return listAgentHistory(agentId, limit);
+  });
+
+  ipcMain.handle('AgentFlow:pipeline:history', async (_event, { pipelineId, limit = 20 }) => {
+    if (!pipelineId) {
+      return [];
+    }
+
+    return listPipelineHistory(pipelineId, limit);
+  });
+
+  ipcMain.handle('AgentFlow:diff:entity', async (_event, payload) => {
+    const { type, idA, idB } = payload ?? {};
+
+    if (!type) {
+      throw new Error('ENTITY_TYPE_REQUIRED');
+    }
+
+    const left = await resolveEntityPointer(type, idA);
+    const right = await resolveEntityPointer(type, idB);
+
+    return {
+      type,
+      left,
+      right,
+      diff: computeJsonDiff(left, right)
+    };
+  });
+}
+
+async function resolveEntityPointer(type, pointer) {
+  if (!pointer) {
+    return null;
+  }
+
+  if (typeof pointer === 'string') {
+    return resolveHistorySnapshot(type, pointer);
+  }
+
+  if (pointer.historyId) {
+    return resolveHistorySnapshot(type, pointer.historyId);
+  }
+
+  if (pointer.entityId) {
+    const entity = type === 'agent' ? await getStoredAgentConfig(pointer.entityId) : await getStoredPipeline(pointer.entityId);
+    return type === 'agent' ? mapAgentForDiff(entity) : mapPipelineForDiff(entity);
+  }
+
+  if (pointer.draft) {
+    return type === 'agent' ? mapAgentForDiff(pointer.draft) : mapPipelineForDiff(pointer.draft);
+  }
+
+  if (pointer.payload) {
+    return type === 'agent' ? mapAgentForDiff(pointer.payload) : mapPipelineForDiff(pointer.payload);
+  }
+
+  return null;
+}
+
+async function resolveHistorySnapshot(type, historyId) {
+  if (!historyId) {
+    return null;
+  }
+
+  if (type === 'agent') {
+    const entry = await getAgentHistoryById(historyId);
+    return entry ? mapAgentForDiff(entry.payload) : null;
+  }
+
+  if (type === 'pipeline') {
+    const entry = await getPipelineHistoryById(historyId);
+    return entry ? mapPipelineForDiff(entry.payload) : null;
+  }
+
+  return null;
 }

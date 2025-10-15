@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
@@ -15,11 +16,59 @@ function getEnvironmentInfo() {
   ];
 }
 
-export function SettingsPage({ providerStatus = [], apiAvailable, onRefresh }) {
+export function SettingsPage({
+  providerStatus = [],
+  apiAvailable,
+  onRefresh,
+  botStatus = null,
+  onRefreshBot,
+  onStartBot,
+  onStopBot,
+  onUpdateToken,
+  onCopyDeeplink,
+  selectedProject
+}) {
   const envInfo = getEnvironmentInfo();
+  const [tokenInput, setTokenInput] = useState('');
+
+  const tokenPlaceholder = botStatus?.tokenStored ? 'Токен сохранён' : 'Вставьте токен от @BotFather';
+  const botRunning = Boolean(botStatus?.running);
+  const restarts = botStatus?.restarts ?? 0;
+  const lastError = botStatus?.lastError || '—';
+  const startedAt = botStatus?.startedAt ? new Date(botStatus.startedAt).toLocaleString('ru-RU') : '—';
+
+  const deeplinkPreview = useMemo(() => {
+    if (!botStatus?.deeplinkBase || !selectedProject?.id) {
+      return '—';
+    }
+
+    return `${botStatus.deeplinkBase}${selectedProject.id}`;
+  }, [botStatus?.deeplinkBase, selectedProject]);
+
+  useEffect(() => {
+    if (!botStatus?.tokenStored) {
+      setTokenInput('');
+    }
+  }, [botStatus?.tokenStored]);
+
+  const handleTokenSubmit = async (event) => {
+    event.preventDefault();
+
+    if (!tokenInput.trim()) {
+      return;
+    }
+
+    await onUpdateToken(tokenInput.trim());
+    setTokenInput('');
+  };
+
+  const handleTokenClear = async () => {
+    setTokenInput('');
+    await onUpdateToken('');
+  };
 
   return (
-    <div className="page-grid two-columns">
+    <div className="page-grid settings-grid">
       <InfoCard
         title="Системные параметры"
         subtitle="Информация об окружении AgentFlow Desktop."
@@ -37,7 +86,7 @@ export function SettingsPage({ providerStatus = [], apiAvailable, onRefresh }) {
           ))}
         </ul>
         <p className="env-info__status">
-          IPC API:{' '}
+          IPC API{' '}
           {apiAvailable ? (
             <span className="status-label ok">доступен</span>
           ) : (
@@ -46,6 +95,78 @@ export function SettingsPage({ providerStatus = [], apiAvailable, onRefresh }) {
         </p>
         <p className="hint">
           Файл окружения: <code>.env</code>. Конфигурация провайдеров: <code>config/providers.json</code>.
+        </p>
+      </InfoCard>
+
+      <InfoCard
+        title="Telegram-бот"
+        subtitle="Подключите токен, запустите long-polling и делитесь deeplink с командой."
+        footer={
+          <div className="telegram-actions">
+            <button type="button" className="primary-button" onClick={onStartBot} disabled={botRunning}>
+              Старт
+            </button>
+            <button type="button" className="secondary-button" onClick={onStopBot} disabled={!botRunning}>
+              Стоп
+            </button>
+            <button type="button" className="secondary-button" onClick={onRefreshBot}>
+              Обновить статус
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onCopyDeeplink}
+              disabled={!botStatus?.deeplinkBase || !selectedProject?.id}
+            >
+              Скопировать deeplink
+            </button>
+          </div>
+        }
+      >
+        <form className="telegram-form" onSubmit={handleTokenSubmit}>
+          <label>
+            Токен бота
+            <input
+              type="password"
+              value={tokenInput}
+              onChange={(event) => setTokenInput(event.target.value)}
+              placeholder={tokenPlaceholder}
+            />
+          </label>
+          <div className="telegram-actions">
+            <button type="submit" className="primary-button" disabled={!tokenInput.trim()}>
+              Сохранить токен
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={handleTokenClear}
+              disabled={!botStatus?.tokenStored && tokenInput.length === 0}
+            >
+              Очистить токен
+            </button>
+          </div>
+        </form>
+
+        <ul className="telegram-status">
+          <li>
+            Состояние:{' '}
+            <span className={`status-label ${botRunning ? 'ok' : 'warn'}`}>
+              {botRunning ? 'работает' : 'остановлен'}
+            </span>
+          </li>
+          <li>Юзернейм: {botStatus?.username ? `@${botStatus.username}` : '—'}</li>
+          <li>Запущен: {startedAt}</li>
+          <li>Перезапуски: {restarts}</li>
+          <li>Последняя ошибка: {lastError}</li>
+          <li>Deeplink: {botStatus?.deeplinkBase ? deeplinkPreview : 'недоступен'}</li>
+        </ul>
+        <p className="telegram-note">
+          {botStatus?.deeplinkBase
+            ? selectedProject
+              ? `Выбран проект «${selectedProject.name}». Ссылка скопирует ${deeplinkPreview}.`
+              : 'Выберите проект, чтобы сформировать deeplink.'
+            : 'Укажите токен и запустите бота, чтобы получить deeplink.'}
         </p>
       </InfoCard>
 
@@ -101,5 +222,23 @@ SettingsPage.propTypes = {
     })
   ),
   apiAvailable: PropTypes.bool.isRequired,
-  onRefresh: PropTypes.func.isRequired
+  onRefresh: PropTypes.func.isRequired,
+  botStatus: PropTypes.shape({
+    running: PropTypes.bool,
+    startedAt: PropTypes.string,
+    username: PropTypes.string,
+    restarts: PropTypes.number,
+    lastError: PropTypes.string,
+    tokenStored: PropTypes.bool,
+    deeplinkBase: PropTypes.string
+  }),
+  onRefreshBot: PropTypes.func.isRequired,
+  onStartBot: PropTypes.func.isRequired,
+  onStopBot: PropTypes.func.isRequired,
+  onUpdateToken: PropTypes.func.isRequired,
+  onCopyDeeplink: PropTypes.func.isRequired,
+  selectedProject: PropTypes.shape({
+    id: PropTypes.string,
+    name: PropTypes.string
+  })
 };

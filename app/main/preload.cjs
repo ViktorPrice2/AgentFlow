@@ -18,6 +18,10 @@ contextBridge.exposeInMainWorld('AgentAPI', {
   getBrief: (briefId) => ipcRenderer.invoke('AgentFlow:briefs:get', briefId),
   upsertBrief: (brief) => ipcRenderer.invoke('AgentFlow:briefs:upsert', brief),
   generateBriefPlan: (payload) => ipcRenderer.invoke('AgentFlow:briefs:plan', payload),
+  listAgentHistory: (agentId, limit) => ipcRenderer.invoke('AgentFlow:agents:history', { agentId, limit }),
+  listPipelineHistory: (pipelineId, limit) =>
+    ipcRenderer.invoke('AgentFlow:pipeline:history', { pipelineId, limit }),
+  diffEntity: (payload) => ipcRenderer.invoke('AgentFlow:diff:entity', payload),
   botStatus: () => ipcRenderer.invoke('AgentFlow:bot:status'),
   botSetToken: (token) => ipcRenderer.invoke('AgentFlow:bot:setToken', token),
   botStart: () => ipcRenderer.invoke('AgentFlow:bot:start'),

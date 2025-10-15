@@ -1,3 +1,5 @@
+import { computeJsonDiff } from '../../shared/jsonDiff.js';
+
 const agentApi = typeof window !== 'undefined' ? window.AgentAPI : undefined;
 const hasWindowAPI = Boolean(agentApi);
 
@@ -167,6 +169,67 @@ export async function getBotStatus() {
 
   await fallbackDelay();
   return fallbackBotStatus;
+}
+
+export async function listAgentHistory(agentId, limit = 20) {
+  if (!agentId) {
+    return [];
+  }
+
+  if (hasWindowAPI && typeof agentApi.listAgentHistory === 'function') {
+    return agentApi.listAgentHistory(agentId, limit);
+  }
+
+  await fallbackDelay();
+  return [];
+}
+
+export async function listPipelineHistory(pipelineId, limit = 20) {
+  if (!pipelineId) {
+    return [];
+  }
+
+  if (hasWindowAPI && typeof agentApi.listPipelineHistory === 'function') {
+    return agentApi.listPipelineHistory(pipelineId, limit);
+  }
+
+  await fallbackDelay();
+  return [];
+}
+
+function fallbackResolvePointer(pointer) {
+  if (!pointer) {
+    return null;
+  }
+
+  if (typeof pointer === 'object') {
+    if (pointer.draft) {
+      return pointer.draft;
+    }
+
+    if (pointer.payload) {
+      return pointer.payload;
+    }
+  }
+
+  return null;
+}
+
+export async function diffEntity(payload) {
+  if (hasWindowAPI && typeof agentApi.diffEntity === 'function') {
+    return agentApi.diffEntity(payload);
+  }
+
+  await fallbackDelay();
+  const left = fallbackResolvePointer(payload?.idA);
+  const right = fallbackResolvePointer(payload?.idB);
+
+  return {
+    type: payload?.type ?? null,
+    left,
+    right,
+    diff: computeJsonDiff(left, right)
+  };
 }
 
 export async function setBotToken(token) {
