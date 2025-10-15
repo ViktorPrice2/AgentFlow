@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS Schedules (
 
 CREATE INDEX IF NOT EXISTS idx_schedules_projectId ON Schedules (projectId);
 CREATE INDEX IF NOT EXISTS idx_schedules_createdAt ON Schedules (createdAt);
+CREATE INDEX IF NOT EXISTS idx_schedules_nextRun ON Schedules (nextRun);
 
 CREATE TABLE IF NOT EXISTS Metrics (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

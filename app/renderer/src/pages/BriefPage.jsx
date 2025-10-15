@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
+import { EmptyState } from '../components/EmptyState.jsx';
 
 export const DEFAULT_BRIEF = {
   goals: '',
@@ -13,58 +14,183 @@ export const DEFAULT_BRIEF = {
   references: ''
 };
 
-export function BriefPage({ project = null, brief = DEFAULT_BRIEF, onUpdateBrief, onNotify }) {
-  const [formState, setFormState] = useState({ ...DEFAULT_BRIEF, ...brief });
+const SOURCE_LABELS = {
+  telegram: 'Telegram',
+  manual: 'Ручной'
+};
+
+export function BriefPage({
+  project = null,
+  briefs = [],
+  selectedBrief = null,
+  onSelectBrief,
+  onRefresh,
+  onSaveBrief,
+  onGeneratePlan,
+  onNotify
+}) {
+  const [title, setTitle] = useState('');
+  const [formState, setFormState] = useState({ ...DEFAULT_BRIEF });
+  const [planPreview, setPlanPreview] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   useEffect(() => {
-    setFormState({ ...DEFAULT_BRIEF, ...brief });
-  }, [brief]);
+    if (selectedBrief) {
+      setTitle(selectedBrief.title || `Бриф проекта ${project?.name || ''}`.trim());
+      setFormState({ ...DEFAULT_BRIEF, ...(selectedBrief.content ?? {}) });
+      setPlanPreview(selectedBrief.metadata?.plan || '');
+    } else {
+      setTitle(project ? `Бриф проекта ${project.name}` : 'Новый бриф');
+      setFormState({ ...DEFAULT_BRIEF });
+      setPlanPreview('');
+    }
+  }, [selectedBrief, project]);
 
-  const handleChange = (event) => {
+  const handleFieldChange = (event) => {
     const { name, value } = event.target;
     setFormState((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (event) => {
+  const handleSave = async (event) => {
     event.preventDefault();
-    onUpdateBrief(formState);
-    onNotify('Бриф обновлён', 'success');
+
+    if (!project) {
+      onNotify('Выберите проект, чтобы сохранить бриф', 'error');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const saved = await onSaveBrief({
+        id: selectedBrief?.id ?? null,
+        title: title.trim(),
+        content: formState
+      });
+
+      setPlanPreview(saved.metadata?.plan || planPreview);
+      onSelectBrief(saved.id);
+    } catch (error) {
+      console.error('Failed to save brief form', error);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const summary = useMemo(() => {
-    const fields = [
-      { label: 'Цели', value: formState.goals },
-      { label: 'Аудитория', value: formState.audience },
-      { label: 'Предложение', value: formState.offer },
-      { label: 'Тон коммуникации', value: formState.tone },
-      { label: 'Ключевые сообщения', value: formState.keyMessages },
-      { label: 'Призыв к действию', value: formState.callToAction },
-      { label: 'Метрики успеха', value: formState.successMetrics },
-      { label: 'Референсы', value: formState.references }
-    ];
+  const handleGeneratePlan = async () => {
+    if (!project) {
+      onNotify('Выберите проект, чтобы сформировать план', 'error');
+      return;
+    }
 
-    return fields.filter((field) => field.value?.trim()).map((field) => field.label);
-  }, [formState]);
+    setIsGenerating(true);
+    try {
+      const plan = await onGeneratePlan(formState);
+      setPlanPreview(plan);
+      onNotify('План сформирован', 'success');
+    } catch (error) {
+      console.error('Failed to generate plan', error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleCreateNew = () => {
+    onSelectBrief(null);
+  };
+
+  const renderBriefList = () => {
+    if (!project) {
+      return (
+        <EmptyState
+          title="Выберите проект"
+          description="Сначала создайте проект, затем сформируйте бриф."
+        />
+      );
+    }
+
+    if (briefs.length === 0) {
+      return (
+        <EmptyState
+          title="Брифов пока нет"
+          description="Сохраните первый бриф вручную или через Telegram-бота."
+        />
+      );
+    }
+
+    return (
+      <ul className="brief-list">
+        {briefs.map((item) => {
+          const isActive = selectedBrief?.id === item.id;
+          const sourceLabel = SOURCE_LABELS[item.source] || 'Неизвестно';
+
+          return (
+            <li key={item.id}>
+              <button
+                type="button"
+                className={`brief-list__item ${isActive ? 'active' : ''}`}
+                onClick={() => onSelectBrief(item.id)}
+              >
+                <div className="brief-list__primary">
+                  <h4>{item.title}</h4>
+                  <p>{new Date(item.updatedAt).toLocaleString('ru-RU')}</p>
+                </div>
+                <span className={`status-label ${item.source === 'telegram' ? 'info' : 'ok'}`}>
+                  {sourceLabel}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  };
 
   return (
     <div className="page-grid brief-grid">
       <InfoCard
-        title="Бриф"
-        subtitle={
-          project
-            ? `Работаем с проектом «${project.name}». Эти данные будут доступны агентам и пайплайнам.`
-            : 'Сначала выберите проект во вкладке «Проекты».'
+        title="Брифы проекта"
+        subtitle="Список сохраняется в базе и пополняется через Telegram-бота или вручную."
+        footer={
+          <div className="brief-actions">
+            <button type="button" className="secondary-button" onClick={onRefresh}>
+              Обновить
+            </button>
+            <button type="button" className="secondary-button" onClick={handleCreateNew} disabled={!project}>
+              Новый бриф
+            </button>
+          </div>
         }
       >
-        <form className="form" onSubmit={handleSubmit}>
+        {renderBriefList()}
+      </InfoCard>
+
+      <InfoCard
+        title="Редактор брифа"
+        subtitle={
+          project
+            ? `Работаем с проектом «${project.name}». Эти поля попадут в пайплайны.`
+            : 'Выберите проект, чтобы редактировать бриф.'
+        }
+      >
+        <form className="form" onSubmit={handleSave}>
+          <label>
+            Название брифа
+            <input
+              name="briefTitle"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="Например, Запуск весенней кампании"
+            />
+          </label>
           <label>
             Цели кампании
             <textarea
               name="goals"
               rows={3}
               value={formState.goals}
-              onChange={handleChange}
-              placeholder="Повысить узнаваемость, сделать запуск продукта, получить лиды..."
+              onChange={handleFieldChange}
+              placeholder="Повысить узнаваемость, получить лиды, протестировать гипотезу..."
             />
           </label>
           <label>
@@ -73,8 +199,8 @@ export function BriefPage({ project = null, brief = DEFAULT_BRIEF, onUpdateBrief
               name="audience"
               rows={3}
               value={formState.audience}
-              onChange={handleChange}
-              placeholder="Кто клиент? Какие боли, мотивация, возражения?"
+              onChange={handleFieldChange}
+              placeholder="Кто клиент, какие боли и мотивация?"
             />
           </label>
           <label>
@@ -83,8 +209,8 @@ export function BriefPage({ project = null, brief = DEFAULT_BRIEF, onUpdateBrief
               name="offer"
               rows={2}
               value={formState.offer}
-              onChange={handleChange}
-              placeholder="Коротко о продукте, услуге или спецпредложении"
+              onChange={handleFieldChange}
+              placeholder="Что предлагаем и чем отличаемся"
             />
           </label>
           <label>
@@ -92,8 +218,8 @@ export function BriefPage({ project = null, brief = DEFAULT_BRIEF, onUpdateBrief
             <input
               name="tone"
               value={formState.tone}
-              onChange={handleChange}
-              placeholder="Дружелюбный, экспертный, дерзкий, деловой..."
+              onChange={handleFieldChange}
+              placeholder="Экспертный, дружелюбный, дерзкий..."
             />
           </label>
           <label>
@@ -102,8 +228,8 @@ export function BriefPage({ project = null, brief = DEFAULT_BRIEF, onUpdateBrief
               name="keyMessages"
               rows={3}
               value={formState.keyMessages}
-              onChange={handleChange}
-              placeholder="2-3 тезиса, которые обязательно нужно упомянуть"
+              onChange={handleFieldChange}
+              placeholder="Главные тезисы, которые нужно донести"
             />
           </label>
           <label>
@@ -111,8 +237,8 @@ export function BriefPage({ project = null, brief = DEFAULT_BRIEF, onUpdateBrief
             <input
               name="callToAction"
               value={formState.callToAction}
-              onChange={handleChange}
-              placeholder="Например, зарегистрируйтесь, оформите заказ, подпишитесь"
+              onChange={handleFieldChange}
+              placeholder="Оставить заявку, перейти в чат-бота, оформить заказ..."
             />
           </label>
           <label>
@@ -120,8 +246,8 @@ export function BriefPage({ project = null, brief = DEFAULT_BRIEF, onUpdateBrief
             <input
               name="successMetrics"
               value={formState.successMetrics}
-              onChange={handleChange}
-              placeholder="Конверсии, заявки, охват, продажи..."
+              onChange={handleFieldChange}
+              placeholder="Лиды, продажи, CPL, CTR..."
             />
           </label>
           <label>
@@ -130,27 +256,43 @@ export function BriefPage({ project = null, brief = DEFAULT_BRIEF, onUpdateBrief
               name="references"
               rows={2}
               value={formState.references}
-              onChange={handleChange}
-              placeholder="Полезные примеры, прошлые кампании, материалы"
+              onChange={handleFieldChange}
+              placeholder="Примеры кампаний, ссылки на материалы"
             />
           </label>
-          <button type="submit" className="primary-button" disabled={!project}>
-            Сохранить бриф
-          </button>
+          <div className="brief-form__actions">
+            <button type="submit" className="primary-button" disabled={!project || isSaving}>
+              {isSaving ? 'Сохранение…' : 'Сохранить бриф'}
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={handleGeneratePlan}
+              disabled={!project || isGenerating}
+            >
+              {isGenerating ? 'Формирование…' : 'Сформировать план'}
+            </button>
+          </div>
         </form>
       </InfoCard>
 
       <InfoCard
-        title="Сводка для агентов"
-        subtitle="Список заполняется автоматически — помогает быстро оценить полноту брифа."
+        title="План кампании"
+        subtitle="Автоматически создаётся из заполненных ответов."
       >
-        <ul className="brief-summary">
-          {summary.length === 0 ? (
-            <li>Добавьте данные слева, чтобы сформировать сводку.</li>
-          ) : (
-            summary.map((item) => <li key={item}>{item}</li>)
-          )}
-        </ul>
+        {planPreview ? (
+          <pre className="brief-plan">{planPreview}</pre>
+        ) : (
+          <EmptyState
+            title="План пока не сформирован"
+            description="Нажмите «Сформировать план», чтобы получить последовательность шагов."
+          />
+        )}
+        {selectedBrief?.metadata?.user ? (
+          <p className="brief-meta">
+            Источник: @{selectedBrief.metadata.user.username || selectedBrief.metadata.user.firstName || 'участник'}
+          </p>
+        ) : null}
       </InfoCard>
     </div>
   );
@@ -158,19 +300,28 @@ export function BriefPage({ project = null, brief = DEFAULT_BRIEF, onUpdateBrief
 
 BriefPage.propTypes = {
   project: PropTypes.shape({
-    id: PropTypes.string.isRequired,
-    name: PropTypes.string.isRequired
+    id: PropTypes.string,
+    name: PropTypes.string
   }),
-  brief: PropTypes.shape({
-    goals: PropTypes.string,
-    audience: PropTypes.string,
-    offer: PropTypes.string,
-    tone: PropTypes.string,
-    keyMessages: PropTypes.string,
-    callToAction: PropTypes.string,
-    successMetrics: PropTypes.string,
-    references: PropTypes.string
+  briefs: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.string.isRequired,
+      title: PropTypes.string,
+      updatedAt: PropTypes.string,
+      source: PropTypes.string,
+      content: PropTypes.object,
+      metadata: PropTypes.object
+    })
+  ),
+  selectedBrief: PropTypes.shape({
+    id: PropTypes.string,
+    title: PropTypes.string,
+    content: PropTypes.object,
+    metadata: PropTypes.object
   }),
-  onUpdateBrief: PropTypes.func.isRequired,
+  onSelectBrief: PropTypes.func.isRequired,
+  onRefresh: PropTypes.func.isRequired,
+  onSaveBrief: PropTypes.func.isRequired,
+  onGeneratePlan: PropTypes.func.isRequired,
   onNotify: PropTypes.func.isRequired
 };

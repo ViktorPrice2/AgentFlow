@@ -94,6 +94,10 @@
   grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
 }
 
+.page-grid.settings-grid {
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+}
+
 .page-grid.brief-grid {
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
 }
@@ -281,6 +285,119 @@
   padding: 0;
   color: #475569;
   line-height: 1.6;
+}
+
+.brief-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.brief-list__item {
+  width: 100%;
+  border-radius: 14px;
+  padding: 16px;
+  background: #f8faff;
+  border: 1px solid #d0d9f5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: border 0.2s ease, box-shadow 0.2s ease;
+}
+
+.brief-list__item:hover {
+  border-color: #94a3f5;
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.18);
+}
+
+.brief-list__item.active {
+  border-color: #2563eb;
+  box-shadow: 0 14px 32px rgba(37, 99, 235, 0.25);
+}
+
+.brief-list__primary h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.brief-list__primary p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.brief-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.brief-form__actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.brief-plan {
+  background: #0f172a;
+  color: #f8fafc;
+  border-radius: 14px;
+  padding: 18px;
+  white-space: pre-wrap;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.2);
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.brief-meta {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.telegram-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.telegram-form input {
+  border-radius: 10px;
+  border: 1px solid #cbd5f5;
+  padding: 10px 12px;
+  font-size: 14px;
+  background: #fbfcff;
+}
+
+.telegram-status {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  color: #475569;
+}
+
+.telegram-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.telegram-note {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #64748b;
 }
 
 .table-wrapper {
