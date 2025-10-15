@@ -7,7 +7,13 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const appRoot = path.resolve(__dirname, '..');
-const stateFile = path.join(appRoot, '.native-deps-state.json');
+const betterSqliteDir = path.join(appRoot, 'node_modules', 'better-sqlite3');
+const electronBin = path.join(
+  appRoot,
+  'node_modules',
+  '.bin',
+  process.platform === 'win32' ? 'electron.cmd' : 'electron'
+);
 
 // Resolve package.json safely
 const readJson = async (filePath) => {
@@ -59,41 +65,48 @@ const runNpm = (args, options = {}) => {
 
 const ensureNativeDeps = async () => {
   const electronPkg = await readJson(path.join(appRoot, 'node_modules', 'electron', 'package.json'));
-  const betterSqlitePkg = await readJson(path.join(appRoot, 'node_modules', 'better-sqlite3', 'package.json'));
+  const betterSqlitePkg = await readJson(path.join(betterSqliteDir, 'package.json'));
 
   if (!electronPkg || !betterSqlitePkg) {
     console.warn('[native] Зависимости не установлены. Пропускаю проверку нативных модулей.');
     return;
   }
 
-  const targetState = {
-    electronVersion: electronPkg.version,
-    betterSqliteVersion: betterSqlitePkg.version,
-    platform: process.platform,
-    arch: process.arch
-  };
+  console.info(
+    '[native] Проверяю совместимость better-sqlite3 %s с Electron %s…',
+    betterSqlitePkg.version,
+    electronPkg.version
+  );
 
-  const previousState = await readJson(stateFile);
+  const checkResult = spawnSync(electronBin, ['-e', "require('better-sqlite3')"], {
+    cwd: appRoot,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    shell: process.platform === 'win32',
+    encoding: 'utf8'
+  });
 
-  if (previousState &&
-      previousState.electronVersion === targetState.electronVersion &&
-      previousState.betterSqliteVersion === targetState.betterSqliteVersion &&
-      previousState.platform === targetState.platform &&
-      previousState.arch === targetState.arch) {
+  if (checkResult.status === 0) {
+    console.info('[native] Библиотека уже собрана под Electron.');
     return;
   }
 
-  console.info('[native] Пересборка нативных модулей под Electron %s…', targetState.electronVersion);
+  if (checkResult.stderr?.trim()) {
+    console.warn('[native] Проверка вывела сообщение:\n%s', checkResult.stderr.trim());
+  }
+
+  console.warn('[native] Проверка не прошла (код %s). Запускаю пересборку…', checkResult.status ?? 'unknown');
+
+  await fs.rm(path.join(betterSqliteDir, 'build'), { recursive: true, force: true });
 
   const builderOk = runBinary('electron-builder', ['install-app-deps']);
 
   if (!builderOk) {
     console.warn('[native] electron-builder install-app-deps завершился с ошибкой, пробую prebuild-install для better-sqlite3…');
 
-    const moduleDir = path.join(appRoot, 'node_modules', 'better-sqlite3');
+    const moduleDir = betterSqliteDir;
     const prebuildArgs = [
       '--runtime=electron',
-      `--target=${targetState.electronVersion}`,
+      `--target=${electronPkg.version}`,
       '--tag-prefix=electron-v',
       '--force'
     ];
@@ -112,7 +125,7 @@ const ensureNativeDeps = async () => {
           'rebuild',
           'better-sqlite3',
           `--runtime=electron`,
-          `--target=${targetState.electronVersion}`,
+          `--target=${electronPkg.version}`,
           '--dist-url=https://electronjs.org/headers',
           '--update-binary'
         ];
@@ -127,8 +140,21 @@ const ensureNativeDeps = async () => {
     }
   }
 
-  await fs.writeFile(stateFile, JSON.stringify(targetState, null, 2));
-  console.info('[native] Нативные зависимости готовы.');
+  const verifyResult = spawnSync(electronBin, ['-e', "require('better-sqlite3')"], {
+    cwd: appRoot,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    shell: process.platform === 'win32',
+    encoding: 'utf8'
+  });
+
+  if (verifyResult.status === 0) {
+    console.info('[native] Нативные зависимости готовы.');
+  } else {
+    if (verifyResult.stderr?.trim()) {
+      console.warn('[native] Повторная проверка вывела сообщение:\n%s', verifyResult.stderr.trim());
+    }
+    console.warn('[native] После пересборки проверка всё ещё падает (код %s). Проверьте логи выше.', verifyResult.status ?? 'unknown');
+  }
 };
 
 ensureNativeDeps().catch((error) => {
