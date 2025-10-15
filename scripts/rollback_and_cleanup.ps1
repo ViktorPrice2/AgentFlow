@@ -73,7 +73,7 @@ if ($LASTEXITCODE -ne 0) {
   Write-Host "Or use BFG as alternative." -ForegroundColor Yellow
   exit 1
 }
-Run "git filter-repo --invert-paths --paths app/node_modules/electron/dist/electron.exe --force"
+Run "git filter-repo --invert-paths --path `"app/node_modules/electron/dist/electron.exe`" --force"
 
 # 9) cleanup and gc
 Run "git reflog expire --expire=now --all"
