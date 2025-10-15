@@ -25,11 +25,19 @@ if ($porcelain) {
 }
 
 Write-Host "Check git-filter-repo availability..." -ForegroundColor Green
-# Try invoking via git (preferred)
+# prefer global "git filter-repo", fallback to "python -m git_filter_repo"
+$filterCmd = $null
 git filter-repo --help > $null 2>&1
-if ($LASTEXITCODE -ne 0) {
-  Write-Host "git-filter-repo not available. Install via: python -m pip install --user git-filter-repo" -ForegroundColor Red
-  exit 1
+if ($LASTEXITCODE -eq 0) {
+  $filterCmd = "git filter-repo"
+} else {
+  python -m git_filter_repo --help > $null 2>&1
+  if ($LASTEXITCODE -eq 0) {
+    $filterCmd = "python -m git_filter_repo"
+  } else {
+    Write-Host "git-filter-repo not available. Install via: python -m pip install --user git-filter-repo" -ForegroundColor Red
+    exit 1
+  }
 }
 
 Write-Host ""
@@ -40,9 +48,9 @@ if ($confirm -ne 'y' -and $confirm -ne 'Y') {
   exit 0
 }
 
-# Build command (use cmd /c to avoid PowerShell parsing issues)
+# Run git-filter-repo using chosen command
 $escaped = $TargetPath.Replace('"', '\"')
-$cmd = "git filter-repo --invert-paths --path `"$escaped`" --force"
+$cmd = "$filterCmd --invert-paths --path `"$escaped`" --force"
 $rc = Run $cmd
 if ($rc -ne 0) {
   Write-Host "git-filter-repo failed with exit code $rc" -ForegroundColor Red

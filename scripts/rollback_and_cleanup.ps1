@@ -67,13 +67,21 @@ Run "git commit -m `"chore: remove app/node_modules from index (prepare history 
 # 8) try git-filter-repo to remove electron.exe from history
 Write-Host ""
 Write-Host "Now removing large file app/node_modules/electron/dist/electron.exe from history (git-filter-repo)..." -ForegroundColor Yellow
-(& git filter-repo --help) 2>$null
-if ($LASTEXITCODE -ne 0) {
-  Write-Host "git-filter-repo not available. Please install it (pip install git-filter-repo) and re-run this script." -ForegroundColor Red
-  Write-Host "Or use BFG as alternative." -ForegroundColor Yellow
-  exit 1
+$filterCmd = $null
+git filter-repo --help > $null 2>&1
+if ($LASTEXITCODE -eq 0) {
+  $filterCmd = "git filter-repo"
+} else {
+  python -m git_filter_repo --help > $null 2>&1
+  if ($LASTEXITCODE -eq 0) {
+    $filterCmd = "python -m git_filter_repo"
+  } else {
+    Write-Host "git-filter-repo not available. Please install it (pip install git-filter-repo) and re-run this script." -ForegroundColor Red
+    exit 1
+  }
 }
-Run "git filter-repo --invert-paths --path `"app/node_modules/electron/dist/electron.exe`" --force"
+
+Run "$filterCmd --invert-paths --path `"app/node_modules/electron/dist/electron.exe`" --force"
 
 # 9) cleanup and gc
 Run "git reflog expire --expire=now --all"
