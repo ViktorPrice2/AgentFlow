@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 
-export const DEFAULT_BRIEF = {
+const DEFAULT_BRIEF = {
   goals: '',
   audience: '',
   offer: '',

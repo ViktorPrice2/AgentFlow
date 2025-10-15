@@ -5,46 +5,34 @@
       "type": "llm",
       "models": ["gpt-4o-mini", "gpt-4o"],
       "apiKeyRef": "OPENAI_API_KEY",
-      "baseUrl": "https://api.openai.com/v1",
-      "rateLimit": { "capacity": 10, "refillPerSec": 10 },
-      "retry": { "maxAttempts": 3 },
-      "circuitBreaker": { "threshold": 5, "windowSec": 60, "cooldownSec": 30 },
-      "allowMock": true
+      "baseUrl": "https://api.openai.com/v1"
     },
     {
       "id": "gemini",
       "type": "llm",
       "models": ["gemini-2.0-flash"],
       "apiKeyRef": "GOOGLE_API_KEY",
-      "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
-      "rateLimit": { "capacity": 5, "refillPerSec": 5 },
-      "allowMock": true
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta"
     },
     {
       "id": "ollama",
       "type": "llm",
       "models": ["llama3.1:8b"],
-      "baseUrl": "http://localhost:11434",
-      "rateLimit": { "capacity": 20, "refillPerSec": 10 },
-      "allowMock": true
+      "baseUrl": "http://localhost:11434"
     },
     {
       "id": "stability",
       "type": "image",
       "models": ["sd3.5"],
       "apiKeyRef": "STABILITY_API_KEY",
-      "baseUrl": "https://api.stability.ai",
-      "rateLimit": { "capacity": 2, "refillPerSec": 1 },
-      "allowMock": true
+      "baseUrl": "https://api.stability.ai"
     },
     {
       "id": "higgs",
       "type": "video",
       "models": ["studio-v"],
       "apiKeyRef": "HIGGSFIELD_API_KEY",
-      "baseUrl": "https://api.higgsfield.ai",
-      "rateLimit": { "capacity": 1, "refillPerSec": 0.2 },
-      "allowMock": true
+      "baseUrl": "https://api.higgsfield.ai"
     }
   ],
   "defaults": {

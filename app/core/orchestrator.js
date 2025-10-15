@@ -1,165 +1,395 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { loadAgents } from './pluginLoader.js'; // added to support demo pipeline
 
-/* Orchestrator: simple linear/graph runner */
 const DATA_DIR = path.join(process.cwd(), 'data');
+const LOG_DIR = path.join(DATA_DIR, 'logs');
 const ARTIFACTS_DIR = path.join(DATA_DIR, 'artifacts');
-const LOGS_DIR = path.join(DATA_DIR, 'logs');
 
-async function ensureDirs() {
-  await fs.mkdir(ARTIFACTS_DIR, { recursive: true });
-  await fs.mkdir(LOGS_DIR, { recursive: true });
+const defaultOptions = {
+  agentConfigs: new Map(),
+  override: undefined,
+  providerManager: null
+};
+
+async function ensureDir(dirPath) {
+  await fs.mkdir(dirPath, { recursive: true });
 }
 
-function now() { return new Date().toISOString(); }
-
-async function appendLog(runId, entry) {
-  const file = path.join(LOGS_DIR, `run_${runId}.jsonl`);
-  const line = JSON.stringify({ ts: now(), ...entry }) + '\n';
-  await fs.appendFile(file, line, 'utf8');
-}
-
-async function writeArtifact(runId, relPath, data) {
-  const dir = path.join(ARTIFACTS_DIR, runId);
-  await fs.mkdir(dir, { recursive: true });
-  const safeRel = relPath.replace(/[^a-zA-Z0-9_\-./]/g, '_');
-  const full = path.join(dir, safeRel);
-  await fs.mkdir(path.dirname(full), { recursive: true });
-  if (Buffer.isBuffer(data)) {
-    await fs.writeFile(full, data);
-  } else if (typeof data === 'object') {
-    await fs.writeFile(full, JSON.stringify(data, null, 2), 'utf8');
-  } else {
-    await fs.writeFile(full, String(data), 'utf8');
-  }
-  return full;
-}
-
-/* runPipeline(pipeline, input, options)
-   pipeline: { nodes: [{id, agentName, kind, retries?, onError? , override? }], edges?: [...] }
-*/
-export async function runPipeline(pipeline, input = {}, ctxOverrides = {}) {
-  await ensureDirs();
-  const runId = ctxOverrides.runId || randomUUID();
-  const ctx = {
-    runId,
-    env: process.env,
-    _artifacts: [],
-    log: async (event, data) => appendLog(runId, { event, data }),
-    setArtifact: async (relPath, data) => {
-      const p = await writeArtifact(runId, relPath, data);
-      ctx._artifacts.push(p);
-      await appendLog(runId, { event: 'artifact_written', data: { path: p, rel: relPath } });
-      return p;
-    },
-    getAgentConfig: async () => { return null; }, // placeholder, can be extended
-    ...ctxOverrides
+async function writeLog(logFile, event, data = {}) {
+  const entry = {
+    ts: new Date().toISOString(),
+    event,
+    data
   };
 
-  await appendLog(runId, { event: 'pipeline_start', data: { pipelineId: pipeline.id || null } });
-
-  // simple node map and execution order: if edges provided, follow edges; else linear by index
-  const nodeMap = new Map(pipeline.nodes.map((n) => [n.id, { ...n }]));
-
-  // helper to execute single node with retries
-  async function execNode(node, payload) {
-    const maxRetries = node.retries == null ? 1 : node.retries;
-    let attempt = 0;
-    while (attempt < maxRetries) {
-      attempt++;
-      try {
-        await appendLog(runId, { event: 'node_start', data: { nodeId: node.id, attempt } });
-        // load agent executor via node._executor (injected by caller) or via node.execute
-        if (typeof node._execute !== 'function') {
-          throw new Error(`no-executor-for-${node.id}`);
-        }
-        const out = await node._execute(payload, ctx);
-        await appendLog(runId, { event: 'node_success', data: { nodeId: node.id } });
-        return { success: true, payload: out };
-      } catch (err) {
-        await appendLog(runId, { event: 'node_error', data: { nodeId: node.id, attempt, message: String(err) } });
-        if (attempt >= maxRetries) {
-          return { success: false, error: err };
-        }
-        // small backoff
-        await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt - 1)));
-      }
-    }
-  }
-
-  // execution flow: linear by nodes array (MVP). If node has onError="route:<id>" we could change next index.
-  let payload = { ...input };
-  for (let i = 0; i < pipeline.nodes.length; i++) {
-    const node = pipeline.nodes[i];
-    // allow caller to inject executor (pluginLoader)
-    if (!node._execute) {
-      await appendLog(runId, { event: 'node_skip', data: { nodeId: node.id, reason: 'no executor' } });
-      continue;
-    }
-    const res = await execNode(node, payload);
-    if (!res.success) {
-      // handle onError
-      const onErr = node.onError || 'fail';
-      if (onErr === 'skip') {
-        await appendLog(runId, { event: 'node_onerror_skip', data: { nodeId: node.id } });
-        continue;
-      } else if (onErr && onErr.startsWith('route:')) {
-        const targetId = onErr.split(':')[1];
-        const idx = pipeline.nodes.findIndex((n) => n.id === targetId);
-        if (idx >= 0) {
-          i = idx - 1; // -1 because loop will i++
-          payload = res.payload || payload;
-          continue;
-        } else {
-          await appendLog(runId, { event: 'node_onerror_fail', data: { nodeId: node.id } });
-          return { runId, status: 'failed', error: String(res.error) };
-        }
-      } else {
-        // fail
-        await appendLog(runId, { event: 'pipeline_failed', data: { nodeId: node.id, message: String(res.error) } });
-        return { runId, status: 'failed', error: String(res.error) };
-      }
-    }
-    // merge payload (non-mutating)
-    payload = { ...payload, ...res.payload };
-  }
-
-  await appendLog(runId, { event: 'pipeline_finished', data: { artifacts: ctx._artifacts } });
-  return { runId, status: 'ok', artifacts: ctx._artifacts, output: payload };
+  await fs.appendFile(logFile, `${JSON.stringify(entry)}\n`, 'utf8');
 }
 
-// New: convenience demo runner used by API imports that expect runDemoPipeline
-export async function runDemoPipeline(input = {}, ctxOverrides = {}) {
-  // load available agents and map by manifest.name or folder id
-  const agents = await loadAgents();
-  const agentMap = new Map(agents.map((a) => [a.manifest.name || a.id, a.execute]));
+function buildGraph(edges = []) {
+  const adjacency = new Map();
 
-  const pipeline = {
-    id: 'demo_pipeline',
-    nodes: [
-      {
-        id: 'n1',
-        agentName: 'Writer',
-        step: { override: { template: 'Привет, {{name}}!', vars: { name: 'Мир' } } }
-      },
-      { id: 'n2', agentName: 'StyleGuard' },
-      { id: 'n3', agentName: 'HumanGate' },
-      {
-        id: 'n4',
-        agentName: 'Uploader',
-        step: { override: { filename: 'greeting.txt' } }
-      }
-    ]
-  };
+  edges.forEach((edge) => {
+    if (!adjacency.has(edge.from)) {
+      adjacency.set(edge.from, []);
+    }
 
-  // inject executors into nodes (runPipeline expects node._execute)
-  pipeline.nodes = pipeline.nodes.map((n) => {
-    const exec = agentMap.get(n.agentName) || agentMap.get(n.agent) || null;
-    return { ...n, _execute: exec };
+    adjacency.get(edge.from).push(edge);
   });
 
-  // delegate to existing runPipeline implementation
-  return await runPipeline(pipeline, input, ctxOverrides);
+  return adjacency;
+}
+
+function findStartNodeId(pipeline) {
+  if (pipeline?.startId) {
+    return pipeline.startId;
+  }
+
+  if (pipeline?.start) {
+    return pipeline.start;
+  }
+
+  if (!Array.isArray(pipeline?.nodes) || pipeline.nodes.length === 0) {
+    return undefined;
+  }
+
+  if (!Array.isArray(pipeline?.edges) || pipeline.edges.length === 0) {
+    return pipeline.nodes[0].id;
+  }
+
+  const targets = new Set(pipeline.edges.map((edge) => edge.to));
+  const startNode = pipeline.nodes.find((node) => !targets.has(node.id));
+
+  return startNode ? startNode.id : pipeline.nodes[0].id;
+}
+
+function resolveValueFromPath(source, pathExpression) {
+  return pathExpression
+    .split('.')
+    .filter(Boolean)
+    .reduce((acc, key) => (acc && typeof acc === 'object' ? acc[key] : undefined), source);
+}
+
+function evaluateCondition(condition, payload) {
+  if (!condition) {
+    return true;
+  }
+
+  if (typeof condition === 'function') {
+    return Boolean(condition(payload));
+  }
+
+  if (typeof condition === 'string') {
+    const [pathExpression, expectedRaw] = condition.split('==');
+
+    if (!expectedRaw) {
+      return false;
+    }
+
+    const expectedValue = expectedRaw.trim().replace(/^['"]|['"]$/g, '');
+    const actualValue = resolveValueFromPath(payload, pathExpression.trim());
+
+    return actualValue === expectedValue;
+  }
+
+  if (typeof condition === 'object' && condition !== null) {
+    if ('equals' in condition && typeof condition.equals === 'object') {
+      const { path: pathExpr, value } = condition.equals;
+      const actualValue = resolveValueFromPath(payload, pathExpr);
+
+      return actualValue === value;
+    }
+  }
+
+  return false;
+}
+
+function determineNextNodes(currentNode, payload, adjacency) {
+  const outgoing = adjacency.get(currentNode.id) || [];
+
+  if (currentNode.kind === 'router') {
+    const matched = outgoing.filter((edge) => evaluateCondition(edge.condition, payload));
+
+    if (matched.length > 0) {
+      return matched.map((edge) => edge.to);
+    }
+
+    const fallthrough = outgoing.filter((edge) => !edge.condition);
+
+    return fallthrough.map((edge) => edge.to);
+  }
+
+  return outgoing.map((edge) => edge.to);
+}
+
+async function writeArtifact(runId, relativePath, content) {
+  const artifactRoot = path.join(ARTIFACTS_DIR, runId);
+  const destination = path.join(artifactRoot, relativePath);
+  const destinationDir = path.dirname(destination);
+
+  await ensureDir(destinationDir);
+
+  if (Buffer.isBuffer(content)) {
+    await fs.writeFile(destination, content);
+  } else if (typeof content === 'string') {
+    await fs.writeFile(destination, content, 'utf8');
+  } else {
+    await fs.writeFile(destination, JSON.stringify(content, null, 2), 'utf8');
+  }
+
+  const relativeToData = path.relative(DATA_DIR, destination).split(path.sep).join('/');
+
+  return {
+    absolutePath: destination,
+    relativePath: relativeToData
+  };
+}
+
+function buildContext(runId, pipeline, options, logFn, artifactCollector) {
+  const agentConfigMap =
+    options.agentConfigs instanceof Map
+      ? options.agentConfigs
+      : new Map(
+          Object.entries(options.agentConfigs || {}).map(([key, value]) => [key, value])
+        );
+
+  const context = {
+    runId,
+    project: pipeline?.project || null,
+    env: process.env,
+    override: options.override,
+    getAgentConfig(agentName) {
+      return agentConfigMap.get(agentName) || null;
+    },
+    async log(event, data) {
+      await logFn(event, data);
+    },
+    async setArtifact(relativePath, content) {
+      const artifactInfo = await writeArtifact(runId, relativePath, content);
+
+      artifactCollector(artifactInfo);
+
+      return artifactInfo;
+    }
+  };
+
+  if (options.providerManager) {
+    context.providers = options.providerManager.createExecutionContext(context);
+  }
+
+  return context;
+}
+
+/**
+ * Executes a pipeline graph using loaded agents.
+ * @param {object} pipeline - Pipeline definition with nodes and edges.
+ * @param {object} input - Initial payload passed to the first node.
+ * @param {object} options - Execution options ({ pluginRegistry, agentConfigs, override, runId }).
+ * @returns {Promise<object>} Execution result with payload, nodes state, and log path.
+ */
+export async function runPipeline(pipeline, input = {}, options = {}) {
+  const resolvedOptions = { ...defaultOptions, ...options };
+  const pluginRegistry = resolvedOptions.pluginRegistry;
+
+  if (!pluginRegistry) {
+    throw new Error('pluginRegistry is required to run pipeline');
+  }
+
+  const runId = resolvedOptions.runId || randomUUID();
+  const logDirPath = LOG_DIR;
+  await ensureDir(logDirPath);
+
+  const logFile = path.join(logDirPath, `run_${runId}.jsonl`);
+  const collectedArtifacts = [];
+
+  const logFn = async (event, data) => {
+    await writeLog(logFile, event, data);
+  };
+
+  const ctx = buildContext(runId, pipeline, resolvedOptions, logFn, (artifactInfo) => {
+    collectedArtifacts.push(artifactInfo.relativePath);
+  });
+
+  const adjacency = buildGraph(pipeline?.edges);
+  const nodesById = new Map((pipeline?.nodes || []).map((node) => [node.id, node]));
+  const results = [];
+
+  let payload = {
+    ...(input || {}),
+    _artifacts: []
+  };
+
+  const enqueue = [];
+  const visited = new Set();
+  const startId = findStartNodeId(pipeline);
+
+  if (!startId) {
+    throw new Error('Pipeline does not contain a start node');
+  }
+
+  enqueue.push(startId);
+
+  await logFn('pipeline:start', {
+    runId,
+    pipelineId: pipeline?.id || null,
+    name: pipeline?.name || null
+  });
+
+  while (enqueue.length > 0) {
+    const nodeId = enqueue.shift();
+
+    if (!nodesById.has(nodeId)) {
+      await logFn('pipeline:missing-node', { nodeId });
+      continue;
+    }
+
+    const node = nodesById.get(nodeId);
+    const retries = Number.isInteger(node.retries) && node.retries > 0 ? node.retries : 1;
+    let attempt = 0;
+    let success = false;
+    let lastError;
+    let nodeResult = null;
+
+    while (attempt < retries && !success) {
+      attempt += 1;
+
+      try {
+        await logFn('node:start', { nodeId, attempt, kind: node.kind, agentName: node.agentName });
+
+        const agentModule = pluginRegistry.getAgent(node.agentName);
+
+        if (!agentModule) {
+          throw new Error(`Agent "${node.agentName}" is not registered`);
+        }
+
+        const executionPayload = {
+          ...payload,
+          override: node.override ? { ...(payload.override || {}), ...node.override } : payload.override
+        };
+
+        const artifactBaseline = collectedArtifacts.length;
+
+        const result = await agentModule.execute(executionPayload, ctx);
+
+        if (!result || typeof result !== 'object') {
+          throw new Error(`Agent "${node.agentName}" returned invalid result`);
+        }
+
+        payload = {
+          ...payload,
+          ...result
+        };
+
+        if (!Array.isArray(payload._artifacts)) {
+          payload._artifacts = [];
+        }
+
+        const newArtifacts = collectedArtifacts.slice(artifactBaseline);
+
+        if (newArtifacts.length > 0) {
+          const artifactSet = new Set(payload._artifacts);
+          newArtifacts.forEach((artifact) => artifactSet.add(artifact));
+          payload._artifacts = Array.from(artifactSet);
+        }
+
+        nodeResult = {
+          id: node.id,
+          status: 'completed',
+          attempts: attempt,
+          outputSummary: result.summary || null,
+          finishedAt: new Date().toISOString()
+        };
+
+        await logFn('node:completed', { nodeId, attempts: attempt });
+        success = true;
+      } catch (error) {
+        lastError = error;
+        await logFn('node:error', {
+          nodeId,
+          attempt,
+          message: error.message,
+          stack: error.stack
+        });
+      }
+    }
+
+    if (!success) {
+      const failureRecord = {
+        id: node.id,
+        status: 'error',
+        attempts: retries,
+        error: lastError?.message || 'Unknown error',
+        finishedAt: new Date().toISOString()
+      };
+
+      results.push(failureRecord);
+
+      if (node.onError && typeof node.onError === 'string') {
+        if (node.onError === 'skip') {
+          continue;
+        }
+
+        if (node.onError.startsWith('route:')) {
+          const routeTarget = node.onError.split(':')[1];
+
+          if (routeTarget) {
+            enqueue.push(routeTarget);
+            continue;
+          }
+        }
+      }
+
+      await logFn('pipeline:failed', { nodeId, message: lastError?.message });
+
+      return {
+        runId,
+        status: 'failed',
+        payload,
+        nodes: [...results],
+        logFile
+      };
+    }
+
+    results.push(nodeResult);
+    visited.add(node.id);
+
+    const nextNodeIds = determineNextNodes(node, payload, adjacency);
+    nextNodeIds
+      .filter((nextId) => !!nextId)
+      .forEach((nextId) => {
+        if (!visited.has(nextId)) {
+          enqueue.push(nextId);
+        }
+      });
+  }
+
+  await logFn('pipeline:completed', { runId });
+
+  return {
+    runId,
+    status: 'completed',
+    payload,
+    nodes: results,
+    logFile
+  };
+}
+
+/**
+ * Convenience helper to run a simulated Writer → Uploader pipeline for development testing.
+ * @param {object} pluginRegistry
+ * @param {object} input
+ * @returns {Promise<object>}
+ */
+export async function runDemoPipeline(pluginRegistry, input = {}, options = {}) {
+  const demoPipeline = {
+    id: 'demo',
+    name: 'Writer → Uploader',
+    nodes: [
+      { id: 'writer', agentName: 'WriterStub', kind: 'task' },
+      { id: 'uploader', agentName: 'UploaderStub', kind: 'task' }
+    ],
+    edges: [{ from: 'writer', to: 'uploader' }]
+  };
+
+  return runPipeline(demoPipeline, input, { pluginRegistry, ...options });
 }
