@@ -16,7 +16,10 @@ cd app
 npm install
 ```
 
-Скрипт `postinstall` автоматически вытянет зависимости для папки `renderer/`.
+Скрипт `postinstall` автоматически вытянет зависимости для папки `renderer/` и выполнит `electron-builder install-app-deps`,
+чтобы пересобрать нативные модули (например, `better-sqlite3`) под текущую версию Electron.
+Перед запуском разработки выполняется `npm run ensure:native` — он кэширует последнюю версию Electron и повторно вызывает
+`electron-builder install-app-deps`, если бинарники устарели.
 
 ## Переменные окружения
 
@@ -118,8 +121,25 @@ node --input-type=module -e "
 |--------------------|--------------------------------------------|
 | `npm run dev`      | режим разработки (Electron + Vite)         |
 | `npm run build:ui` | прод‑сборка React UI                       |
-| `npm run build`    | сборка UI и генерация установщика          |
+| `npm run build`    | сборка UI, пересборка нативных модулей и генерация установщика |
 | `npm run dist`     | алиас для полного билда                    |
+| `npm run ensure:native` | принудительно пересобрать `better-sqlite3` под текущий Electron |
+| `./scripts/push-work-as-main.sh` | отправить локальную ветку `work` в удалённую `main` и настроить upstream |
+| `powershell -ExecutionPolicy Bypass -File scripts/push-work-as-main.ps1` | то же самое, но для PowerShell/Windows |
+
+### Быстрая синхронизация ветки `work` → `main`
+
+Если в репозитории есть локальная ветка `work`, а на GitHub используется `main`, воспользуйтесь скриптом:
+
+```bash
+./scripts/push-work-as-main.sh origin work main
+# или под Windows
+powershell -ExecutionPolicy Bypass -File scripts/push-work-as-main.ps1 -Remote origin -WorkBranch work -MainBranch main
+```
+
+- Аргументы по умолчанию: `origin work main`. Можно опустить, если имена стандартные.
+- Скрипты проверяют наличие удалённого репозитория и переключатся на `work`, если вы сейчас на другой ветке.
+- После выполнения локальная `work` будет связана с `origin/main`, поэтому последующие обновления выполняются обычной командой `git push`.
 
 ## Чек‑лист перед релизом
 

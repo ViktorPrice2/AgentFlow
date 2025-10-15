@@ -28,3 +28,6 @@ data/**
 # Logs
 logs/
 *.log
+
+# Native rebuild state
+app/.native-deps-state.json

@@ -10,10 +10,32 @@ const DEFAULT_BRIEF = {
   keyMessages: '',
   callToAction: '',
   successMetrics: '',
-  references: ''
+  references: '',
+  budget: ''
 };
 
-export function BriefPage({ project = null, brief = DEFAULT_BRIEF, onUpdateBrief, onNotify }) {
+const DEFAULT_LABELS = {
+  goals: 'Цели',
+  audience: 'Аудитория',
+  offer: 'Предложение',
+  tone: 'Тон',
+  keyMessages: 'Ключевые сообщения',
+  callToAction: 'Призыв',
+  successMetrics: 'Метрики',
+  references: 'Референсы',
+  budget: 'Бюджет'
+};
+
+export function BriefPage({
+  project = null,
+  brief = DEFAULT_BRIEF,
+  telegramBrief = null,
+  onUpdateBrief,
+  onNotify,
+  onRefreshTelegramBrief,
+  onGeneratePlan,
+  planText = ''
+}) {
   const [formState, setFormState] = useState({ ...DEFAULT_BRIEF, ...brief });
 
   useEffect(() => {
@@ -40,11 +62,25 @@ export function BriefPage({ project = null, brief = DEFAULT_BRIEF, onUpdateBrief
       { label: 'Ключевые сообщения', value: formState.keyMessages },
       { label: 'Призыв к действию', value: formState.callToAction },
       { label: 'Метрики успеха', value: formState.successMetrics },
-      { label: 'Референсы', value: formState.references }
+      { label: 'Референсы', value: formState.references },
+      { label: 'Бюджет', value: formState.budget }
     ];
 
     return fields.filter((field) => field.value?.trim()).map((field) => field.label);
   }, [formState]);
+
+  const telegramAnswers = useMemo(() => telegramBrief?.payload?.answers || null, [telegramBrief]);
+  const telegramUpdatedAt = useMemo(() => {
+    if (!telegramBrief?.updatedAt) {
+      return null;
+    }
+
+    try {
+      return new Date(telegramBrief.updatedAt).toLocaleString('ru-RU');
+    } catch (error) {
+      return telegramBrief.updatedAt;
+    }
+  }, [telegramBrief]);
 
   return (
     <div className="page-grid brief-grid">
@@ -125,6 +161,15 @@ export function BriefPage({ project = null, brief = DEFAULT_BRIEF, onUpdateBrief
             />
           </label>
           <label>
+            Бюджет кампании
+            <input
+              name="budget"
+              value={formState.budget}
+              onChange={handleChange}
+              placeholder="Например, 500 000 ₽ или диапазон"
+            />
+          </label>
+          <label>
             Референсы / ссылки
             <textarea
               name="references"
@@ -141,16 +186,83 @@ export function BriefPage({ project = null, brief = DEFAULT_BRIEF, onUpdateBrief
       </InfoCard>
 
       <InfoCard
-        title="Сводка для агентов"
+        title="Телеграм-опрос"
+        subtitle="Получайте данные от команды через бота и синхронизируйте бриф."
+        footer={
+          <div className="tg-brief__actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onRefreshTelegramBrief}
+              disabled={!project}
+            >
+              Обновить
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => onGeneratePlan(telegramBrief || formState)}
+              disabled={!project}
+            >
+              Сформировать план
+            </button>
+          </div>
+        }
+      >
+        {telegramBrief ? (
+          <div className="tg-brief__meta">
+            <p>
+              Статус:{' '}
+              <span className="status-label ok">получен</span>
+            </p>
+            {telegramUpdatedAt && <p className="hint">Обновлено: {telegramUpdatedAt}</p>}
+          </div>
+        ) : (
+          <p className="hint">
+            Нет сохранённых ответов Telegram-бота. Отправьте команду /setup и /finish, чтобы собрать бриф.
+          </p>
+        )}
+
+        {telegramAnswers ? (
+          <dl className="tg-brief__list">
+            {Object.entries(telegramAnswers)
+              .filter(([, value]) => value)
+              .map(([key, value]) => (
+                <div key={key} className="tg-brief__item">
+                  <dt>{DEFAULT_LABELS[key] || key}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+          </dl>
+        ) : (
+          <p>Ответы появятся здесь после завершения опроса.</p>
+        )}
+      </InfoCard>
+
+      <InfoCard
+        title="Сводка и план"
         subtitle="Список заполняется автоматически — помогает быстро оценить полноту брифа."
       >
-        <ul className="brief-summary">
-          {summary.length === 0 ? (
-            <li>Добавьте данные слева, чтобы сформировать сводку.</li>
-          ) : (
-            summary.map((item) => <li key={item}>{item}</li>)
-          )}
-        </ul>
+        <div className="brief-summary__grid">
+          <div>
+            <h4>Сводка</h4>
+            <ul className="brief-summary">
+              {summary.length === 0 ? (
+                <li>Добавьте данные слева, чтобы сформировать сводку.</li>
+              ) : (
+                summary.map((item) => <li key={item}>{item}</li>)
+              )}
+            </ul>
+          </div>
+          <div className="plan-output">
+            <h4>План кампании</h4>
+            <textarea
+              readOnly
+              value={planText}
+              placeholder="Нажмите «Сформировать план», чтобы получить готовый скелет кампании."
+            />
+          </div>
+        </div>
       </InfoCard>
     </div>
   );
@@ -169,8 +281,21 @@ BriefPage.propTypes = {
     keyMessages: PropTypes.string,
     callToAction: PropTypes.string,
     successMetrics: PropTypes.string,
-    references: PropTypes.string
+    references: PropTypes.string,
+    budget: PropTypes.string
+  }),
+  telegramBrief: PropTypes.shape({
+    id: PropTypes.string,
+    projectId: PropTypes.string,
+    summary: PropTypes.string,
+    updatedAt: PropTypes.string,
+    payload: PropTypes.shape({
+      answers: PropTypes.object
+    })
   }),
   onUpdateBrief: PropTypes.func.isRequired,
-  onNotify: PropTypes.func.isRequired
+  onNotify: PropTypes.func.isRequired,
+  onRefreshTelegramBrief: PropTypes.func.isRequired,
+  onGeneratePlan: PropTypes.func.isRequired,
+  planText: PropTypes.string
 };

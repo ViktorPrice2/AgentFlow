@@ -10,20 +10,22 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "concurrently -k -p \"[{name}]\" -n renderer,main \"npm run dev:renderer\" \"npm run dev:main\"",
+    "dev": "npm run ensure:native && concurrently -k -p \"[{name}]\" -n renderer,main \"npm run dev:renderer\" \"npm run dev:main\"",
     "dev:renderer": "cd renderer && npm run dev",
     "dev:main": "cross-env NODE_ENV=development ELECTRON_RENDERER_URL=http://localhost:5173 electron .",
     "build:ui": "cd renderer && npm run build",
-    "build": "npm run build:ui && electron-builder",
+    "build": "npm run build:ui && npm run ensure:native && electron-builder",
     "dist": "npm run build",
-    "postinstall": "cd renderer && npm install"
+    "postinstall": "npm install --prefix renderer && electron-builder install-app-deps",
+    "ensure:native": "node ./scripts/ensure-native-deps.js"
   },
   "dependencies": {
     "better-sqlite3": "^10.0.0",
     "cross-env": "^7.0.3",
     "dotenv": "^16.4.5",
     "electron-updater": "^6.1.6",
-    "keytar": "^7.9.0"
+    "keytar": "^7.9.0",
+    "telegraf": "^4.16.3"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.0.1",
@@ -45,6 +47,7 @@
     },
     "files": [
       "main/**/*",
+      "db/**/*",
       "core/**/*",
       "services/**/*",
       "renderer/dist/**/*",
