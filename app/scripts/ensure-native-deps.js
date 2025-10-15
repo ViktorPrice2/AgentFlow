@@ -22,6 +22,41 @@ const readJson = async (filePath) => {
   }
 };
 
+const runBinary = (binary, args = [], options = {}) => {
+  const binName = process.platform === 'win32' ? `${binary}.cmd` : binary;
+  const binPath = path.join(appRoot, 'node_modules', '.bin', binName);
+
+  const { cwd = appRoot, ...spawnOptions } = options;
+
+  const result = spawnSync(binPath, args, {
+    cwd,
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+    ...spawnOptions
+  });
+
+  if (result.error && result.error.code === 'ENOENT') {
+    console.warn('[native] Не найден бинарь %s, пропускаю.', binPath);
+    return false;
+  }
+
+  return result.status === 0;
+};
+
+const runNpm = (args, options = {}) => {
+  const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const { cwd = appRoot, ...spawnOptions } = options;
+
+  const result = spawnSync(npmBin, args, {
+    cwd,
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+    ...spawnOptions
+  });
+
+  return result.status === 0;
+};
+
 const ensureNativeDeps = async () => {
   const electronPkg = await readJson(path.join(appRoot, 'node_modules', 'electron', 'package.json'));
   const betterSqlitePkg = await readJson(path.join(appRoot, 'node_modules', 'better-sqlite3', 'package.json'));
@@ -50,18 +85,46 @@ const ensureNativeDeps = async () => {
 
   console.info('[native] Пересборка нативных модулей под Electron %s…', targetState.electronVersion);
 
-  const binName = process.platform === 'win32' ? 'electron-builder.cmd' : 'electron-builder';
-  const binPath = path.join(appRoot, 'node_modules', '.bin', binName);
+  const builderOk = runBinary('electron-builder', ['install-app-deps']);
 
-  const result = spawnSync(binPath, ['install-app-deps'], {
-    cwd: appRoot,
-    stdio: 'inherit',
-    shell: process.platform === 'win32'
-  });
+  if (!builderOk) {
+    console.warn('[native] electron-builder install-app-deps завершился с ошибкой, пробую prebuild-install для better-sqlite3…');
 
-  if (result.status !== 0) {
-    console.warn('[native] Не удалось пересобрать нативные зависимости автоматически. Выполните "npm run ensure:native" вручную с доступом в интернет.');
-    return;
+    const moduleDir = path.join(appRoot, 'node_modules', 'better-sqlite3');
+    const prebuildArgs = [
+      '--runtime=electron',
+      `--target=${targetState.electronVersion}`,
+      '--tag-prefix=electron-v',
+      '--force'
+    ];
+
+    const prebuildOk = runBinary('prebuild-install', prebuildArgs, { cwd: moduleDir });
+
+    if (!prebuildOk) {
+      console.warn('[native] prebuild-install не помог, пробую node-gyp-build…');
+
+      const nodeGypOk = runBinary('node-gyp-build', [], { cwd: moduleDir });
+
+      if (!nodeGypOk) {
+        console.warn('[native] node-gyp-build недоступен, пробую npm rebuild для better-sqlite3…');
+
+        const npmArgs = [
+          'rebuild',
+          'better-sqlite3',
+          `--runtime=electron`,
+          `--target=${targetState.electronVersion}`,
+          '--dist-url=https://electronjs.org/headers',
+          '--update-binary'
+        ];
+
+        const npmOk = runNpm(npmArgs, { cwd: moduleDir });
+
+        if (!npmOk) {
+          console.warn('[native] Не удалось пересобрать нативные зависимости автоматически. Выполните "npm run ensure:native" вручную с доступом в интернет.');
+          return;
+        }
+      }
+    }
   }
 
   await fs.writeFile(stateFile, JSON.stringify(targetState, null, 2));

@@ -19,7 +19,8 @@ npm install
 Скрипт `postinstall` автоматически вытянет зависимости для папки `renderer/` и выполнит `electron-builder install-app-deps`,
 чтобы пересобрать нативные модули (например, `better-sqlite3`) под текущую версию Electron.
 Перед запуском разработки выполняется `npm run ensure:native` — он кэширует последнюю версию Electron и повторно вызывает
-`electron-builder install-app-deps`, если бинарники устарели.
+`electron-builder install-app-deps`, если бинарники устарели. При сбоях скрипт дополнительно пробует `prebuild-install` и `node-gyp-build`
+непосредственно в каталоге `better-sqlite3`, поэтому на Windows достаточно стабильного интернет‑соединения и установленного MSVC.
 
 ## Переменные окружения
 
