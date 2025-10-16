@@ -68,10 +68,6 @@ export function BriefPage({
     : t('brief.telegram.statusInactive');
   const deeplink = project && telegramStatus?.deeplinkBase ? `${telegramStatus.deeplinkBase}?start=project=${project.id}` : null;
 
-  const latestBriefDetails = latestBrief?.details ?? {};
-  const statusLabel = telegramStatus?.running ? 'Бот активен' : 'Бот не запущен';
-  const deeplink = project && telegramStatus?.deeplinkBase ? `${telegramStatus.deeplinkBase}?start=project=${project.id}` : null;
-
   return (
     <div className="page-grid brief-grid">
       <InfoCard
@@ -182,8 +178,6 @@ export function BriefPage({
       <InfoCard
         title={t('brief.telegram.title')}
         subtitle={t('brief.telegram.subtitle')}
-        title="Telegram-бот"
-        subtitle="Получайте брифы из чата: обновите ответы и сформируйте план кампании."
         footer={
           <div className="button-row">
             <button
@@ -193,7 +187,6 @@ export function BriefPage({
               disabled={!project || isRefreshing}
             >
               {isRefreshing ? t('brief.telegram.refreshing') : t('brief.telegram.refresh')}
-              {isRefreshing ? 'Обновляем...' : 'Обновить'}
             </button>
             <button
               type="button"
@@ -202,7 +195,6 @@ export function BriefPage({
               disabled={!latestBrief || !project}
             >
               {t('brief.telegram.apply')}
-              Использовать в форме
             </button>
             <button
               type="button"
@@ -211,7 +203,6 @@ export function BriefPage({
               disabled={!project || isGenerating}
             >
               {isGenerating ? t('brief.telegram.generating') : t('brief.telegram.generate')}
-              {isGenerating ? 'Готовим...' : 'Сформировать план'}
             </button>
           </div>
         }
@@ -219,7 +210,6 @@ export function BriefPage({
         <div className="telegram-brief-status">
           <p>
             <strong>{t('common.status')}:</strong> {statusLabel}
-            <strong>Статус:</strong> {statusLabel}
             {telegramStatus?.lastError ? <span className="status-label warn">{telegramStatus.lastError}</span> : null}
           </p>
           {deeplink ? (
@@ -228,23 +218,17 @@ export function BriefPage({
             </p>
           ) : (
             <p className="hint">{t('brief.telegram.deeplinkHint')}</p>
-              Deeplink: <code>{deeplink}</code>
-            </p>
-          ) : (
-            <p className="hint">Скопируйте deeplink и запустите бота через вкладку «Настройки».</p>
           )}
         </div>
         {latestBrief ? (
           <div className="telegram-brief-preview">
             <p className="telegram-brief-preview__meta">
               {t('brief.telegram.receivedAt')}: {new Date(latestBrief.createdAt || latestBrief.updatedAt).toLocaleString(locale)}
-              Получен: {new Date(latestBrief.createdAt || latestBrief.updatedAt).toLocaleString('ru-RU')}
             </p>
             <ul>
               {Object.entries(latestBriefDetails).map(([key, value]) => (
                 <li key={key}>
                   <strong>{key}:</strong> {value || t('common.notAvailable')}
-                  <strong>{key}:</strong> {value || '—'}
                 </li>
               ))}
             </ul>
@@ -259,15 +243,6 @@ export function BriefPage({
           <pre className="plan-preview">{planText}</pre>
         ) : (
           <p className="hint">{t('brief.telegram.planEmpty')}</p>
-          <p className="hint">Пока нет брифов от Telegram-бота для текущего проекта.</p>
-        )}
-      </InfoCard>
-
-      <InfoCard title="План кампании" subtitle="Результат генератора по последнему брифу.">
-        {planText ? (
-          <pre className="plan-preview">{planText}</pre>
-        ) : (
-          <p className="hint">Сформируйте план после получения брифа из Telegram, чтобы увидеть шаги кампании.</p>
         )}
       </InfoCard>
     </div>

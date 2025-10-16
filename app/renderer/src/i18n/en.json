@@ -40,7 +40,10 @@
       "planProjectRequired": "Select a project to generate a plan",
       "planReady": "Campaign plan is ready",
       "planMissingData": "Not enough data for the plan — fill in the brief",
-      "planError": "Failed to generate campaign plan"
+      "planError": "Failed to generate campaign plan",
+      "genericError": "Unexpected error captured",
+      "genericWarn": "Warning recorded",
+      "genericInfo": "Notification received"
     }
   },
   "common": {

@@ -1,5 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+const ERROR_EVENT_CHANNEL = 'AgentFlow:error-bus:event';
+const ERROR_REPORT_CHANNEL = 'AgentFlow:error-bus:report';
+
 contextBridge.exposeInMainWorld('AgentAPI', {
   version: () => 'Phase 3 stub',
   listAgents: () => ipcRenderer.invoke('AgentFlow:agents:list'),
@@ -29,7 +32,34 @@ contextBridge.exposeInMainWorld('AgentAPI', {
     ipcRenderer.invoke('AgentFlow:schedules:toggle', { id: scheduleId, enabled }),
   runScheduleNow: (scheduleId) => ipcRenderer.invoke('AgentFlow:schedules:runNow', scheduleId),
   getSchedulerStatus: () => ipcRenderer.invoke('AgentFlow:schedules:status')
-    ipcRenderer.invoke('AgentFlow:diff:entity', { entityType, idA, idB })
+});
 
-  generateBriefPlan: (projectId) => ipcRenderer.invoke('AgentFlow:briefs:plan', projectId)
+contextBridge.exposeInMainWorld('ErrorAPI', {
+  subscribe(handler) {
+    if (typeof handler !== 'function') {
+      return () => {};
+    }
+
+    const listener = (_event, payload) => {
+      handler(payload);
+    };
+
+    ipcRenderer.on(ERROR_EVENT_CHANNEL, listener);
+
+    return () => {
+      ipcRenderer.removeListener(ERROR_EVENT_CHANNEL, listener);
+    };
+  },
+  report(payload = {}) {
+    ipcRenderer.send(ERROR_REPORT_CHANNEL, payload);
+  },
+  info(message, details) {
+    ipcRenderer.send(ERROR_REPORT_CHANNEL, { level: 'info', message, details });
+  },
+  warn(message, details) {
+    ipcRenderer.send(ERROR_REPORT_CHANNEL, { level: 'warn', message, details });
+  },
+  error(message, details) {
+    ipcRenderer.send(ERROR_REPORT_CHANNEL, { level: 'error', message, details });
+  }
 });
