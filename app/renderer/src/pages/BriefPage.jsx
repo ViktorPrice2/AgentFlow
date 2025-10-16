@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 
-const DEFAULT_BRIEF = {
+export const DEFAULT_BRIEF = {
   goals: '',
   audience: '',
   offer: '',
@@ -13,7 +13,20 @@ const DEFAULT_BRIEF = {
   references: ''
 };
 
-export function BriefPage({ project = null, brief = DEFAULT_BRIEF, onUpdateBrief, onNotify }) {
+export function BriefPage({
+  project = null,
+  brief = DEFAULT_BRIEF,
+  latestBrief = null,
+  planText = '',
+  telegramStatus = null,
+  onUpdateBrief,
+  onNotify,
+  onRefreshBrief = () => {},
+  onImportBrief = () => {},
+  onGeneratePlan = () => {},
+  isRefreshing = false,
+  isGenerating = false
+}) {
   const [formState, setFormState] = useState({ ...DEFAULT_BRIEF, ...brief });
 
   useEffect(() => {
@@ -45,6 +58,10 @@ export function BriefPage({ project = null, brief = DEFAULT_BRIEF, onUpdateBrief
 
     return fields.filter((field) => field.value?.trim()).map((field) => field.label);
   }, [formState]);
+
+  const latestBriefDetails = latestBrief?.details ?? {};
+  const statusLabel = telegramStatus?.running ? 'Бот активен' : 'Бот не запущен';
+  const deeplink = project && telegramStatus?.deeplinkBase ? `${telegramStatus.deeplinkBase}?start=project=${project.id}` : null;
 
   return (
     <div className="page-grid brief-grid">
@@ -152,6 +169,77 @@ export function BriefPage({ project = null, brief = DEFAULT_BRIEF, onUpdateBrief
           )}
         </ul>
       </InfoCard>
+
+      <InfoCard
+        title="Telegram-бот"
+        subtitle="Получайте брифы из чата: обновите ответы и сформируйте план кампании."
+        footer={
+          <div className="button-row">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onRefreshBrief}
+              disabled={!project || isRefreshing}
+            >
+              {isRefreshing ? 'Обновляем...' : 'Обновить'}
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onImportBrief}
+              disabled={!latestBrief || !project}
+            >
+              Использовать в форме
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={onGeneratePlan}
+              disabled={!project || isGenerating}
+            >
+              {isGenerating ? 'Готовим...' : 'Сформировать план'}
+            </button>
+          </div>
+        }
+      >
+        <div className="telegram-brief-status">
+          <p>
+            <strong>Статус:</strong> {statusLabel}
+            {telegramStatus?.lastError ? <span className="status-label warn">{telegramStatus.lastError}</span> : null}
+          </p>
+          {deeplink ? (
+            <p className="hint">
+              Deeplink: <code>{deeplink}</code>
+            </p>
+          ) : (
+            <p className="hint">Скопируйте deeplink и запустите бота через вкладку «Настройки».</p>
+          )}
+        </div>
+        {latestBrief ? (
+          <div className="telegram-brief-preview">
+            <p className="telegram-brief-preview__meta">
+              Получен: {new Date(latestBrief.createdAt || latestBrief.updatedAt).toLocaleString('ru-RU')}
+            </p>
+            <ul>
+              {Object.entries(latestBriefDetails).map(([key, value]) => (
+                <li key={key}>
+                  <strong>{key}:</strong> {value || '—'}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p className="hint">Пока нет брифов от Telegram-бота для текущего проекта.</p>
+        )}
+      </InfoCard>
+
+      <InfoCard title="План кампании" subtitle="Результат генератора по последнему брифу.">
+        {planText ? (
+          <pre className="plan-preview">{planText}</pre>
+        ) : (
+          <p className="hint">Сформируйте план после получения брифа из Telegram, чтобы увидеть шаги кампании.</p>
+        )}
+      </InfoCard>
     </div>
   );
 }
@@ -172,5 +260,24 @@ BriefPage.propTypes = {
     references: PropTypes.string
   }),
   onUpdateBrief: PropTypes.func.isRequired,
-  onNotify: PropTypes.func.isRequired
+  onNotify: PropTypes.func.isRequired,
+  latestBrief: PropTypes.shape({
+    id: PropTypes.string,
+    projectId: PropTypes.string,
+    summary: PropTypes.string,
+    details: PropTypes.object,
+    createdAt: PropTypes.string,
+    updatedAt: PropTypes.string
+  }),
+  planText: PropTypes.string,
+  telegramStatus: PropTypes.shape({
+    running: PropTypes.bool,
+    lastError: PropTypes.string,
+    deeplinkBase: PropTypes.string
+  }),
+  onRefreshBrief: PropTypes.func,
+  onImportBrief: PropTypes.func,
+  onGeneratePlan: PropTypes.func,
+  isRefreshing: PropTypes.bool,
+  isGenerating: PropTypes.bool
 };

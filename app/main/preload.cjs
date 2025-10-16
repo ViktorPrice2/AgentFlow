@@ -10,5 +10,15 @@ contextBridge.exposeInMainWorld('AgentAPI', {
     ipcRenderer.invoke('AgentFlow:pipeline:run', pipelineDefinition, payload),
   listPipelines: () => ipcRenderer.invoke('AgentFlow:pipeline:list'),
   upsertPipeline: (pipelineDefinition) =>
-    ipcRenderer.invoke('AgentFlow:pipeline:upsert', pipelineDefinition)
+    ipcRenderer.invoke('AgentFlow:pipeline:upsert', pipelineDefinition),
+  getTelegramStatus: () => ipcRenderer.invoke('AgentFlow:bot:status'),
+  setTelegramToken: (token) => ipcRenderer.invoke('AgentFlow:bot:setToken', token),
+  startTelegramBot: () => ipcRenderer.invoke('AgentFlow:bot:start'),
+  stopTelegramBot: () => ipcRenderer.invoke('AgentFlow:bot:stop'),
+  fetchLatestBrief: (projectId) => ipcRenderer.invoke('AgentFlow:briefs:latest', projectId),
+  generateBriefPlan: (projectId) => ipcRenderer.invoke('AgentFlow:briefs:plan', projectId),
+  listEntityHistory: (entityType, entityId) =>
+    ipcRenderer.invoke('AgentFlow:history:list', { entityType, entityId }),
+  diffEntityVersions: (entityType, idA, idB) =>
+    ipcRenderer.invoke('AgentFlow:diff:entity', { entityType, idA, idB })
 });

@@ -2,10 +2,12 @@ import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
 
-function AgentTable({ items = [], emptyMessage }) {
+function AgentTable({ items = [], emptyMessage, onShowHistory }) {
   if (!items || items.length === 0) {
     return <EmptyState title={emptyMessage} description="" />;
   }
+
+  const hasHistoryActions = typeof onShowHistory === 'function';
 
   return (
     <div className="table-wrapper">
@@ -17,6 +19,7 @@ function AgentTable({ items = [], emptyMessage }) {
             <th>Версия</th>
             <th>Источник</th>
             <th>Описание</th>
+            {hasHistoryActions ? <th>История</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -27,6 +30,18 @@ function AgentTable({ items = [], emptyMessage }) {
               <td>{agent.version || '—'}</td>
               <td>{agent.source || 'plugin'}</td>
               <td>{agent.description || '—'}</td>
+              {hasHistoryActions ? (
+                <td>
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => onShowHistory(agent)}
+                    disabled={!agent?.id}
+                  >
+                    Изменения
+                  </button>
+                </td>
+              ) : null}
             </tr>
           ))}
         </tbody>
@@ -46,14 +61,20 @@ AgentTable.propTypes = {
       description: PropTypes.string
     })
   ),
-  emptyMessage: PropTypes.string.isRequired
+  emptyMessage: PropTypes.string.isRequired,
+  onShowHistory: PropTypes.func
+};
+
+AgentTable.defaultProps = {
+  onShowHistory: undefined
 };
 
 export function AgentsPage({
   agentsData,
   providerStatus = [],
   onRefresh,
-  lastUpdated = null
+  lastUpdated = null,
+  onShowHistory
 }) {
   return (
     <div className="page-grid two-columns">
@@ -111,6 +132,7 @@ export function AgentsPage({
         <AgentTable
           items={agentsData.configs}
           emptyMessage="Конфигурации агентов ещё не созданы"
+          onShowHistory={onShowHistory}
         />
       </InfoCard>
     </div>
@@ -132,5 +154,11 @@ AgentsPage.propTypes = {
     })
   ),
   onRefresh: PropTypes.func.isRequired,
-  lastUpdated: PropTypes.string
+  lastUpdated: PropTypes.string,
+  onShowHistory: PropTypes.func
+};
+
+AgentsPage.defaultProps = {
+  lastUpdated: null,
+  onShowHistory: undefined
 };
