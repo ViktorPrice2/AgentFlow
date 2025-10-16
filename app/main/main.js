@@ -9,6 +9,7 @@ import { createProviderManager } from '../core/providers/manager.js';
 import { runMigrations } from '../db/migrate.js';
 import { registerTelegramIpcHandlers } from './ipcBot.js';
 
+
 const isDevelopment = process.env.NODE_ENV === 'development';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

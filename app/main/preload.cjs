@@ -16,9 +16,13 @@ contextBridge.exposeInMainWorld('AgentAPI', {
   startTelegramBot: () => ipcRenderer.invoke('AgentFlow:bot:start'),
   stopTelegramBot: () => ipcRenderer.invoke('AgentFlow:bot:stop'),
   fetchLatestBrief: (projectId) => ipcRenderer.invoke('AgentFlow:briefs:latest', projectId),
+
   generateBriefPlan: (projectId) => ipcRenderer.invoke('AgentFlow:briefs:plan', projectId),
   listEntityHistory: (entityType, entityId) =>
     ipcRenderer.invoke('AgentFlow:history:list', { entityType, entityId }),
   diffEntityVersions: (entityType, idA, idB) =>
     ipcRenderer.invoke('AgentFlow:diff:entity', { entityType, idA, idB })
+
+  generateBriefPlan: (projectId) => ipcRenderer.invoke('AgentFlow:briefs:plan', projectId)
+
 });
