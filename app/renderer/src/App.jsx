@@ -288,6 +288,32 @@ function App() {
     }
   };
 
+  const loadSchedulerStatus = async () => {
+    try {
+      const status = await getSchedulerStatus();
+      setSchedulerStatusState(status);
+      return status;
+    } catch (error) {
+      console.error('Failed to load scheduler status', error);
+      throw error;
+    }
+  };
+
+  const loadSchedules = async (projectId = selectedProjectId) => {
+    setSchedulesLoading(true);
+
+    try {
+      const scheduleList = await listSchedules(projectId);
+      setSchedules(scheduleList);
+      return scheduleList;
+    } catch (error) {
+      console.error('Failed to load schedules', error);
+      throw error;
+    } finally {
+      setSchedulesLoading(false);
+    }
+  };
+
   const handleCreateProject = (project) => {
     setProjects((prev) => {
       const filtered = prev.filter((item) => item.id !== project.id);
