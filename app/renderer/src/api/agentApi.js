@@ -27,6 +27,16 @@ const fallbackProviderStatus = [
   { id: 'stability', type: 'image', hasKey: false, apiKeyRef: 'STABILITY_API_KEY', models: ['sd3.5'] }
 ];
 
+const fallbackBotStatus = {
+  running: false,
+  tokenStored: false,
+  username: null,
+  lastError: 'Бот доступен только в настольном приложении',
+  startedAt: null,
+  lastActivityAt: null,
+  deeplinkBase: null
+};
+
 export async function listAgents() {
   if (hasWindowAPI && typeof agentApi.listAgents === 'function') {
     return agentApi.listAgents();
@@ -98,4 +108,82 @@ export async function runPipeline(pipeline, payload) {
 
 export function isAgentApiAvailable() {
   return hasWindowAPI;
+}
+
+function unwrapStatusResponse(response) {
+  if (response?.ok) {
+    return response.status ?? fallbackBotStatus;
+  }
+
+  throw new Error(response?.error || 'Не удалось получить ответ от Telegram-бота');
+}
+
+export async function getTelegramStatus() {
+  if (hasWindowAPI && typeof agentApi.getTelegramStatus === 'function') {
+    const response = await agentApi.getTelegramStatus();
+    return unwrapStatusResponse(response);
+  }
+
+  await fallbackDelay();
+  return fallbackBotStatus;
+}
+
+export async function setTelegramToken(token) {
+  if (hasWindowAPI && typeof agentApi.setTelegramToken === 'function') {
+    const response = await agentApi.setTelegramToken(token);
+    return unwrapStatusResponse(response);
+  }
+
+  await fallbackDelay();
+  return fallbackBotStatus;
+}
+
+export async function startTelegramBot() {
+  if (hasWindowAPI && typeof agentApi.startTelegramBot === 'function') {
+    const response = await agentApi.startTelegramBot();
+    return unwrapStatusResponse(response);
+  }
+
+  await fallbackDelay();
+  throw new Error('Запуск Telegram-бота доступен только в приложении');
+}
+
+export async function stopTelegramBot() {
+  if (hasWindowAPI && typeof agentApi.stopTelegramBot === 'function') {
+    const response = await agentApi.stopTelegramBot();
+    return unwrapStatusResponse(response);
+  }
+
+  await fallbackDelay();
+  return fallbackBotStatus;
+}
+
+export async function fetchLatestBrief(projectId) {
+  if (hasWindowAPI && typeof agentApi.fetchLatestBrief === 'function') {
+    const response = await agentApi.fetchLatestBrief(projectId);
+
+    if (response?.ok) {
+      return response.brief ?? null;
+    }
+
+    throw new Error(response?.error || 'Не удалось получить бриф');
+  }
+
+  await fallbackDelay();
+  return null;
+}
+
+export async function generateBriefPlan(projectId) {
+  if (hasWindowAPI && typeof agentApi.generateBriefPlan === 'function') {
+    const response = await agentApi.generateBriefPlan(projectId);
+
+    if (response?.ok) {
+      return response;
+    }
+
+    throw new Error(response?.error || 'Не удалось сформировать план кампании');
+  }
+
+  await fallbackDelay();
+  return { plan: '', brief: null };
 }

@@ -103,6 +103,12 @@ const bootstrapCore = async () => {
   }
 
   registerIpcHandlers({ ipcMain, pluginRegistry, providerManager });
+
+  try {
+    await registerTelegramIpcHandlers(ipcMain);
+  } catch (error) {
+    console.error('Failed to register Telegram IPC handlers:', error);
+  }
 };
 
 app.whenReady().then(async () => {
