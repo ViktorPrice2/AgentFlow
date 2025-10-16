@@ -37,6 +37,13 @@ const fallbackBotStatus = {
   deeplinkBase: null
 };
 
+const fallbackSchedulerStatus = {
+  running: false,
+  startedAt: null,
+  lastRunAt: null,
+  jobs: 0
+};
+
 export async function listAgents() {
   if (hasWindowAPI && typeof agentApi.listAgents === 'function') {
     return agentApi.listAgents();
@@ -143,6 +150,96 @@ export async function runPipeline(pipeline, payload) {
       nodes: []
     }
   };
+}
+
+export async function listSchedules(projectId) {
+  if (hasWindowAPI && typeof agentApi.listSchedules === 'function') {
+    const response = await agentApi.listSchedules(projectId);
+
+    if (response?.ok) {
+      return response.schedules ?? [];
+    }
+
+    throw new Error(response?.error || 'Не удалось получить расписания');
+  }
+
+  await fallbackDelay();
+  return [];
+}
+
+export async function upsertSchedule(schedule) {
+  if (hasWindowAPI && typeof agentApi.upsertSchedule === 'function') {
+    const response = await agentApi.upsertSchedule(schedule);
+
+    if (response?.ok) {
+      return response.schedule;
+    }
+
+    throw new Error(response?.error || 'Не удалось сохранить расписание');
+  }
+
+  await fallbackDelay();
+  return { ...schedule, id: schedule?.id || 'offline-schedule' };
+}
+
+export async function deleteSchedule(scheduleId) {
+  if (hasWindowAPI && typeof agentApi.deleteSchedule === 'function') {
+    const response = await agentApi.deleteSchedule(scheduleId);
+
+    if (response?.ok) {
+      return true;
+    }
+
+    throw new Error(response?.error || 'Не удалось удалить расписание');
+  }
+
+  await fallbackDelay();
+  return true;
+}
+
+export async function toggleSchedule(scheduleId, enabled) {
+  if (hasWindowAPI && typeof agentApi.toggleSchedule === 'function') {
+    const response = await agentApi.toggleSchedule(scheduleId, enabled);
+
+    if (response?.ok) {
+      return response.schedule;
+    }
+
+    throw new Error(response?.error || 'Не удалось обновить расписание');
+  }
+
+  await fallbackDelay();
+  return { id: scheduleId, enabled };
+}
+
+export async function runScheduleNow(scheduleId) {
+  if (hasWindowAPI && typeof agentApi.runScheduleNow === 'function') {
+    const response = await agentApi.runScheduleNow(scheduleId);
+
+    if (response?.ok) {
+      return true;
+    }
+
+    throw new Error(response?.error || 'Не удалось запустить расписание');
+  }
+
+  await fallbackDelay();
+  return true;
+}
+
+export async function getSchedulerStatus() {
+  if (hasWindowAPI && typeof agentApi.getSchedulerStatus === 'function') {
+    const response = await agentApi.getSchedulerStatus();
+
+    if (response?.ok) {
+      return response.status ?? fallbackSchedulerStatus;
+    }
+
+    throw new Error(response?.error || 'Не удалось получить статус планировщика');
+  }
+
+  await fallbackDelay();
+  return fallbackSchedulerStatus;
 }
 
 export function isAgentApiAvailable() {

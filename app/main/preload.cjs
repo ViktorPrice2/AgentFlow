@@ -20,9 +20,17 @@ contextBridge.exposeInMainWorld('AgentAPI', {
   listEntityHistory: (entityType, entityId) =>
     ipcRenderer.invoke('AgentFlow:history:list', { entityType, entityId }),
   diffEntityVersions: (entityType, idA, idB) =>
+    ipcRenderer.invoke('AgentFlow:diff:entity', { entityType, idA, idB }),
+  listSchedules: (projectId) =>
+    ipcRenderer.invoke('AgentFlow:schedules:list', { projectId }),
+  upsertSchedule: (schedule) => ipcRenderer.invoke('AgentFlow:schedules:upsert', schedule),
+  deleteSchedule: (scheduleId) => ipcRenderer.invoke('AgentFlow:schedules:delete', scheduleId),
+  toggleSchedule: (scheduleId, enabled) =>
+    ipcRenderer.invoke('AgentFlow:schedules:toggle', { id: scheduleId, enabled }),
+  runScheduleNow: (scheduleId) => ipcRenderer.invoke('AgentFlow:schedules:runNow', scheduleId),
+  getSchedulerStatus: () => ipcRenderer.invoke('AgentFlow:schedules:status')
     ipcRenderer.invoke('AgentFlow:diff:entity', { entityType, idA, idB })
 
   generateBriefPlan: (projectId) => ipcRenderer.invoke('AgentFlow:briefs:plan', projectId)
-
 
 });

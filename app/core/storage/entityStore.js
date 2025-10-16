@@ -1,4 +1,7 @@
 import path from 'node:path';
+
+import { randomUUID } from 'node:crypto';
+
 import Database from 'better-sqlite3';
 
 const DEFAULT_DB_PATH = path.join(process.cwd(), 'data', 'app.db');
@@ -87,6 +90,24 @@ function buildPipelineRecord(row) {
     createdAt: row.createdAt || payload.createdAt || null,
     updatedAt: row.updatedAt || payload.updatedAt || null,
     payload: normalizedPayload
+  };
+}
+
+
+function buildScheduleRecord(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    projectId: row.projectId || null,
+    pipelineId: row.pipelineId || null,
+    cron: row.cron,
+    enabled: row.enabled === 1,
+    nextRun: row.nextRun || null,
+    createdAt: row.createdAt || null,
+    updatedAt: row.updatedAt || null
   };
 }
 
@@ -295,6 +316,28 @@ export function createEntityStore(options = {}) {
     }
   }
 
+  function getPipelineById(id) {
+    if (!id) {
+      throw new Error('Pipeline id is required');
+    }
+
+    const db = openDatabase(dbPath);
+
+    try {
+      const row = db
+        .prepare(
+          `SELECT id, projectId, name, definition, version, createdAt, updatedAt
+             FROM Pipelines
+            WHERE id = ?`
+        )
+        .get(id);
+
+      return row ? buildPipelineRecord(row) : null;
+    } finally {
+      db.close();
+    }
+  }
+
   function savePipeline(pipeline) {
     if (!pipeline || (!pipeline.id && !pipeline.name)) {
       throw new Error('Pipeline definition must include id or name');
@@ -451,10 +494,161 @@ export function createEntityStore(options = {}) {
     return map;
   }
 
+  function listSchedules(filter = {}) {
+    const db = openDatabase(dbPath);
+
+    try {
+      let query =
+        `SELECT id, projectId, pipelineId, cron, enabled, nextRun, createdAt, updatedAt
+           FROM Schedules`;
+      const params = [];
+
+      if (filter.projectId) {
+        query += ' WHERE projectId = ?';
+        params.push(filter.projectId);
+      }
+
+      query += ' ORDER BY datetime(COALESCE(updatedAt, createdAt)) DESC';
+
+      const rows = db.prepare(query).all(...params);
+
+      return rows.map((row) => buildScheduleRecord(row));
+    } finally {
+      db.close();
+    }
+  }
+
+  function getScheduleById(id) {
+    if (!id) {
+      throw new Error('Schedule id is required');
+    }
+
+    const db = openDatabase(dbPath);
+
+    try {
+      const row = db
+        .prepare(
+          `SELECT id, projectId, pipelineId, cron, enabled, nextRun, createdAt, updatedAt
+             FROM Schedules
+            WHERE id = ?`
+        )
+        .get(id);
+
+      return buildScheduleRecord(row);
+    } finally {
+      db.close();
+    }
+  }
+
+  function saveSchedule(schedule) {
+    if (!schedule?.cron) {
+      throw new Error('Schedule must include a cron expression');
+    }
+
+    if (!schedule?.pipelineId) {
+      throw new Error('Schedule must reference a pipeline');
+    }
+
+    const db = openDatabase(dbPath);
+    const now = new Date().toISOString();
+
+    try {
+      const existing = schedule.id
+        ? db.prepare('SELECT id FROM Schedules WHERE id = ?').get(schedule.id)
+        : null;
+
+      const id = existing?.id || schedule.id || randomUUID();
+      const projectId = schedule.projectId || null;
+      const cronExpression = schedule.cron.trim();
+      const enabled = schedule.enabled === false ? 0 : 1;
+      const nextRun = schedule.nextRun || null;
+
+      if (existing) {
+        db.prepare(
+          `UPDATE Schedules
+              SET projectId = ?, pipelineId = ?, cron = ?, enabled = ?, nextRun = ?, updatedAt = ?
+            WHERE id = ?`
+        ).run(projectId, schedule.pipelineId, cronExpression, enabled, nextRun, now, id);
+      } else {
+        db.prepare(
+          `INSERT INTO Schedules (id, projectId, pipelineId, cron, enabled, nextRun, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(id, projectId, schedule.pipelineId, cronExpression, enabled, nextRun, now, now);
+      }
+
+      return getScheduleById(id);
+    } finally {
+      db.close();
+    }
+  }
+
+  function deleteSchedule(id) {
+    if (!id) {
+      throw new Error('Schedule id is required');
+    }
+
+    const db = openDatabase(dbPath);
+
+    try {
+      db.prepare('DELETE FROM Schedules WHERE id = ?').run(id);
+    } finally {
+      db.close();
+    }
+  }
+
+  function setScheduleEnabled(id, enabled) {
+    if (!id) {
+      throw new Error('Schedule id is required');
+    }
+
+    const db = openDatabase(dbPath);
+    const now = new Date().toISOString();
+
+    try {
+      db.prepare('UPDATE Schedules SET enabled = ?, updatedAt = ? WHERE id = ?').run(
+        enabled ? 1 : 0,
+        now,
+        id
+      );
+    } finally {
+      db.close();
+    }
+  }
+
+  function updateScheduleNextRun(id, nextRun) {
+    if (!id) {
+      throw new Error('Schedule id is required');
+    }
+
+    const db = openDatabase(dbPath);
+    const now = new Date().toISOString();
+
+    try {
+      db.prepare('UPDATE Schedules SET nextRun = ?, updatedAt = ? WHERE id = ?').run(
+        nextRun,
+        now,
+        id
+      );
+    } finally {
+      db.close();
+    }
+  }
+
   return {
     listAgentRecords,
     saveAgent,
     listPipelines,
+    getPipelineById,
+    savePipeline,
+    listHistory,
+    diffEntityVersions,
+    buildAgentConfigMap,
+    listSchedules,
+    getScheduleById,
+    saveSchedule,
+    deleteSchedule,
+    setScheduleEnabled,
+    updateScheduleNextRun,
     savePipeline,
     listHistory,
     diffEntityVersions,

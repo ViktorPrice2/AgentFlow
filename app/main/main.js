@@ -8,12 +8,14 @@ import { registerIpcHandlers } from '../core/api.js';
 import { createProviderManager } from '../core/providers/manager.js';
 import { runMigrations } from '../db/migrate.js';
 import { registerTelegramIpcHandlers } from './ipcBot.js';
+import { createScheduler, registerSchedulerIpcHandlers } from '../core/scheduler.js';
 
 const isDevelopment = process.env.NODE_ENV === 'development';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 let pluginRegistry;
 let providerManager;
+let scheduler;
 const rendererDistPath = path.join(__dirname, '../renderer/dist/index.html');
 
 dotenv.config({ path: path.join(process.cwd(), '.env') });
@@ -105,6 +107,13 @@ const bootstrapCore = async () => {
 
   registerIpcHandlers({ ipcMain, pluginRegistry, providerManager });
 
+  if (!scheduler) {
+    scheduler = createScheduler({ pluginRegistry, providerManager });
+    await scheduler.start();
+  }
+
+  registerSchedulerIpcHandlers(ipcMain, scheduler);
+
   try {
     await registerTelegramIpcHandlers(ipcMain);
   } catch (error) {
@@ -129,5 +138,15 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
+  }
+});
+
+app.on('before-quit', async () => {
+  if (scheduler) {
+    try {
+      await scheduler.stop();
+    } catch (error) {
+      console.error('Failed to stop scheduler gracefully:', error);
+    }
   }
 });

@@ -144,8 +144,22 @@
   gap: 6px;
 }
 
+.checkbox-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  color: #0f172a;
+}
+
+.checkbox-inline input {
+  width: 18px;
+  height: 18px;
+}
+
 .form input,
-.form textarea {
+.form textarea,
+.form select {
   border-radius: 10px;
   border: 1px solid #cbd5f5;
   padding: 10px 12px;
@@ -156,7 +170,8 @@
 }
 
 .form input:focus,
-.form textarea:focus {
+.form textarea:focus,
+.form select:focus {
   outline: none;
   border-color: #2563eb;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
@@ -329,6 +344,13 @@
 
 .empty-state__action {
   margin-top: 12px;
+}
+
+.small-text {
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.5;
+  margin: 0;
 }
 
 .brief-summary {

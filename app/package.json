@@ -25,6 +25,7 @@
     "electron-builder": "^24.13.3",
     "electron-updater": "^6.1.6",
     "keytar": "^7.9.0",
+    "node-cron": "^3.0.3",
     "telegraf": "^4.16.3"
   },
   "devDependencies": {

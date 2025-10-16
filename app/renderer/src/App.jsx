@@ -8,7 +8,17 @@ import {
   listAgents,
   listPipelines,
   listProviderStatus,
+  listSchedules,
   runPipeline,
+  upsertSchedule,
+  setTelegramToken,
+  startTelegramBot,
+  stopTelegramBot,
+  upsertPipeline,
+  deleteSchedule,
+  toggleSchedule,
+  runScheduleNow,
+  getSchedulerStatus
   setTelegramToken,
   startTelegramBot,
   stopTelegramBot,
@@ -23,6 +33,7 @@ import { PipelinesPage } from './pages/PipelinesPage.jsx';
 import { RunsPage } from './pages/RunsPage.jsx';
 import { ReportsPage } from './pages/ReportsPage.jsx';
 import { SettingsPage } from './pages/SettingsPage.jsx';
+import { SchedulerPage } from './pages/SchedulerPage.jsx';
 import { usePersistentState } from './hooks/usePersistentState.js';
 import { VersionHistoryModal } from './components/VersionHistoryModal.jsx';
 
@@ -33,6 +44,7 @@ const SECTIONS = [
   { id: 'pipelines', label: 'Пайплайны' },
   { id: 'runs', label: 'Запуски' },
   { id: 'reports', label: 'Отчёты' },
+  { id: 'scheduler', label: 'Планировщик' },
   { id: 'settings', label: 'Настройки' }
 ];
 
@@ -151,6 +163,9 @@ function App() {
   const [briefLoading, setBriefLoading] = useState(false);
   const [planDraft, setPlanDraft] = useState({ text: '', updatedAt: null });
   const [planLoading, setPlanLoading] = useState(false);
+  const [schedules, setSchedules] = useState([]);
+  const [schedulerStatusState, setSchedulerStatusState] = useState(null);
+  const [schedulesLoading, setSchedulesLoading] = useState(false);
   const [versionModal, setVersionModal] = useState({
     open: false,
     entityType: null,
@@ -190,6 +205,16 @@ function App() {
     setLatestBrief(null);
   }, [selectedProjectId]);
 
+  useEffect(() => {
+    loadSchedulerStatus().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    loadSchedules(selectedProjectId).catch((error) => {
+      showToast(error.message || 'Не удалось загрузить расписания', 'error');
+    });
+  }, [selectedProjectId]);
+
   const handleRefreshBotStatus = async () => {
     await refreshBotStatus();
     showToast('Статус Telegram обновлён', 'info');
@@ -199,6 +224,32 @@ function App() {
     setToast({ message, type });
     if (message) {
       setTimeout(() => setToast({ message: null, type: 'info' }), 4000);
+    }
+  };
+
+  const loadSchedulerStatus = async () => {
+    try {
+      const status = await getSchedulerStatus();
+      setSchedulerStatusState(status);
+      return status;
+    } catch (error) {
+      console.error('Failed to load scheduler status', error);
+      throw error;
+    }
+  };
+
+  const loadSchedules = async (projectId = selectedProjectId) => {
+    setSchedulesLoading(true);
+
+    try {
+      const scheduleList = await listSchedules(projectId);
+      setSchedules(scheduleList);
+      return scheduleList;
+    } catch (error) {
+      console.error('Failed to load schedules', error);
+      throw error;
+    } finally {
+      setSchedulesLoading(false);
     }
   };
 
@@ -396,6 +447,50 @@ function App() {
     }
   };
 
+  const handleRefreshSchedules = async () => {
+    await Promise.all([loadSchedules(selectedProjectId), loadSchedulerStatus()]);
+  };
+
+  const handleSaveSchedule = async (schedule) => {
+    try {
+      const stored = await upsertSchedule(schedule);
+      await handleRefreshSchedules();
+      return stored;
+    } catch (error) {
+      await loadSchedulerStatus().catch(() => {});
+      throw error;
+    }
+  };
+
+  const handleDeleteSchedule = async (scheduleId) => {
+    try {
+      await deleteSchedule(scheduleId);
+      await handleRefreshSchedules();
+    } catch (error) {
+      await loadSchedulerStatus().catch(() => {});
+      throw error;
+    }
+  };
+
+  const handleToggleSchedule = async (scheduleId, enabled) => {
+    try {
+      await toggleSchedule(scheduleId, enabled);
+      await handleRefreshSchedules();
+    } catch (error) {
+      await loadSchedulerStatus().catch(() => {});
+      throw error;
+    }
+  };
+
+  const handleRunScheduleNow = async (scheduleId) => {
+    try {
+      await runScheduleNow(scheduleId);
+      await loadSchedulerStatus();
+    } catch (error) {
+      throw error;
+    }
+  };
+
   const currentSection = useMemo(() => {
     switch (activeSection) {
       case 'projects':
@@ -453,6 +548,22 @@ function App() {
         return <RunsPage runs={runs} onClear={handleClearRuns} />;
       case 'reports':
         return <ReportsPage runs={runs} />;
+      case 'scheduler':
+        return (
+          <SchedulerPage
+            project={selectedProject}
+            pipelines={pipelines}
+            schedules={schedules}
+            status={schedulerStatusState}
+            onRefresh={handleRefreshSchedules}
+            onSubmit={handleSaveSchedule}
+            onDelete={handleDeleteSchedule}
+            onToggle={handleToggleSchedule}
+            onRunNow={handleRunScheduleNow}
+            isLoading={schedulesLoading}
+            onNotify={showToast}
+          />
+        );
       case 'settings':
       default:
         return (
@@ -485,6 +596,10 @@ function App() {
     latestBrief,
     planDraft,
     briefLoading,
+    planLoading,
+    schedules,
+    schedulerStatusState,
+    schedulesLoading,
     planLoading
   ]);
 
