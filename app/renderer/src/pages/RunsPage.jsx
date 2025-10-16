@@ -1,40 +1,45 @@
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
+import { useI18n } from '../i18n/useI18n.js';
 
 export function RunsPage({ runs = [], onClear }) {
+  const { t, language } = useI18n();
+  const locale = language === 'en' ? 'en-US' : 'ru-RU';
+
   return (
     <InfoCard
-      title="Запуски"
-      subtitle="История выполненных пайплайнов. Логи и артефакты сохраняются в папке data."
+      title={t('runs.title')}
+      subtitle={t('runs.subtitle')}
       footer={
         runs.length > 0 ? (
           <button type="button" className="secondary-button" onClick={onClear}>
-            Очистить историю
+            {t('runs.clear')}
           </button>
         ) : null
       }
     >
       {runs.length === 0 ? (
-        <EmptyState
-          title="Ещё не было запусков"
-          description="После выполнения пайплайна краткий отчёт появится здесь."
-        />
+        <EmptyState title={t('runs.emptyTitle')} description={t('runs.emptyDescription')} />
       ) : (
         <div className="runs-list">
           {runs.map((run) => (
             <article key={run.id} className={`run-card run-${run.status}`}>
               <header>
-                <h4>{run.pipelineName || 'Pipeline'}</h4>
-                <span>{new Date(run.timestamp).toLocaleString('ru-RU')}</span>
+                <h4>{run.pipelineName || t('common.pipeline')}</h4>
+                <span>{new Date(run.timestamp).toLocaleString(locale)}</span>
               </header>
-              <p>Статус: {run.status}</p>
-              {run.projectName ? <p>Проект: {run.projectName}</p> : null}
-              {run.summary ? <p>Сводка: {run.summary}</p> : null}
+              <p>
+                {t('runs.status')}: {run.status}
+              </p>
+              {run.projectName ? <p>{t('runs.project')}: {run.projectName}</p> : null}
+              {run.summary ? <p>{t('runs.summary')}: {run.summary}</p> : null}
               {run.artifacts && run.artifacts.length > 0 ? (
-                <p>Артефакты: {run.artifacts.join(', ')}</p>
+                <p>
+                  {t('runs.artifacts')}: {run.artifacts.join(', ')}
+                </p>
               ) : (
-                <p>Артефактов не было.</p>
+                <p>{t('runs.noArtifacts')}</p>
               )}
             </article>
           ))}

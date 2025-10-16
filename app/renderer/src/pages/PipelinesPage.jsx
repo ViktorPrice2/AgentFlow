@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
+import { useI18n } from '../i18n/useI18n.js';
 
 const DEFAULT_NODES = [
   { id: 'writer', agentName: 'WriterAgent', kind: 'task' },
@@ -30,8 +31,10 @@ export function PipelinesPage({
   onRunPipeline,
   onRefresh,
   isAgentOnline = true,
-  onNotify
+  onNotify,
+  onShowHistory
 }) {
+  const { t } = useI18n();
   const [formState, setFormState] = useState(INITIAL_FORM_STATE);
 
   const runContext = useMemo(() => {
@@ -50,7 +53,7 @@ export function PipelinesPage({
     event.preventDefault();
 
     if (!formState.name.trim()) {
-      onNotify('Имя пайплайна обязательно', 'error');
+      onNotify(t('pipelines.toast.nameRequired'), 'error');
       return;
     }
 
@@ -60,7 +63,7 @@ export function PipelinesPage({
       try {
         overrideData = JSON.parse(formState.override);
       } catch (error) {
-        onNotify('Некорректный JSON в поле Override', 'error');
+        onNotify(t('pipelines.toast.overrideError'), 'error');
         return;
       }
     }
@@ -76,7 +79,7 @@ export function PipelinesPage({
     };
 
     onCreatePipeline(pipeline);
-    onNotify('Пайплайн сохранён', 'success');
+    onNotify(t('pipelines.toast.saved'), 'success');
     setFormState(INITIAL_FORM_STATE);
   };
 
@@ -87,28 +90,37 @@ export function PipelinesPage({
   return (
     <div className="page-grid">
       <InfoCard
-        title="Пайплайны"
-        subtitle="Линейные сценарии: Writer → StyleGuard → HumanGate → Uploader. Позже добавим визуальный редактор."
+        title={t('pipelines.list.title')}
+        subtitle={t('pipelines.list.subtitle')}
         footer={
           <button type="button" className="secondary-button" onClick={onRefresh}>
-            Обновить список
+            {t('pipelines.list.refresh')}
           </button>
         }
       >
         {pipelines.length === 0 ? (
           <EmptyState
-            title="Пайплайны ещё не созданы"
-            description="Используйте форму справа, чтобы сохранить первый сценарий."
+            title={t('pipelines.list.emptyTitle')}
+            description={t('pipelines.list.emptyDescription')}
           />
         ) : (
           <div className="pipeline-list">
             {pipelines.map((pipeline) => (
               <article key={pipeline.id} className="pipeline-card">
                 <header>
-                  <h4>{pipeline.name}</h4>
-                  <span>{pipeline.projectId ? `Проект: ${pipeline.projectId}` : 'Без проекта'}</span>
+                  <div className="pipeline-header-info">
+                    <h4>{pipeline.name}</h4>
+                    <span>
+                      {pipeline.projectId
+                        ? t('pipelines.list.project', { project: pipeline.projectId })
+                        : t('pipelines.list.noProject')}
+                    </span>
+                  </div>
+                  {pipeline.version ? (
+                    <span className="pipeline-version">v{pipeline.version}</span>
+                  ) : null}
                 </header>
-                <p>{pipeline.description || 'Описание не указано'}</p>
+                <p>{pipeline.description || t('pipelines.list.descriptionMissing')}</p>
                 <ul className="pipeline-flow">
                   {pipeline.nodes.map((node) => (
                     <li key={node.id}>
@@ -124,8 +136,17 @@ export function PipelinesPage({
                     onClick={() => handleRun(pipeline)}
                     disabled={!isAgentOnline}
                   >
-                    Запустить
+                    {t('pipelines.list.run')}
                   </button>
+                  {typeof onShowHistory === 'function' ? (
+                    <button
+                      type="button"
+                      className="link-button"
+                      onClick={() => onShowHistory(pipeline)}
+                    >
+                      {t('pipelines.list.history')}
+                    </button>
+                  ) : null}
                 </footer>
               </article>
             ))}
@@ -134,43 +155,43 @@ export function PipelinesPage({
       </InfoCard>
 
       <InfoCard
-        title="Создать пайплайн"
-        subtitle="Задайте название, описание и при необходимости JSON-override для шагов."
+        title={t('pipelines.form.title')}
+        subtitle={t('pipelines.form.subtitle')}
       >
         <form className="form" onSubmit={handleSubmit}>
           <label>
-            Название
+            {t('pipelines.form.name')}
             <input
               name="name"
               value={formState.name}
               onChange={handleChange}
-              placeholder="Лонгрид + посты"
+              placeholder={t('pipelines.form.namePlaceholder')}
             />
           </label>
           <label>
-            Описание
+            {t('pipelines.form.description')}
             <textarea
               name="description"
               rows={3}
               value={formState.description}
               onChange={handleChange}
-              placeholder="Кратко опишите, что делает сценарий"
+              placeholder={t('pipelines.form.descriptionPlaceholder')}
             />
           </label>
           <label>
-            Override (JSON)
+            {t('pipelines.form.override')}
             <textarea
               name="override"
               rows={6}
               value={formState.override}
               onChange={handleChange}
-              placeholder='{"writer":{"params":{"tone":"friendly"}}}'
+              placeholder={t('pipelines.form.overridePlaceholder')}
             />
           </label>
           <button type="submit" className="primary-button" disabled={!project}>
-            Сохранить пайплайн
+            {t('pipelines.form.submit')}
           </button>
-          {!project ? <p className="hint">Выберите проект, чтобы привязать сценарий.</p> : null}
+          {!project ? <p className="hint">{t('pipelines.form.projectHint')}</p> : null}
         </form>
       </InfoCard>
     </div>
@@ -196,5 +217,14 @@ PipelinesPage.propTypes = {
   onRunPipeline: PropTypes.func.isRequired,
   onRefresh: PropTypes.func.isRequired,
   isAgentOnline: PropTypes.bool,
-  onNotify: PropTypes.func.isRequired
+  onNotify: PropTypes.func.isRequired,
+  onShowHistory: PropTypes.func
+};
+
+PipelinesPage.defaultProps = {
+  pipelines: [],
+  project: null,
+  brief: {},
+  isAgentOnline: true,
+  onShowHistory: undefined
 };

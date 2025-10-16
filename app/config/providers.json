@@ -5,20 +5,38 @@
       "type": "llm",
       "models": ["gpt-4o-mini", "gpt-4o"],
       "apiKeyRef": "OPENAI_API_KEY",
-      "baseUrl": "https://api.openai.com/v1"
+      "baseUrl": "https://api.openai.com/v1",
+      "limits": {
+        "rateLimit": {
+          "rps": 3,
+          "burst": 6
+        }
+      }
     },
     {
       "id": "gemini",
       "type": "llm",
       "models": ["gemini-2.0-flash"],
       "apiKeyRef": "GOOGLE_API_KEY",
-      "baseUrl": "https://generativelanguage.googleapis.com/v1beta"
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+      "limits": {
+        "rateLimit": {
+          "rps": 2,
+          "burst": 4
+        }
+      }
     },
     {
       "id": "ollama",
       "type": "llm",
       "models": ["llama3.1:8b"],
-      "baseUrl": "http://localhost:11434"
+      "baseUrl": "http://localhost:11434",
+      "limits": {
+        "rateLimit": {
+          "rps": 1,
+          "burst": 2
+        }
+      }
     },
     {
       "id": "stability",
@@ -47,6 +65,22 @@
     "video": {
       "provider": "higgs",
       "model": "studio-v"
+    }
+  },
+  "limits": {
+    "rateLimit": {
+      "rps": 3,
+      "burst": 6
+    },
+    "retry": {
+      "maxRetries": 3,
+      "baseDelayMs": 300,
+      "maxDelayMs": 6000
+    },
+    "breaker": {
+      "threshold": 5,
+      "intervalMs": 60000,
+      "cooldownMs": 120000
     }
   }
 }

@@ -1,7 +1,8 @@
 import { runPipeline, runDemoPipeline } from './orchestrator.js';
+import { createEntityStore } from './storage/entityStore.js';
 
 const agentConfigs = new Map();
-const pipelines = new Map();
+const entityStore = createEntityStore();
 
 const defaultAgentConfigs = [
   {
@@ -105,30 +106,37 @@ function ensureDefaultAgentConfigs() {
   });
 }
 
-ensureDefaultAgentConfigs();
+function refreshStoredAgentConfigs() {
+  agentConfigs.clear();
+
+  const stored = entityStore.buildAgentConfigMap();
+
+  stored.forEach((value, key) => {
+    agentConfigs.set(key, value);
+  });
+
+  ensureDefaultAgentConfigs();
+}
+
+refreshStoredAgentConfigs();
 
 function storeAgentConfig(agent) {
-  const id = agent.id || agent.name;
+  const stored = entityStore.saveAgent(agent);
+  const cloned = cloneConfig(stored.payload);
+  agentConfigs.set(stored.id, cloned);
 
-  if (!id) {
-    throw new Error('Agent config must include id or name');
-  }
-
-  const cloned = cloneConfig({ ...agent, id });
-  agentConfigs.set(id, cloned);
-
-  return agentConfigs.get(id);
+  return stored;
 }
 
 function buildAgentList(pluginRegistry) {
   const staticAgents = pluginRegistry.listAgents();
-  const configuredAgents = Array.from(agentConfigs.values()).map((agent) => ({
+  const configuredAgents = entityStore.listAgentRecords().map((agent) => ({
     id: agent.id,
     name: agent.name,
     type: agent.type ?? 'custom',
-    version: agent.version ?? '0.0.1',
+    version: `v${agent.version}`,
     description: agent.description ?? '',
-    source: agent.source ?? 'manual'
+    source: agent.projectId ? `project:${agent.projectId}` : 'local'
   }));
 
   return {
@@ -138,7 +146,7 @@ function buildAgentList(pluginRegistry) {
 }
 
 export function getAgentConfigSnapshot() {
-  ensureDefaultAgentConfigs();
+  refreshStoredAgentConfigs();
 
   return Array.from(agentConfigs.values()).map((agent) => cloneConfig(agent));
 }
@@ -156,7 +164,7 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
     throw new Error('providerManager instance is required');
   }
 
-  ensureDefaultAgentConfigs();
+  refreshStoredAgentConfigs();
 
   ipcMain.handle('AgentFlow:agents:list', async () => {
     return buildAgentList(pluginRegistry);
@@ -167,7 +175,14 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
 
     return {
       ok: true,
-      agent: stored
+      agent: {
+        id: stored.id,
+        name: stored.name,
+        type: stored.type,
+        version: `v${stored.version}`,
+        description: stored.description,
+        source: stored.projectId ? `project:${stored.projectId}` : 'local'
+      }
     };
   });
 
@@ -201,21 +216,57 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
   });
 
   ipcMain.handle('AgentFlow:pipeline:upsert', async (_event, pipelineDefinition) => {
-    const id = pipelineDefinition.id || pipelineDefinition.name || `pipeline-${pipelines.size + 1}`;
-    const stored = {
-      ...pipelineDefinition,
-      id
-    };
-
-    pipelines.set(id, stored);
+    const stored = entityStore.savePipeline(pipelineDefinition);
 
     return {
       ok: true,
-      pipeline: stored
+      pipeline: {
+        id: stored.id,
+        name: stored.name,
+        description: stored.description,
+        projectId: stored.projectId,
+        nodes: stored.nodes,
+        edges: stored.edges,
+        override: stored.override,
+        version: stored.version,
+        createdAt: stored.createdAt,
+        updatedAt: stored.updatedAt
+      }
     };
   });
 
   ipcMain.handle('AgentFlow:pipeline:list', async () => {
-    return Array.from(pipelines.values());
+    return entityStore.listPipelines().map((pipeline) => ({
+      id: pipeline.id,
+      name: pipeline.name,
+      description: pipeline.description,
+      projectId: pipeline.projectId,
+      nodes: pipeline.nodes,
+      edges: pipeline.edges,
+      override: pipeline.override,
+      version: pipeline.version,
+      createdAt: pipeline.createdAt,
+      updatedAt: pipeline.updatedAt
+    }));
+  });
+
+  ipcMain.handle('AgentFlow:history:list', async (_event, params = {}) => {
+    try {
+      const { entityType, entityId } = params;
+      const history = entityStore.listHistory(entityType, entityId);
+      return { ok: true, history };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('AgentFlow:diff:entity', async (_event, params = {}) => {
+    try {
+      const { entityType, idA, idB } = params;
+      const diff = entityStore.diffEntityVersions({ entityType, idA, idB });
+      return { ok: true, diff };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
   });
 }

@@ -6,15 +6,36 @@ import dotenv from 'dotenv';
 import { createPluginRegistry } from '../core/pluginLoader.js';
 import { registerIpcHandlers } from '../core/api.js';
 import { createProviderManager } from '../core/providers/manager.js';
+import { runMigrations } from '../db/migrate.js';
+import { registerTelegramIpcHandlers } from './ipcBot.js';
+import { createScheduler, registerSchedulerIpcHandlers } from '../core/scheduler.js';
+import { errorBus, logRendererError, registerProcessErrorHandlers } from '../core/errors.js';
 
 const isDevelopment = process.env.NODE_ENV === 'development';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 let pluginRegistry;
 let providerManager;
+let scheduler;
 const rendererDistPath = path.join(__dirname, '../renderer/dist/index.html');
 
 dotenv.config({ path: path.join(process.cwd(), '.env') });
+
+registerProcessErrorHandlers({ source: 'main' });
+
+const broadcastError = (entry) => {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    if (!window.isDestroyed()) {
+      window.webContents.send('AgentFlow:error-bus:event', entry);
+    }
+  });
+};
+
+errorBus.on(broadcastError);
+
+ipcMain.on('AgentFlow:error-bus:report', (_event, payload) => {
+  logRendererError(payload);
+});
 
 const resolveRendererPath = () => {
   if (isDevelopment) {
@@ -33,7 +54,9 @@ const loadRenderer = async (window) => {
       window.webContents.openDevTools({ mode: 'detach' });
       return;
     } catch (error) {
-      console.warn('Renderer dev server not reachable, falling back to dist build.', error);
+      const message = 'Renderer dev server not reachable, falling back to dist build.';
+      console.warn(message, error);
+      errorBus.warn(message, { error: error?.message, stack: error?.stack });
     }
   }
 
@@ -41,6 +64,7 @@ const loadRenderer = async (window) => {
     await fs.access(rendererDistPath);
     await window.loadFile(rendererDistPath);
   } catch (error) {
+    errorBus.error('Failed to load renderer assets', { message: error?.message, stack: error?.stack });
     const fallbackHtml = `
       <!doctype html>
       <html lang="ru">
@@ -94,24 +118,69 @@ const createMainWindow = async () => {
 
 const bootstrapCore = async () => {
   if (!pluginRegistry) {
-    pluginRegistry = await createPluginRegistry();
+    try {
+      pluginRegistry = await createPluginRegistry();
+    } catch (error) {
+      errorBus.error('Failed to create plugin registry', { message: error?.message, stack: error?.stack });
+      throw error;
+    }
   }
 
   if (!providerManager) {
-    providerManager = await createProviderManager();
+    try {
+      providerManager = await createProviderManager();
+    } catch (error) {
+      errorBus.error('Failed to create provider manager', { message: error?.message, stack: error?.stack });
+      throw error;
+    }
   }
 
   registerIpcHandlers({ ipcMain, pluginRegistry, providerManager });
+
+  if (!scheduler) {
+    try {
+      scheduler = createScheduler({ pluginRegistry, providerManager });
+      await scheduler.start();
+    } catch (error) {
+      errorBus.error('Failed to start scheduler service', { message: error?.message, stack: error?.stack });
+      throw error;
+    }
+  }
+
+  registerSchedulerIpcHandlers(ipcMain, scheduler);
+
+  try {
+    await registerTelegramIpcHandlers(ipcMain);
+  } catch (error) {
+    const message = 'Failed to register Telegram IPC handlers';
+    console.error(`${message}:`, error);
+    errorBus.error(message, { message: error?.message, stack: error?.stack });
+  }
 };
 
 app.whenReady().then(async () => {
+  try {
+    await runMigrations();
+  } catch (error) {
+    errorBus.error('Failed to run database migrations', { message: error?.message, stack: error?.stack });
+    throw error;
+  }
+
   await bootstrapCore();
-  await createMainWindow();
+
+  try {
+    await createMainWindow();
+  } catch (error) {
+    errorBus.error('Failed to create main window', { message: error?.message, stack: error?.stack });
+    throw error;
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createMainWindow().catch((error) => {
-        console.error('Failed to create renderer window on activate:', error);
+        const message = 'Failed to create renderer window on activate';
+        console.error(`${message}:`, error);
+        errorBus.error(message, { message: error?.message, stack: error?.stack });
       });
     }
   });
@@ -120,5 +189,17 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
+  }
+});
+
+app.on('before-quit', async () => {
+  if (scheduler) {
+    try {
+      await scheduler.stop();
+    } catch (error) {
+      const message = 'Failed to stop scheduler gracefully';
+      console.error(`${message}:`, error);
+      errorBus.error(message, { message: error?.message, stack: error?.stack });
+    }
   }
 });
