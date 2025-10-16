@@ -27,6 +27,23 @@ const fallbackProviderStatus = [
   { id: 'stability', type: 'image', hasKey: false, apiKeyRef: 'STABILITY_API_KEY', models: ['sd3.5'] }
 ];
 
+const fallbackBotStatus = {
+  running: false,
+  tokenStored: false,
+  username: null,
+  lastError: 'Бот доступен только в настольном приложении',
+  startedAt: null,
+  lastActivityAt: null,
+  deeplinkBase: null
+};
+
+const fallbackSchedulerStatus = {
+  running: false,
+  startedAt: null,
+  lastRunAt: null,
+  jobs: 0
+};
+
 export async function listAgents() {
   if (hasWindowAPI && typeof agentApi.listAgents === 'function') {
     return agentApi.listAgents();
@@ -52,6 +69,45 @@ export async function listPipelines() {
 
   await fallbackDelay();
   return [];
+}
+
+export async function fetchEntityHistory(entityType, entityId) {
+  if (
+    hasWindowAPI &&
+    typeof agentApi.listEntityHistory === 'function'
+  ) {
+    const response = await agentApi.listEntityHistory(entityType, entityId);
+
+    if (response?.ok) {
+      return response.history ?? [];
+    }
+
+    throw new Error(response?.error || 'Не удалось получить историю версий');
+  }
+
+  await fallbackDelay();
+  return [];
+}
+
+export async function diffEntityVersions(entityType, idA, idB) {
+  if (hasWindowAPI && typeof agentApi.diffEntityVersions === 'function') {
+    const response = await agentApi.diffEntityVersions(entityType, idA, idB);
+
+    if (response?.ok) {
+      return response.diff;
+    }
+
+    throw new Error(response?.error || 'Не удалось вычислить различия версий');
+  }
+
+  await fallbackDelay();
+  return {
+    entityType,
+    entityId: null,
+    base: null,
+    compare: null,
+    changes: []
+  };
 }
 
 export async function upsertPipeline(pipeline) {
@@ -96,6 +152,174 @@ export async function runPipeline(pipeline, payload) {
   };
 }
 
+export async function listSchedules(projectId) {
+  if (hasWindowAPI && typeof agentApi.listSchedules === 'function') {
+    const response = await agentApi.listSchedules(projectId);
+
+    if (response?.ok) {
+      return response.schedules ?? [];
+    }
+
+    throw new Error(response?.error || 'Не удалось получить расписания');
+  }
+
+  await fallbackDelay();
+  return [];
+}
+
+export async function upsertSchedule(schedule) {
+  if (hasWindowAPI && typeof agentApi.upsertSchedule === 'function') {
+    const response = await agentApi.upsertSchedule(schedule);
+
+    if (response?.ok) {
+      return response.schedule;
+    }
+
+    throw new Error(response?.error || 'Не удалось сохранить расписание');
+  }
+
+  await fallbackDelay();
+  return { ...schedule, id: schedule?.id || 'offline-schedule' };
+}
+
+export async function deleteSchedule(scheduleId) {
+  if (hasWindowAPI && typeof agentApi.deleteSchedule === 'function') {
+    const response = await agentApi.deleteSchedule(scheduleId);
+
+    if (response?.ok) {
+      return true;
+    }
+
+    throw new Error(response?.error || 'Не удалось удалить расписание');
+  }
+
+  await fallbackDelay();
+  return true;
+}
+
+export async function toggleSchedule(scheduleId, enabled) {
+  if (hasWindowAPI && typeof agentApi.toggleSchedule === 'function') {
+    const response = await agentApi.toggleSchedule(scheduleId, enabled);
+
+    if (response?.ok) {
+      return response.schedule;
+    }
+
+    throw new Error(response?.error || 'Не удалось обновить расписание');
+  }
+
+  await fallbackDelay();
+  return { id: scheduleId, enabled };
+}
+
+export async function runScheduleNow(scheduleId) {
+  if (hasWindowAPI && typeof agentApi.runScheduleNow === 'function') {
+    const response = await agentApi.runScheduleNow(scheduleId);
+
+    if (response?.ok) {
+      return true;
+    }
+
+    throw new Error(response?.error || 'Не удалось запустить расписание');
+  }
+
+  await fallbackDelay();
+  return true;
+}
+
+export async function getSchedulerStatus() {
+  if (hasWindowAPI && typeof agentApi.getSchedulerStatus === 'function') {
+    const response = await agentApi.getSchedulerStatus();
+
+    if (response?.ok) {
+      return response.status ?? fallbackSchedulerStatus;
+    }
+
+    throw new Error(response?.error || 'Не удалось получить статус планировщика');
+  }
+
+  await fallbackDelay();
+  return fallbackSchedulerStatus;
+}
+
 export function isAgentApiAvailable() {
   return hasWindowAPI;
+}
+
+function unwrapStatusResponse(response) {
+  if (response?.ok) {
+    return response.status ?? fallbackBotStatus;
+  }
+
+  throw new Error(response?.error || 'Не удалось получить ответ от Telegram-бота');
+}
+
+export async function getTelegramStatus() {
+  if (hasWindowAPI && typeof agentApi.getTelegramStatus === 'function') {
+    const response = await agentApi.getTelegramStatus();
+    return unwrapStatusResponse(response);
+  }
+
+  await fallbackDelay();
+  return fallbackBotStatus;
+}
+
+export async function setTelegramToken(token) {
+  if (hasWindowAPI && typeof agentApi.setTelegramToken === 'function') {
+    const response = await agentApi.setTelegramToken(token);
+    return unwrapStatusResponse(response);
+  }
+
+  await fallbackDelay();
+  return fallbackBotStatus;
+}
+
+export async function startTelegramBot() {
+  if (hasWindowAPI && typeof agentApi.startTelegramBot === 'function') {
+    const response = await agentApi.startTelegramBot();
+    return unwrapStatusResponse(response);
+  }
+
+  await fallbackDelay();
+  throw new Error('Запуск Telegram-бота доступен только в приложении');
+}
+
+export async function stopTelegramBot() {
+  if (hasWindowAPI && typeof agentApi.stopTelegramBot === 'function') {
+    const response = await agentApi.stopTelegramBot();
+    return unwrapStatusResponse(response);
+  }
+
+  await fallbackDelay();
+  return fallbackBotStatus;
+}
+
+export async function fetchLatestBrief(projectId) {
+  if (hasWindowAPI && typeof agentApi.fetchLatestBrief === 'function') {
+    const response = await agentApi.fetchLatestBrief(projectId);
+
+    if (response?.ok) {
+      return response.brief ?? null;
+    }
+
+    throw new Error(response?.error || 'Не удалось получить бриф');
+  }
+
+  await fallbackDelay();
+  return null;
+}
+
+export async function generateBriefPlan(projectId) {
+  if (hasWindowAPI && typeof agentApi.generateBriefPlan === 'function') {
+    const response = await agentApi.generateBriefPlan(projectId);
+
+    if (response?.ok) {
+      return response;
+    }
+
+    throw new Error(response?.error || 'Не удалось сформировать план кампании');
+  }
+
+  await fallbackDelay();
+  return { plan: '', brief: null };
 }

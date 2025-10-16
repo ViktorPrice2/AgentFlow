@@ -30,7 +30,8 @@ export function PipelinesPage({
   onRunPipeline,
   onRefresh,
   isAgentOnline = true,
-  onNotify
+  onNotify,
+  onShowHistory
 }) {
   const [formState, setFormState] = useState(INITIAL_FORM_STATE);
 
@@ -105,8 +106,13 @@ export function PipelinesPage({
             {pipelines.map((pipeline) => (
               <article key={pipeline.id} className="pipeline-card">
                 <header>
-                  <h4>{pipeline.name}</h4>
-                  <span>{pipeline.projectId ? `Проект: ${pipeline.projectId}` : 'Без проекта'}</span>
+                  <div className="pipeline-header-info">
+                    <h4>{pipeline.name}</h4>
+                    <span>{pipeline.projectId ? `Проект: ${pipeline.projectId}` : 'Без проекта'}</span>
+                  </div>
+                  {pipeline.version ? (
+                    <span className="pipeline-version">v{pipeline.version}</span>
+                  ) : null}
                 </header>
                 <p>{pipeline.description || 'Описание не указано'}</p>
                 <ul className="pipeline-flow">
@@ -126,6 +132,15 @@ export function PipelinesPage({
                   >
                     Запустить
                   </button>
+                  {typeof onShowHistory === 'function' ? (
+                    <button
+                      type="button"
+                      className="link-button"
+                      onClick={() => onShowHistory(pipeline)}
+                    >
+                      Изменения версии
+                    </button>
+                  ) : null}
                 </footer>
               </article>
             ))}
@@ -196,5 +211,14 @@ PipelinesPage.propTypes = {
   onRunPipeline: PropTypes.func.isRequired,
   onRefresh: PropTypes.func.isRequired,
   isAgentOnline: PropTypes.bool,
-  onNotify: PropTypes.func.isRequired
+  onNotify: PropTypes.func.isRequired,
+  onShowHistory: PropTypes.func
+};
+
+PipelinesPage.defaultProps = {
+  pipelines: [],
+  project: null,
+  brief: {},
+  isAgentOnline: true,
+  onShowHistory: undefined
 };
