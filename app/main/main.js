@@ -7,6 +7,8 @@ import { createPluginRegistry } from '../core/pluginLoader.js';
 import { registerIpcHandlers } from '../core/api.js';
 import { createProviderManager } from '../core/providers/manager.js';
 import { runMigrations } from '../db/migrate.js';
+import { registerTelegramIpcHandlers } from './ipcBot.js';
+
 
 const isDevelopment = process.env.NODE_ENV === 'development';
 const __filename = fileURLToPath(import.meta.url);

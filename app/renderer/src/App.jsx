@@ -24,6 +24,7 @@ import { RunsPage } from './pages/RunsPage.jsx';
 import { ReportsPage } from './pages/ReportsPage.jsx';
 import { SettingsPage } from './pages/SettingsPage.jsx';
 import { usePersistentState } from './hooks/usePersistentState.js';
+import { VersionHistoryModal } from './components/VersionHistoryModal.jsx';
 
 const SECTIONS = [
   { id: 'projects', label: 'Проекты' },
@@ -151,6 +152,14 @@ function App() {
   const [planDraft, setPlanDraft] = useState({ text: '', updatedAt: null });
   const [planLoading, setPlanLoading] = useState(false);
 
+  const [versionModal, setVersionModal] = useState({
+    open: false,
+    entityType: null,
+    entityId: null,
+    entityName: ''
+  });
+
+
   const { agentsData, providerStatus, providerUpdatedAt, refreshAgents } = useAgentResources();
   const { pipelines, refreshPipelines } = usePipelineResources();
 
@@ -242,6 +251,37 @@ function App() {
   const handleClearRuns = () => {
     setRuns([]);
     showToast('История запусков очищена', 'info');
+  };
+
+
+  const closeVersionModal = () => {
+    setVersionModal({ open: false, entityType: null, entityId: null, entityName: '' });
+  };
+
+  const handleShowAgentHistory = (agent) => {
+    if (!agent?.id) {
+      return;
+    }
+
+    setVersionModal({
+      open: true,
+      entityType: 'agent',
+      entityId: agent.id,
+      entityName: agent.name || agent.id
+    });
+  };
+
+  const handleShowPipelineHistory = (pipeline) => {
+    if (!pipeline?.id) {
+      return;
+    }
+
+    setVersionModal({
+      open: true,
+      entityType: 'pipeline',
+      entityId: pipeline.id,
+      entityName: pipeline.name || pipeline.id
+    });
   };
 
   const handleSaveBotToken = async (token) => {
@@ -395,6 +435,7 @@ function App() {
             providerStatus={providerStatus}
             onRefresh={refreshAgents}
             lastUpdated={providerUpdatedAt}
+            onShowHistory={handleShowAgentHistory}
           />
         );
       case 'pipelines':
@@ -408,6 +449,7 @@ function App() {
             onRefresh={refreshPipelines}
             isAgentOnline={AGENT_ONLINE}
             onNotify={showToast}
+            onShowHistory={handleShowPipelineHistory}
           />
         );
       case 'runs':
@@ -466,6 +508,14 @@ function App() {
         message={toast.message}
         type={toast.type}
         onClose={() => setToast({ message: null, type: 'info' })}
+      />
+
+      <VersionHistoryModal
+        isOpen={versionModal.open}
+        entityType={versionModal.entityType}
+        entityId={versionModal.entityId}
+        entityName={versionModal.entityName}
+        onClose={closeVersionModal}
       />
     </div>
   );

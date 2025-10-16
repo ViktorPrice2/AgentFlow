@@ -64,6 +64,45 @@ export async function listPipelines() {
   return [];
 }
 
+export async function fetchEntityHistory(entityType, entityId) {
+  if (
+    hasWindowAPI &&
+    typeof agentApi.listEntityHistory === 'function'
+  ) {
+    const response = await agentApi.listEntityHistory(entityType, entityId);
+
+    if (response?.ok) {
+      return response.history ?? [];
+    }
+
+    throw new Error(response?.error || 'Не удалось получить историю версий');
+  }
+
+  await fallbackDelay();
+  return [];
+}
+
+export async function diffEntityVersions(entityType, idA, idB) {
+  if (hasWindowAPI && typeof agentApi.diffEntityVersions === 'function') {
+    const response = await agentApi.diffEntityVersions(entityType, idA, idB);
+
+    if (response?.ok) {
+      return response.diff;
+    }
+
+    throw new Error(response?.error || 'Не удалось вычислить различия версий');
+  }
+
+  await fallbackDelay();
+  return {
+    entityType,
+    entityId: null,
+    base: null,
+    compare: null,
+    changes: []
+  };
+}
+
 export async function upsertPipeline(pipeline) {
   if (hasWindowAPI && typeof agentApi.upsertPipeline === 'function') {
     return agentApi.upsertPipeline(pipeline);
