@@ -6,6 +6,7 @@ import { useI18n } from '../i18n/useI18n.js';
 function AgentTable({ items = [], emptyMessage, onShowHistory }) {
   const { t } = useI18n();
 
+function AgentTable({ items = [], emptyMessage, onShowHistory }) {
   if (!items || items.length === 0) {
     return <EmptyState title={emptyMessage} description="" />;
   }
@@ -23,6 +24,12 @@ function AgentTable({ items = [], emptyMessage, onShowHistory }) {
             <th>{t('agents.table.source')}</th>
             <th>{t('agents.table.description')}</th>
             {hasHistoryActions ? <th>{t('agents.table.history')}</th> : null}
+            <th>Название</th>
+            <th>Тип</th>
+            <th>Версия</th>
+            <th>Источник</th>
+            <th>Описание</th>
+            {hasHistoryActions ? <th>История</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -33,6 +40,7 @@ function AgentTable({ items = [], emptyMessage, onShowHistory }) {
               <td>{agent.version || t('common.notAvailable')}</td>
               <td>{agent.source || 'plugin'}</td>
               <td>{agent.description || t('common.notAvailable')}</td>
+              <td>{agent.description || '—'}</td>
               {hasHistoryActions ? (
                 <td>
                   <button
@@ -42,6 +50,7 @@ function AgentTable({ items = [], emptyMessage, onShowHistory }) {
                     disabled={!agent?.id}
                   >
                     {t('agents.table.changes')}
+                    Изменения
                   </button>
                 </td>
               ) : null}
@@ -142,6 +151,8 @@ export function AgentsPage({
         <AgentTable
           items={agentsData.configs}
           emptyMessage={t('agents.configsEmpty')}
+
+          emptyMessage="Конфигурации агентов ещё не созданы"
           onShowHistory={onShowHistory}
         />
       </InfoCard>

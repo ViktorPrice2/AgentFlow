@@ -115,6 +115,7 @@ export function PipelinesPage({
                         ? t('pipelines.list.project', { project: pipeline.projectId })
                         : t('pipelines.list.noProject')}
                     </span>
+                    <span>{pipeline.projectId ? `Проект: ${pipeline.projectId}` : 'Без проекта'}</span>
                   </div>
                   {pipeline.version ? (
                     <span className="pipeline-version">v{pipeline.version}</span>
@@ -145,6 +146,7 @@ export function PipelinesPage({
                       onClick={() => onShowHistory(pipeline)}
                     >
                       {t('pipelines.list.history')}
+                      Изменения версии
                     </button>
                   ) : null}
                 </footer>

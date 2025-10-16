@@ -18,7 +18,11 @@ import {
   deleteSchedule,
   toggleSchedule,
   runScheduleNow,
-  getSchedulerStatus
+  getSchedulerStatus,
+  setTelegramToken,
+  startTelegramBot,
+  stopTelegramBot,
+  upsertPipeline
 } from './api/agentApi.js';
 import { Navigation } from './components/Navigation.jsx';
 import { Toast } from './components/Toast.jsx';
@@ -43,6 +47,16 @@ const SECTION_CONFIG = [
   { id: 'reports', labelKey: 'app.nav.reports' },
   { id: 'scheduler', labelKey: 'app.nav.scheduler' },
   { id: 'settings', labelKey: 'app.nav.settings' }
+
+const SECTIONS = [
+  { id: 'projects', label: 'Проекты' },
+  { id: 'brief', label: 'Бриф' },
+  { id: 'agents', label: 'Агенты' },
+  { id: 'pipelines', label: 'Пайплайны' },
+  { id: 'runs', label: 'Запуски' },
+  { id: 'reports', label: 'Отчёты' },
+  { id: 'scheduler', label: 'Планировщик' },
+  { id: 'settings', label: 'Настройки' }
 ];
 
 const AGENT_ONLINE = isAgentApiAvailable();
@@ -97,6 +111,8 @@ function mapBriefDetails(details = {}) {
 }
 
 function useAgentResources(locale) {
+
+function useAgentResources() {
   const [agentsData, setAgentsData] = useState({ plugins: [], configs: [] });
   const [providerStatus, setProviderStatus] = useState([]);
   const [providerUpdatedAt, setProviderUpdatedAt] = useState(null);
@@ -226,12 +242,14 @@ function App() {
   useEffect(() => {
     loadSchedules(selectedProjectId).catch((error) => {
       showToast(error.message || t('app.toasts.schedulesLoadError'), 'error');
+      showToast(error.message || 'Не удалось загрузить расписания', 'error');
     });
   }, [selectedProjectId]);
 
   const handleRefreshBotStatus = async () => {
     await refreshBotStatus();
     showToast(t('app.toasts.telegramStatusUpdated'), 'info');
+    showToast('Статус Telegram обновлён', 'info');
   };
 
   const showToast = (message, type = 'info') => {
@@ -505,6 +523,195 @@ function App() {
     }
   };
 
+  const closeVersionModal = () => {
+    setVersionModal({ open: false, entityType: null, entityId: null, entityName: '' });
+  };
+
+  const handleShowAgentHistory = (agent) => {
+    if (!agent?.id) {
+      return;
+    }
+
+    setVersionModal({
+      open: true,
+      entityType: 'agent',
+      entityId: agent.id,
+      entityName: agent.name || agent.id
+    });
+  };
+
+  const handleShowPipelineHistory = (pipeline) => {
+    if (!pipeline?.id) {
+      return;
+    }
+
+    setVersionModal({
+      open: true,
+      entityType: 'pipeline',
+      entityId: pipeline.id,
+      entityName: pipeline.name || pipeline.id
+    });
+  };
+
+  const handleSaveBotToken = async (token) => {
+    setBotBusy(true);
+
+    try {
+      const status = await setTelegramToken(token);
+      setBotStatus(status);
+      if (token?.trim()) {
+        showToast('Токен Telegram сохранён', 'success');
+      } else {
+        showToast('Токен Telegram удалён', 'info');
+      }
+    } catch (error) {
+      console.error('Failed to store Telegram token', error);
+      showToast(error.message || 'Не удалось сохранить токен Telegram', 'error');
+    } finally {
+      setBotBusy(false);
+    }
+  };
+
+  const handleStartBot = async () => {
+    setBotBusy(true);
+
+    try {
+      const status = await startTelegramBot();
+      setBotStatus(status);
+      showToast('Telegram-бот запущен', 'success');
+    } catch (error) {
+      console.error('Failed to start Telegram bot', error);
+      showToast(error.message || 'Не удалось запустить Telegram-бота', 'error');
+    } finally {
+      setBotBusy(false);
+    }
+  };
+
+  const handleStopBot = async () => {
+    setBotBusy(true);
+
+    try {
+      const status = await stopTelegramBot();
+      setBotStatus(status);
+      showToast('Telegram-бот остановлен', 'info');
+    } catch (error) {
+      console.error('Failed to stop Telegram bot', error);
+      showToast(error.message || 'Не удалось остановить Telegram-бота', 'error');
+    } finally {
+      setBotBusy(false);
+    }
+  };
+
+  const handleRefreshBriefFromBot = async () => {
+    if (!selectedProject) {
+      showToast('Выберите проект, чтобы получить бриф из Telegram', 'warn');
+      return;
+    }
+
+    setBriefLoading(true);
+
+    try {
+      const briefData = await fetchLatestBrief(selectedProject.id);
+      setLatestBrief(briefData);
+
+      if (briefData) {
+        showToast('Бриф из Telegram обновлён', 'success');
+      } else {
+        showToast('Для проекта пока нет новых брифов', 'info');
+      }
+    } catch (error) {
+      console.error('Failed to load Telegram brief', error);
+      showToast(error.message || 'Не удалось получить бриф из Telegram', 'error');
+    } finally {
+      setBriefLoading(false);
+    }
+  };
+
+  const handleImportBriefFromBot = () => {
+    if (!latestBrief?.details) {
+      showToast('Нет данных для применения — обновите бриф из Telegram', 'warn');
+      return;
+    }
+
+    const normalized = mapBriefDetails(latestBrief.details);
+    setBrief(normalized);
+    showToast('Форма брифа обновлена данными из Telegram', 'success');
+  };
+
+  const handleGeneratePlanFromBot = async () => {
+    if (!selectedProject) {
+      showToast('Выберите проект, чтобы сформировать план', 'warn');
+      return;
+    }
+
+    setPlanLoading(true);
+
+    try {
+      const result = await generateBriefPlan(selectedProject.id);
+
+      if (result?.plan) {
+        setPlanDraft({ text: result.plan, updatedAt: new Date().toISOString() });
+
+        if (result.brief) {
+          setLatestBrief(result.brief);
+        }
+
+        showToast('План кампании готов', 'success');
+      } else {
+        showToast('Недостаточно данных для плана — заполните бриф', 'warn');
+      }
+    } catch (error) {
+      console.error('Failed to generate campaign plan', error);
+      showToast(error.message || 'Не удалось сформировать план кампании', 'error');
+    } finally {
+      setPlanLoading(false);
+    }
+  };
+
+  const handleRefreshSchedules = async () => {
+    await Promise.all([loadSchedules(selectedProjectId), loadSchedulerStatus()]);
+  };
+
+  const handleSaveSchedule = async (schedule) => {
+    try {
+      const stored = await upsertSchedule(schedule);
+      await handleRefreshSchedules();
+      return stored;
+    } catch (error) {
+      await loadSchedulerStatus().catch(() => {});
+      throw error;
+    }
+  };
+
+  const handleDeleteSchedule = async (scheduleId) => {
+    try {
+      await deleteSchedule(scheduleId);
+      await handleRefreshSchedules();
+    } catch (error) {
+      await loadSchedulerStatus().catch(() => {});
+      throw error;
+    }
+  };
+
+  const handleToggleSchedule = async (scheduleId, enabled) => {
+    try {
+      await toggleSchedule(scheduleId, enabled);
+      await handleRefreshSchedules();
+    } catch (error) {
+      await loadSchedulerStatus().catch(() => {});
+      throw error;
+    }
+  };
+
+  const handleRunScheduleNow = async (scheduleId) => {
+    try {
+      await runScheduleNow(scheduleId);
+      await loadSchedulerStatus();
+    } catch (error) {
+      throw error;
+    }
+  };
+
   const currentSection = useMemo(() => {
     switch (activeSection) {
       case 'projects':
@@ -614,6 +821,8 @@ function App() {
     schedules,
     schedulerStatusState,
     schedulesLoading
+    schedulesLoading,
+    planLoading
   ]);
 
   return (

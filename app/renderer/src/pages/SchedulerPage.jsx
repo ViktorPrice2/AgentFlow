@@ -12,11 +12,15 @@ const DEFAULT_FORM = {
 function formatDate(isoString, locale, fallback = '—') {
   if (!isoString) {
     return fallback;
+function formatDate(isoString) {
+  if (!isoString) {
+    return '—';
   }
 
   try {
     const date = new Date(isoString);
     return new Intl.DateTimeFormat(locale, {
+    return new Intl.DateTimeFormat('ru-RU', {
       dateStyle: 'short',
       timeStyle: 'medium'
     }).format(date);
@@ -57,6 +61,7 @@ export function SchedulerPage({
   }, [pipelines, form.pipelineId]);
 
   const projectName = project?.name || t('common.notAvailable');
+  const projectName = project?.name || 'Не выбран';
   const sortedSchedules = useMemo(
     () => [...schedules].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
     [schedules]
@@ -76,11 +81,13 @@ export function SchedulerPage({
 
     if (!form.pipelineId) {
       onNotify?.(t('scheduler.toast.selectPipeline'), 'warn');
+      onNotify?.('Выберите пайплайн для расписания', 'warn');
       return;
     }
 
     if (!form.cron.trim()) {
       onNotify?.(t('scheduler.toast.cronRequired'), 'warn');
+      onNotify?.('Укажите cron-выражение', 'warn');
       return;
     }
 
@@ -98,6 +105,10 @@ export function SchedulerPage({
       resetForm();
     } catch (error) {
       onNotify?.(error.message || t('scheduler.toast.saveError'), 'error');
+      onNotify?.('Расписание сохранено', 'success');
+      resetForm();
+    } catch (error) {
+      onNotify?.(error.message || 'Не удалось сохранить расписание', 'error');
     } finally {
       setSaving(false);
     }
@@ -120,12 +131,14 @@ export function SchedulerPage({
     try {
       await onDelete(schedule.id);
       onNotify?.(t('scheduler.toast.deleted'), 'info');
+      onNotify?.('Расписание удалено', 'info');
 
       if (form.id === schedule.id) {
         resetForm();
       }
     } catch (error) {
       onNotify?.(error.message || t('scheduler.toast.deleteError'), 'error');
+      onNotify?.(error.message || 'Не удалось удалить расписание', 'error');
     }
   };
 
@@ -136,6 +149,9 @@ export function SchedulerPage({
       onNotify?.(t('scheduler.toast.toggled', { state: stateLabel }), 'info');
     } catch (error) {
       onNotify?.(error.message || t('scheduler.toast.toggleError'), 'error');
+      onNotify?.(`Расписание ${schedule.enabled ? 'отключено' : 'включено'}`, 'info');
+    } catch (error) {
+      onNotify?.(error.message || 'Не удалось обновить расписание', 'error');
     }
   };
 
@@ -145,6 +161,9 @@ export function SchedulerPage({
       onNotify?.(t('scheduler.toast.run'), 'success');
     } catch (error) {
       onNotify?.(error.message || t('scheduler.toast.runError'), 'error');
+      onNotify?.('Пайплайн запущен вручную', 'success');
+    } catch (error) {
+      onNotify?.(error.message || 'Не удалось запустить пайплайн', 'error');
     }
   };
 
@@ -154,6 +173,9 @@ export function SchedulerPage({
       onNotify?.(t('scheduler.toast.refreshed'), 'info');
     } catch (error) {
       onNotify?.(error.message || t('scheduler.toast.refreshError'), 'error');
+      onNotify?.('Расписания обновлены', 'info');
+    } catch (error) {
+      onNotify?.(error.message || 'Не удалось обновить расписания', 'error');
     }
   };
 
@@ -163,6 +185,10 @@ export function SchedulerPage({
         <header className="info-card__header">
           <h3>{t('scheduler.form.title')}</h3>
           <p dangerouslySetInnerHTML={renderHtml('scheduler.form.project', { name: projectName })} />
+          <h3>Новое расписание</h3>
+          <p>
+            Проект: <strong>{projectName}</strong>
+          </p>
         </header>
 
         <form className="form" onSubmit={handleSubmit}>
@@ -172,6 +198,11 @@ export function SchedulerPage({
               {pipelines.length === 0 ? (
                 <option value="" disabled>
                   {t('scheduler.form.noPipelines')}
+            Пайплайн
+            <select value={form.pipelineId} onChange={handleChange('pipelineId')}>
+              {pipelines.length === 0 ? (
+                <option value="" disabled>
+                  Нет доступных пайплайнов
                 </option>
               ) : null}
               {pipelines.map((pipeline) => (
@@ -187,6 +218,10 @@ export function SchedulerPage({
             <input
               type="text"
               placeholder={t('scheduler.form.cronPlaceholder')}
+            Cron-выражение
+            <input
+              type="text"
+              placeholder="*/5 * * * *"
               value={form.cron}
               onChange={handleChange('cron')}
             />
@@ -199,11 +234,13 @@ export function SchedulerPage({
               onChange={handleChange('enabled')}
             />
             {t('scheduler.form.enabled')}
+            Активно
           </label>
 
           <div className="button-row">
             <button className="primary-button" type="submit" disabled={saving || !pipelines.length}>
               {form.id ? t('scheduler.form.submitUpdate') : t('scheduler.form.submitCreate')}
+              {form.id ? 'Обновить' : 'Добавить'}
             </button>
             {form.id ? (
               <button
@@ -213,6 +250,7 @@ export function SchedulerPage({
                 disabled={saving}
               >
                 {t('scheduler.form.cancel')}
+                Отмена
               </button>
             ) : null}
             <button
@@ -222,6 +260,7 @@ export function SchedulerPage({
               disabled={isLoading}
             >
               {t('scheduler.form.refresh')}
+              Обновить список
             </button>
           </div>
         </form>
@@ -231,6 +270,8 @@ export function SchedulerPage({
             <span dangerouslySetInnerHTML={renderHtml('scheduler.form.hint')} />
             {' '}
             <span dangerouslySetInnerHTML={renderHtml('scheduler.form.hintExample')} />
+            Используйте cron-выражение формата <code>минуты часы день-месяца месяц день-недели</code>.
+            Например, <code>*/30 * * * *</code> — каждые 30 минут.
           </p>
         </footer>
       </section>
@@ -243,6 +284,10 @@ export function SchedulerPage({
               value: status?.running ? t('common.yes') : t('common.no')
             })}
           />
+          <h3>Статус планировщика</h3>
+          <p>
+            Работает: <strong>{status?.running ? 'Да' : 'Нет'}</strong>
+          </p>
         </header>
 
         <div className="info-card__content">
@@ -261,6 +306,21 @@ export function SchedulerPage({
             </li>
           </ul>
           <p className="small-text">{t('scheduler.status.note')}</p>
+              <strong>Запущен</strong>
+              <div>{formatDate(status?.startedAt)}</div>
+            </li>
+            <li>
+              <strong>Последний запуск</strong>
+              <div>{formatDate(status?.lastRunAt)}</div>
+            </li>
+            <li>
+              <strong>Активные задачи</strong>
+              <div>{status?.jobs ?? 0}</div>
+            </li>
+          </ul>
+          <p className="small-text">
+            Все расписания сохраняются в базе данных и перезапускаются при старте приложения.
+          </p>
         </div>
       </section>
 
@@ -268,6 +328,8 @@ export function SchedulerPage({
         <header className="info-card__header">
           <h3>{t('scheduler.list.title')}</h3>
           <p>{t('scheduler.list.subtitle')}</p>
+          <h3>Список расписаний</h3>
+          <p>Контролируйте активные задачи и запускайте пайплайны вручную.</p>
         </header>
 
         <div className="info-card__content">
@@ -275,6 +337,8 @@ export function SchedulerPage({
             <div className="empty-state">
               <h4>{t('scheduler.list.emptyTitle')}</h4>
               <p>{t('scheduler.list.emptyDescription')}</p>
+              <h4>Расписаний пока нет</h4>
+              <p>Создайте новое расписание, чтобы запускать пайплайны автоматически.</p>
             </div>
           ) : (
             <div className="table-wrapper">
@@ -286,6 +350,11 @@ export function SchedulerPage({
                     <th>{t('scheduler.list.nextRun')}</th>
                     <th>{t('scheduler.list.state')}</th>
                     <th>{t('scheduler.list.actions')}</th>
+                    <th>Пайплайн</th>
+                    <th>Cron</th>
+                    <th>Следующий запуск</th>
+                    <th>Статус</th>
+                    <th>Действия</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -295,6 +364,8 @@ export function SchedulerPage({
                       <td>{schedule.cron}</td>
                       <td>{formatDate(schedule.nextRun, locale, fallbackDateLabel)}</td>
                       <td>{schedule.enabled ? t('common.enabled') : t('common.paused')}</td>
+                      <td>{formatDate(schedule.nextRun)}</td>
+                      <td>{schedule.enabled ? 'Активно' : 'Пауза'}</td>
                       <td>
                         <div className="button-row">
                           <button
@@ -303,6 +374,7 @@ export function SchedulerPage({
                             onClick={() => handleEdit(schedule)}
                           >
                             {t('common.edit')}
+                            Изменить
                           </button>
                           <button
                             className="secondary-button"
@@ -310,6 +382,7 @@ export function SchedulerPage({
                             onClick={() => handleToggle(schedule)}
                           >
                             {schedule.enabled ? t('scheduler.list.pause') : t('scheduler.list.enable')}
+                            {schedule.enabled ? 'Пауза' : 'Включить'}
                           </button>
                           <button
                             className="secondary-button"
@@ -317,6 +390,7 @@ export function SchedulerPage({
                             onClick={() => handleRunNow(schedule)}
                           >
                             {t('scheduler.list.run')}
+                            Запустить
                           </button>
                           <button
                             className="secondary-button"
@@ -324,6 +398,7 @@ export function SchedulerPage({
                             onClick={() => handleDelete(schedule)}
                           >
                             {t('scheduler.list.delete')}
+                            Удалить
                           </button>
                         </div>
                       </td>

@@ -84,6 +84,8 @@ export function SettingsPage({
   const errorText = botStatus?.lastError
     ? t('settings.telegram.error', { message: botStatus.lastError })
     : null;
+  const statusText = botStatus?.running ? 'бот активен' : 'бот остановлен';
+  const deeplinkTemplate = botStatus?.deeplinkBase ? `${botStatus.deeplinkBase}?start=project=PRJ_ID` : null;
 
   return (
     <div className="page-grid two-columns">
@@ -166,6 +168,12 @@ export function SettingsPage({
           <div className="button-row">
             <button type="button" className="secondary-button" onClick={onRefreshBot} disabled={botBusy}>
               {t('settings.telegram.refresh')}
+        title="Telegram-бот"
+        subtitle="Укажите токен бота и управляйте запуском встроенного опросника."
+        footer={
+          <div className="button-row">
+            <button type="button" className="secondary-button" onClick={onRefreshBot} disabled={botBusy}>
+              Обновить статус
             </button>
             <button
               type="button"
@@ -174,6 +182,7 @@ export function SettingsPage({
               disabled={!deeplinkTemplate}
             >
               {copied ? t('settings.telegram.copied') : t('settings.telegram.copy')}
+              {copied ? 'Скопировано' : 'Скопировать deeplink'}
             </button>
           </div>
         }
@@ -181,16 +190,19 @@ export function SettingsPage({
         <form className="form" onSubmit={handleSubmit}>
           <label>
             {t('settings.telegram.tokenLabel')}
+            Токен Telegram Bot API
             <input
               type="password"
               value={tokenInput}
               onChange={(event) => setTokenInput(event.target.value)}
               placeholder={t('settings.telegram.tokenPlaceholder')}
+              placeholder="Введите значение вида 1234567890:ABC..."
             />
           </label>
           <div className="button-row">
             <button type="submit" className="primary-button" disabled={botBusy}>
               {t('settings.telegram.save')}
+              Сохранить токен
             </button>
             <button
               type="button"
@@ -199,6 +211,7 @@ export function SettingsPage({
               disabled={botBusy || !botStatus?.tokenStored}
             >
               {t('settings.telegram.start')}
+              Старт бота
             </button>
             <button
               type="button"
@@ -219,6 +232,28 @@ export function SettingsPage({
           <p className="hint" dangerouslySetInnerHTML={{ __html: t('settings.telegram.deeplink', { deeplink: deeplinkTemplate }) }} />
         ) : (
           <p className="hint">{t('settings.telegram.deeplinkHint')}</p>
+              Стоп бота
+            </button>
+          </div>
+        </form>
+        <p className="hint">Оставьте поле пустым и сохраните, чтобы удалить сохранённый токен.</p>
+        <p className="hint">
+          Статус: <strong>{statusText}</strong>
+          {botStatus?.username ? ` (@${botStatus.username})` : ''}
+        </p>
+        {botStatus?.startedAt ? (
+          <p className="hint">Запущен: {new Date(botStatus.startedAt).toLocaleString('ru-RU')}</p>
+        ) : null}
+        {botStatus?.lastActivityAt ? (
+          <p className="hint">Последняя активность: {new Date(botStatus.lastActivityAt).toLocaleString('ru-RU')}</p>
+        ) : null}
+        {botStatus?.lastError ? <p className="hint warn">Ошибка: {botStatus.lastError}</p> : null}
+        {deeplinkTemplate ? (
+          <p className="hint">
+            Шаблон deeplink: <code>{deeplinkTemplate}</code>
+          </p>
+        ) : (
+          <p className="hint">После запуска бот покажет username, и deeplink станет доступен.</p>
         )}
       </InfoCard>
     </div>
