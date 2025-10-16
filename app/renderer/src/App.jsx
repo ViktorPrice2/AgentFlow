@@ -19,6 +19,10 @@ import {
   toggleSchedule,
   runScheduleNow,
   getSchedulerStatus
+  setTelegramToken,
+  startTelegramBot,
+  stopTelegramBot,
+  upsertPipeline
 } from './api/agentApi.js';
 import { Navigation } from './components/Navigation.jsx';
 import { Toast } from './components/Toast.jsx';
@@ -595,7 +599,8 @@ function App() {
     planLoading,
     schedules,
     schedulerStatusState,
-    schedulesLoading
+    schedulesLoading,
+    planLoading
   ]);
 
   return (

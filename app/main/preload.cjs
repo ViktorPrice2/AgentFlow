@@ -29,4 +29,8 @@ contextBridge.exposeInMainWorld('AgentAPI', {
     ipcRenderer.invoke('AgentFlow:schedules:toggle', { id: scheduleId, enabled }),
   runScheduleNow: (scheduleId) => ipcRenderer.invoke('AgentFlow:schedules:runNow', scheduleId),
   getSchedulerStatus: () => ipcRenderer.invoke('AgentFlow:schedules:status')
+    ipcRenderer.invoke('AgentFlow:diff:entity', { entityType, idA, idB })
+
+  generateBriefPlan: (projectId) => ipcRenderer.invoke('AgentFlow:briefs:plan', projectId)
+
 });
