@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
-import { useI18n } from '../i18n/useI18n.js';
+import { useI18n } from '../i18n/useI18n.jsx';
 
 const DEFAULT_FORM = {
   id: null,

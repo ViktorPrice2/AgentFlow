@@ -3,10 +3,16 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import dotenv from 'dotenv';
+import {
+  resolveConfigPath,
+  resolveDataPath,
+  assertAllowedPath,
+  redactSensitive
+} from '../utils/security.js';
 
-const CONFIG_PATH = path.join(process.cwd(), 'config', 'providers.json');
+const CONFIG_PATH = resolveConfigPath('providers.json');
 const DEFAULT_TIMEOUT = 30_000;
-const PROVIDER_LOG_PATH = path.join(process.cwd(), 'data', 'logs', 'provider-manager.jsonl');
+const PROVIDER_LOG_PATH = resolveDataPath('logs', 'provider-manager.jsonl');
 
 const MOCK_TEXT = (providerId, model, prompt) =>
   `[MOCK:${providerId}:${model}] ${prompt?.slice(0, 200) ?? 'Нет входных данных'}`;
@@ -797,8 +803,12 @@ class ProviderManager {
     };
 
     try {
-      await fs.mkdir(path.dirname(PROVIDER_LOG_PATH), { recursive: true });
-      await fs.appendFile(PROVIDER_LOG_PATH, `${JSON.stringify(entry)}\n`);
+      const directory = path.dirname(PROVIDER_LOG_PATH);
+      assertAllowedPath(directory);
+      await fs.mkdir(directory, { recursive: true });
+      assertAllowedPath(PROVIDER_LOG_PATH);
+      const sanitizedEntry = redactSensitive(entry);
+      await fs.appendFile(PROVIDER_LOG_PATH, `${JSON.stringify(sanitizedEntry)}\n`);
     } catch (error) {
       // Ignore logging errors to avoid side effects in provider flows.
     }

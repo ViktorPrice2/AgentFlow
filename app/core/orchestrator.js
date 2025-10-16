@@ -1,10 +1,16 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import {
+  assertAllowedPath,
+  resolveDataPath,
+  sanitizeArtifactPath,
+  sanitizeFileName
+} from './utils/security.js';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const LOG_DIR = path.join(DATA_DIR, 'logs');
-const ARTIFACTS_DIR = path.join(DATA_DIR, 'artifacts');
+const DATA_DIR = resolveDataPath();
+const LOG_DIR = resolveDataPath('logs');
+const ARTIFACTS_DIR = resolveDataPath('artifacts');
 
 const defaultOptions = {
   agentConfigs: new Map(),
@@ -13,10 +19,13 @@ const defaultOptions = {
 };
 
 async function ensureDir(dirPath) {
-  await fs.mkdir(dirPath, { recursive: true });
+  const safePath = assertAllowedPath(dirPath);
+  await fs.mkdir(safePath, { recursive: true });
 }
 
 async function writeLog(logFile, event, data = {}) {
+  assertAllowedPath(logFile);
+
   const entry = {
     ts: new Date().toISOString(),
     event,
@@ -123,8 +132,13 @@ function determineNextNodes(currentNode, payload, adjacency) {
 }
 
 async function writeArtifact(runId, relativePath, content) {
-  const artifactRoot = path.join(ARTIFACTS_DIR, runId);
-  const destination = path.join(artifactRoot, relativePath);
+  const safeRunId = sanitizeFileName(runId, 'run');
+  const artifactRoot = path.join(ARTIFACTS_DIR, safeRunId);
+  assertAllowedPath(artifactRoot, { allowedRoots: [ARTIFACTS_DIR] });
+
+  const sanitizedRelative = sanitizeArtifactPath(relativePath);
+  const destination = path.join(artifactRoot, ...sanitizedRelative.split('/'));
+  assertAllowedPath(destination, { allowedRoots: [ARTIFACTS_DIR] });
   const destinationDir = path.dirname(destination);
 
   await ensureDir(destinationDir);
@@ -195,11 +209,12 @@ export async function runPipeline(pipeline, input = {}, options = {}) {
     throw new Error('pluginRegistry is required to run pipeline');
   }
 
-  const runId = resolvedOptions.runId || randomUUID();
+  const runId = sanitizeFileName(resolvedOptions.runId || randomUUID(), 'run');
   const logDirPath = LOG_DIR;
   await ensureDir(logDirPath);
 
   const logFile = path.join(logDirPath, `run_${runId}.jsonl`);
+  assertAllowedPath(logFile, { allowedRoots: [LOG_DIR] });
   const collectedArtifacts = [];
 
   const logFn = async (event, data) => {

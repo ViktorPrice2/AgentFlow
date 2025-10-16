@@ -1,8 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
+import { resolveDataPath, assertAllowedPath, redactSensitive } from './utils/security.js';
 
-const LOG_PATH = path.join(process.cwd(), 'data', 'logs', 'app-errors.jsonl');
+const LOG_PATH = resolveDataPath('logs', 'app-errors.jsonl');
 const emitter = new EventEmitter();
 let logDirEnsured = false;
 let processHandlersRegistered = false;
@@ -12,7 +13,9 @@ async function ensureLogDir() {
     return;
   }
 
-  await fs.mkdir(path.dirname(LOG_PATH), { recursive: true });
+  const directory = path.dirname(LOG_PATH);
+  assertAllowedPath(directory);
+  await fs.mkdir(directory, { recursive: true });
   logDirEnsured = true;
 }
 
@@ -74,6 +77,7 @@ function emitEntry(entry) {
 async function persistEntry(entry) {
   try {
     await ensureLogDir();
+    assertAllowedPath(LOG_PATH);
     await fs.appendFile(LOG_PATH, `${JSON.stringify(entry)}\n`);
   } catch (error) {
     // eslint-disable-next-line no-console
@@ -83,11 +87,13 @@ async function persistEntry(entry) {
 
 function buildEntry(level, message, details) {
   const normalizedDetails = details !== undefined ? safeSerialize(details) : undefined;
+  const sanitizedDetails =
+    normalizedDetails !== undefined ? redactSensitive(normalizedDetails) : undefined;
 
   return {
     level,
     message,
-    details: normalizedDetails,
+    details: sanitizedDetails,
     timestamp: new Date().toISOString()
   };
 }

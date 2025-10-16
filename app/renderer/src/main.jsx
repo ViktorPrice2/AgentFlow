@@ -2,7 +2,8 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import './index.css';
-import { I18nProvider } from './i18n/useI18n.js';
+import { I18nProvider } from './i18n/useI18n.jsx';
+import { ThemeProvider } from './theme/ThemeProvider.jsx';
 
 if (typeof window !== 'undefined' && !window.__afErrorListenersAttached) {
   window.__afErrorListenersAttached = true;
@@ -40,7 +41,9 @@ if (typeof window !== 'undefined' && !window.__afErrorListenersAttached) {
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <I18nProvider>
-      <App />
+      <ThemeProvider>
+        <App />
+      </ThemeProvider>
     </I18nProvider>
   </React.StrictMode>
 );

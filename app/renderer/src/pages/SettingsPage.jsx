@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
-import { useI18n } from '../i18n/useI18n.js';
+import { useI18n } from '../i18n/useI18n.jsx';
 
 function getEnvironmentInfo() {
   if (typeof process === 'undefined') {
@@ -26,7 +26,9 @@ export function SettingsPage({
   onStartBot,
   onStopBot,
   onRefreshBot,
-  botBusy = false
+  botBusy = false,
+  theme = 'light',
+  onThemeChange
 }) {
   const { t, language, setLanguage } = useI18n();
   const locale = language === 'en' ? 'en-US' : 'ru-RU';
@@ -95,6 +97,31 @@ export function SettingsPage({
             <option value="en">{t('settings.language.en')}</option>
           </select>
         </label>
+      </InfoCard>
+
+      <InfoCard title={t('settings.theme.title')} subtitle={t('settings.theme.subtitle')}>
+        <div className="theme-options" role="radiogroup" aria-label={t('settings.theme.label')}>
+          <label className={`theme-option ${theme === 'light' ? 'active' : ''}`}>
+            <input
+              type="radio"
+              name="settings-theme"
+              value="light"
+              checked={theme === 'light'}
+              onChange={() => onThemeChange?.('light')}
+            />
+            <span>{t('app.theme.light')}</span>
+          </label>
+          <label className={`theme-option ${theme === 'dark' ? 'active' : ''}`}>
+            <input
+              type="radio"
+              name="settings-theme"
+              value="dark"
+              checked={theme === 'dark'}
+              onChange={() => onThemeChange?.('dark')}
+            />
+            <span>{t('app.theme.dark')}</span>
+          </label>
+        </div>
       </InfoCard>
 
       <InfoCard
@@ -250,5 +277,7 @@ SettingsPage.propTypes = {
   onStartBot: PropTypes.func.isRequired,
   onStopBot: PropTypes.func.isRequired,
   onRefreshBot: PropTypes.func.isRequired,
-  botBusy: PropTypes.bool
+  botBusy: PropTypes.bool,
+  theme: PropTypes.oneOf(['light', 'dark']),
+  onThemeChange: PropTypes.func
 };

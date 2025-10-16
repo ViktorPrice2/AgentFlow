@@ -3,8 +3,9 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { runPipeline } from './orchestrator.js';
 import { createEntityStore } from './storage/entityStore.js';
+import { resolveDataPath, assertAllowedPath } from './utils/security.js';
 
-const LOG_FILE = path.join(process.cwd(), 'data', 'logs', 'scheduler.jsonl');
+const LOG_FILE = resolveDataPath('logs', 'scheduler.jsonl');
 
 function createFallbackCron() {
   return {
@@ -81,7 +82,9 @@ async function appendLog(event, data = {}, logFile = LOG_FILE) {
   };
 
   const logDir = path.dirname(logFile);
+  assertAllowedPath(logDir);
   await fs.mkdir(logDir, { recursive: true });
+  assertAllowedPath(logFile);
   await fs.appendFile(logFile, `${JSON.stringify(entry)}\n`, 'utf8');
 }
 

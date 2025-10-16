@@ -15,6 +15,8 @@
     "dev:main": "cross-env NODE_ENV=development ELECTRON_RENDERER_URL=http://localhost:5173 electron .",
     "build:ui": "cd renderer && npm run build",
     "build": "npm run build:ui && electron-builder",
+    "test": "vitest run",
+    "test:e2e": "playwright test --config=playwright.config.js",
     "postinstall": "cd renderer && npm install"
   },
   "dependencies": {
@@ -31,9 +33,11 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^4.0.1",
     "concurrently": "^8.2.2",
+    "@playwright/test": "^1.48.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "vite": "^5.3.3"
+    "vite": "^5.3.3",
+    "vitest": "^1.6.0"
   },
   "build": {
     "appId": "com.agentflow.desktop",

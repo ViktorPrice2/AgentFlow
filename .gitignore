@@ -77,6 +77,8 @@ app/data/logs/
 # Dist directories
 app/dist/
 app/renderer/dist/
+app/playwright-report/
+app/test-results/
 
 # Vite cache
 .vite/

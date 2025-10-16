@@ -3,16 +3,17 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
+import { resolveDataPath, assertAllowedPath } from '../core/utils/security.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const dataDir = path.join(__dirname, '../data');
-const dbPath = path.join(dataDir, 'app.db');
+const dataDir = resolveDataPath();
+const dbPath = resolveDataPath('app.db');
 const migrationsDir = path.join(__dirname, 'migrations');
 
 const ensureDataDirectory = async () => {
   if (!fs.existsSync(dataDir)) {
-    await fsp.mkdir(dataDir, { recursive: true });
+    await fsp.mkdir(assertAllowedPath(dataDir), { recursive: true });
   }
 };
 
@@ -37,7 +38,8 @@ export const runMigrations = async () => {
   await ensureDataDirectory();
 
   const migrations = await loadMigrations();
-  const db = new Database(dbPath);
+  const safeDbPath = assertAllowedPath(dbPath);
+  const db = new Database(safeDbPath);
 
   try {
     db.pragma('journal_mode = WAL');

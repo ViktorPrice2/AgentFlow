@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
-import { useI18n } from '../i18n/useI18n.js';
+import { useI18n } from '../i18n/useI18n.jsx';
 
 const DEFAULT_NODES = [
   { id: 'writer', agentName: 'WriterAgent', kind: 'task' },
@@ -36,6 +36,9 @@ export function PipelinesPage({
 }) {
   const { t } = useI18n();
   const [formState, setFormState] = useState(INITIAL_FORM_STATE);
+  const [formNodes, setFormNodes] = useState(() =>
+    DEFAULT_NODES.map((node) => ({ ...node }))
+  );
 
   const runContext = useMemo(() => {
     if (!project) {
@@ -43,6 +46,36 @@ export function PipelinesPage({
     }
     return { project, brief };
   }, [project, brief]);
+
+  const handleDragStart = (event, index) => {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(index));
+  };
+
+  const handleDragOver = (event) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (event, targetIndex) => {
+    event.preventDefault();
+    const fromIndex = Number(event.dataTransfer.getData('text/plain'));
+
+    if (Number.isNaN(fromIndex) || fromIndex === targetIndex) {
+      return;
+    }
+
+    setFormNodes((prev) => {
+      const updated = [...prev];
+      const [moved] = updated.splice(fromIndex, 1);
+      updated.splice(targetIndex, 0, moved);
+      return updated;
+    });
+  };
+
+  const handleResetNodes = () => {
+    setFormNodes(DEFAULT_NODES.map((node) => ({ ...node })));
+  };
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -68,19 +101,29 @@ export function PipelinesPage({
       }
     }
 
+    const orderedNodes = formNodes.map((node) => ({ ...node }));
+    const edges =
+      orderedNodes.length > 1
+        ? orderedNodes.slice(0, -1).map((node, index) => ({
+            from: orderedNodes[index].id,
+            to: orderedNodes[index + 1].id
+          }))
+        : [];
+
     const pipeline = {
       id: `${project?.id || 'pipeline'}-${Date.now()}`,
       name: formState.name.trim(),
       description: formState.description.trim(),
       projectId: project?.id || null,
-      nodes: DEFAULT_NODES,
-      edges: DEFAULT_EDGES,
+      nodes: orderedNodes,
+      edges,
       override: overrideData
     };
 
     onCreatePipeline(pipeline);
     onNotify(t('pipelines.toast.saved'), 'success');
     setFormState(INITIAL_FORM_STATE);
+    handleResetNodes();
   };
 
   const handleRun = (pipeline) => {
@@ -125,7 +168,7 @@ export function PipelinesPage({
                   {pipeline.nodes.map((node) => (
                     <li key={node.id}>
                       <span>{node.agentName}</span>
-                      <small>{node.kind}</small>
+                      <small>{t(`pipelines.form.kind.${node.kind}`, undefined, node.kind)}</small>
                     </li>
                   ))}
                 </ul>
@@ -178,6 +221,35 @@ export function PipelinesPage({
               placeholder={t('pipelines.form.descriptionPlaceholder')}
             />
           </label>
+          <div className="pipeline-steps">
+            <div className="pipeline-steps__header">
+              <span className="pipeline-steps__label">{t('pipelines.form.steps')}</span>
+              <button type="button" className="link-button" onClick={handleResetNodes}>
+                {t('pipelines.form.stepsReset')}
+              </button>
+            </div>
+            <p className="hint">{t('pipelines.form.stepsHint')}</p>
+            <ul className="pipeline-steps__list">
+              {formNodes.map((node, index) => (
+                <li
+                  key={node.id}
+                  className="pipeline-steps__item"
+                  draggable
+                  onDragStart={(event) => handleDragStart(event, index)}
+                  onDragOver={handleDragOver}
+                  onDrop={(event) => handleDrop(event, index)}
+                >
+                  <span className="pipeline-steps__handle" aria-hidden="true">
+                    в‹®в‹®
+                  </span>
+                  <div className="pipeline-steps__meta">
+                    <strong>{node.agentName}</strong>
+                    <small>{t(`pipelines.form.kind.${node.kind}`, undefined, node.kind)}</small>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
           <label>
             {t('pipelines.form.override')}
             <textarea
@@ -228,3 +300,4 @@ PipelinesPage.defaultProps = {
   isAgentOnline: true,
   onShowHistory: undefined
 };
+

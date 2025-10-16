@@ -3,6 +3,12 @@ import path from 'node:path';
 import keytar from 'keytar';
 import Database from 'better-sqlite3';
 import { createBriefSurvey, summarizeAnswers, buildExecutionPlan } from './survey.js';
+import {
+  resolveDataPath,
+  assertAllowedPath,
+  sanitizeFileName,
+  redactSensitive
+} from '../../core/utils/security.js';
 
 const SERVICE_NAME = 'AgentFlowDesktop';
 const TOKEN_ACCOUNT = 'telegram.bot.token';
@@ -27,21 +33,24 @@ async function ensureTelegrafModule() {
   }
 }
 
-function ensureDirectory(directoryPath) {
-  return fsp.mkdir(directoryPath, { recursive: true });
+function ensureDirectory(directoryPath, options) {
+  const safePath = assertAllowedPath(directoryPath, options);
+  return fsp.mkdir(safePath, { recursive: true });
 }
 
-function appendJsonLine(filePath, payload) {
-  const line = `${JSON.stringify({
+async function appendJsonLine(filePath, payload, options) {
+  const safePath = assertAllowedPath(filePath, options);
+  const entry = {
     timestamp: new Date().toISOString(),
-    ...payload
-  })}\n`;
+    ...redactSensitive(payload)
+  };
 
-  return fsp.appendFile(filePath, line, { encoding: 'utf8' });
+  return fsp.appendFile(safePath, `${JSON.stringify(entry)}\n`, { encoding: 'utf8' });
 }
 
 function openDatabase(dbPath) {
-  const db = new Database(dbPath);
+  const safePath = assertAllowedPath(dbPath);
+  const db = new Database(safePath);
   db.pragma('journal_mode = WAL');
   return db;
 }
@@ -100,10 +109,22 @@ function selectLatestBrief(dbPath, projectId) {
 
 export class TelegramBotService {
   constructor({ dataDirectory, dbPath, logPath, restartDelay = DEFAULT_RESTART_DELAY } = {}) {
-    this.dataDirectory = dataDirectory || path.resolve(process.cwd(), 'data');
-    this.dbPath = dbPath || path.join(this.dataDirectory, 'app.db');
-    this.logPath = logPath || path.join(this.dataDirectory, 'logs', 'telegram-bot.jsonl');
-    this.briefsDirectory = path.join(this.dataDirectory, 'briefs');
+    const defaultDataDir = resolveDataPath();
+    const allowedRoots = [defaultDataDir];
+
+    const resolvedDataDir = dataDirectory
+      ? assertAllowedPath(path.resolve(dataDirectory), { allowedRoots })
+      : defaultDataDir;
+
+    this.allowedRoots = allowedRoots;
+    this.dataDirectory = resolvedDataDir;
+    this.dbPath = dbPath
+      ? assertAllowedPath(path.resolve(dbPath), { allowedRoots })
+      : assertAllowedPath(path.join(resolvedDataDir, 'app.db'), { allowedRoots });
+    this.logPath = logPath
+      ? assertAllowedPath(path.resolve(logPath), { allowedRoots })
+      : assertAllowedPath(path.join(resolvedDataDir, 'logs', 'telegram-bot.jsonl'), { allowedRoots });
+    this.briefsDirectory = assertAllowedPath(path.join(resolvedDataDir, 'briefs'), { allowedRoots });
     this.restartDelay = restartDelay;
     this.sessions = new Map();
     this.running = false;
@@ -117,21 +138,25 @@ export class TelegramBotService {
   }
 
   async init() {
-    await ensureDirectory(this.dataDirectory);
-    await ensureDirectory(path.dirname(this.logPath));
-    await ensureDirectory(this.briefsDirectory);
+    await ensureDirectory(this.dataDirectory, { allowedRoots: this.allowedRoots });
+    await ensureDirectory(path.dirname(this.logPath), { allowedRoots: this.allowedRoots });
+    await ensureDirectory(this.briefsDirectory, { allowedRoots: this.allowedRoots });
     this.tokenCache = await keytar.getPassword(SERVICE_NAME, TOKEN_ACCOUNT);
 
     return this.getStatus();
   }
 
   async log(level, message, meta = {}) {
-    await appendJsonLine(this.logPath, {
-      service: 'telegram-bot',
-      level,
-      message,
-      ...meta
-    });
+    await appendJsonLine(
+      this.logPath,
+      {
+        service: 'telegram-bot',
+        level,
+        message,
+        ...meta
+      },
+      { allowedRoots: this.allowedRoots }
+    );
   }
 
   scheduleRestart(reason) {
@@ -383,7 +408,10 @@ export class TelegramBotService {
 
     await insertBrief(this.dbPath, record);
 
-    const filePath = path.join(this.briefsDirectory, `${briefId}.json`);
+    const safeBriefId = sanitizeFileName(briefId, 'brief');
+    const filePath = assertAllowedPath(path.join(this.briefsDirectory, `${safeBriefId}.json`), {
+      allowedRoots: this.allowedRoots
+    });
     const filePayload = {
       id: briefId,
       projectId: session.projectId,

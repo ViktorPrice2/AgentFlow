@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 import {
   fetchLatestBrief,
@@ -32,7 +32,9 @@ import { SettingsPage } from './pages/SettingsPage.jsx';
 import { SchedulerPage } from './pages/SchedulerPage.jsx';
 import { usePersistentState } from './hooks/usePersistentState.js';
 import { VersionHistoryModal } from './components/VersionHistoryModal.jsx';
-import { useI18n } from './i18n/useI18n.js';
+import { useI18n } from './i18n/useI18n.jsx';
+import { useTheme } from './theme/ThemeProvider.jsx';
+import { LogsPanel } from './components/LogsPanel.jsx';
 
 const SECTION_CONFIG = [
   { id: 'projects', labelKey: 'app.nav.projects' },
@@ -149,9 +151,14 @@ function usePipelineResources() {
 
 function App() {
   const { t, language } = useI18n();
+  const { theme, setTheme } = useTheme();
   const locale = language === 'en' ? 'en-US' : 'ru-RU';
   const [activeSection, setActiveSection] = useState('projects');
   const [toast, setToast] = useState({ message: null, type: 'info' });
+  const [logEntries, setLogEntries] = useState([]);
+  const [isLogPanelOpen, setLogPanelOpen] = usePersistentState('af.logs.open', false);
+  const [unreadLogs, setUnreadLogs] = useState(0);
+  const toastTimerRef = useRef(null);
 
   const [projects, setProjects] = usePersistentState('af.projects', []);
   const [selectedProjectId, setSelectedProjectId] = usePersistentState('af.selectedProject', null);
@@ -172,6 +179,73 @@ function App() {
     entityId: null,
     entityName: ''
   });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    if (isLogPanelOpen) {
+      setUnreadLogs(0);
+    }
+  }, [isLogPanelOpen]);
+
+  useEffect(
+    () => () => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = null;
+      }
+    },
+    []
+  );
+
+  const pushLogEntry = useCallback(
+    (entry) => {
+      setLogEntries((previous) => {
+        const normalized = {
+          id: entry.id ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          level: entry.level || 'info',
+          message: entry.message || '',
+          source: entry.source || 'ui',
+          details: entry.details ?? null,
+          timestamp: entry.timestamp || new Date().toISOString()
+        };
+
+        const next = [normalized, ...previous];
+        return next.slice(0, 200);
+      });
+
+      setUnreadLogs((count) => (isLogPanelOpen ? 0 : Math.min(count + 1, 999)));
+    },
+    [isLogPanelOpen]
+  );
+
+  const showToast = useCallback(
+    (message, type = 'info', meta) => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+
+      setToast({ message, type });
+
+      if (message) {
+        toastTimerRef.current = setTimeout(() => {
+          setToast({ message: null, type: 'info' });
+          toastTimerRef.current = null;
+        }, 4000);
+
+        pushLogEntry({
+          level: type,
+          message,
+          source: meta?.source || 'ui',
+          details: meta?.details ?? meta ?? null,
+          timestamp: new Date().toISOString()
+        });
+      }
+    },
+    [pushLogEntry]
+  );
 
   const sections = useMemo(
     () => SECTION_CONFIG.map((section) => ({ id: section.id, label: t(section.labelKey) })),
@@ -234,12 +308,37 @@ function App() {
     showToast(t('app.toasts.telegramStatusUpdated'), 'info');
   };
 
-  const showToast = useCallback((message, type = 'info') => {
-    setToast({ message, type });
-    if (message) {
-      setTimeout(() => setToast({ message: null, type: 'info' }), 4000);
-    }
+  const handleToggleLogs = useCallback(() => {
+    setLogPanelOpen((previous) => {
+      const next = !previous;
+      if (next) {
+        setUnreadLogs(0);
+      }
+      return next;
+    });
+  }, [setLogPanelOpen]);
+
+  const handleClearLogs = useCallback(() => {
+    setLogEntries([]);
+    setUnreadLogs(0);
   }, []);
+
+  const handleCloseLogs = useCallback(() => {
+    setLogPanelOpen(false);
+    setUnreadLogs(0);
+  }, [setLogPanelOpen]);
+
+  const handleThemeChange = useCallback(
+    (nextTheme) => {
+      const normalized = nextTheme === 'dark' ? 'dark' : 'light';
+      setTheme(normalized);
+      showToast(t('app.toasts.themeChanged', { theme: t(`app.theme.${normalized}`) }), 'info', {
+        source: 'ui',
+        details: { theme: normalized }
+      });
+    },
+    [setTheme, showToast, t]
+  );
 
   useEffect(() => {
     if (!window?.ErrorAPI?.subscribe) {
@@ -252,7 +351,10 @@ function App() {
         level === 'error' ? 'genericError' : level === 'warn' ? 'genericWarn' : 'genericInfo';
       const message = entry.message || t(`app.toasts.${fallbackKey}`);
       const toastType = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'info';
-      showToast(message, toastType);
+      showToast(message, toastType, { source: 'error-bus', details: entry });
+      if (level === 'error') {
+        setLogPanelOpen(true);
+      }
     });
 
     return () => {
@@ -260,34 +362,7 @@ function App() {
         unsubscribe();
       }
     };
-  }, [showToast, t]);
-
-  const loadSchedulerStatus = async () => {
-    try {
-      const status = await getSchedulerStatus();
-      setSchedulerStatusState(status);
-      return status;
-    } catch (error) {
-      console.error('Failed to load scheduler status', error);
-      throw error;
-    }
-  };
-
-  const loadSchedules = async (projectId = selectedProjectId) => {
-    setSchedulesLoading(true);
-
-    try {
-      const scheduleList = await listSchedules(projectId);
-      setSchedules(scheduleList);
-      return scheduleList;
-    } catch (error) {
-      console.error('Failed to load schedules', error);
-      throw error;
-    } finally {
-      setSchedulesLoading(false);
-    }
-  };
-
+  }, [showToast, t, setLogPanelOpen]);
   const loadSchedulerStatus = async () => {
     try {
       const status = await getSchedulerStatus();
@@ -638,6 +713,8 @@ function App() {
             onStopBot={handleStopBot}
             onRefreshBot={handleRefreshBotStatus}
             botBusy={botBusy}
+            theme={theme}
+            onThemeChange={handleThemeChange}
           />
         );
     }
@@ -660,21 +737,45 @@ function App() {
     planLoading,
     schedules,
     schedulerStatusState,
-    schedulesLoading
+    schedulesLoading,
+    theme,
+    handleThemeChange
   ]);
 
   return (
     <div className="app-container">
       <header className="app-header">
-        <div>
+        <div className="app-header__info">
           <h1>{t('app.title')}</h1>
           <p>{t('app.tagline')}</p>
         </div>
+        <div className="app-header__actions">
+          <button
+            type="button"
+            className="header-button"
+            onClick={handleToggleLogs}
+            aria-pressed={isLogPanelOpen}
+          >
+            {t(isLogPanelOpen ? 'app.actions.closeLogs' : 'app.actions.openLogs')}
+            {unreadLogs > 0 ? (
+              <span className="header-button__badge">{Math.min(unreadLogs, 99)}</span>
+            ) : null}
+          </button>
+        </div>
       </header>
 
-      <Navigation sections={sections} activeId={activeSection} onChange={setActiveSection} />
-
-      <main className="app-main">{currentSection}</main>
+      <div className="app-content">
+        <div className="app-main-column">
+          <Navigation sections={sections} activeId={activeSection} onChange={setActiveSection} />
+          <main className="app-main">{currentSection}</main>
+        </div>
+        <LogsPanel
+          entries={logEntries}
+          open={isLogPanelOpen}
+          onClose={handleCloseLogs}
+          onClear={handleClearLogs}
+        />
+      </div>
 
       <Toast
         message={toast.message}

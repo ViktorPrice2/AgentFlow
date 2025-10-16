@@ -12,6 +12,7 @@ function resolveTranslation(dictionary, keyPath) {
     if (acc && typeof acc === 'object') {
       return acc[segment];
     }
+
     return undefined;
   }, dictionary);
 }
@@ -26,6 +27,7 @@ function formatTemplate(template, values = {}) {
       const value = values[token];
       return value === undefined || value === null ? '' : String(value);
     }
+
     return match;
   });
 }
@@ -59,8 +61,10 @@ export function I18nProvider({ children }) {
 
 export function useI18n() {
   const context = useContext(I18nContext);
+
   if (!context) {
     throw new Error('useI18n must be used within I18nProvider');
   }
+
   return context;
 }

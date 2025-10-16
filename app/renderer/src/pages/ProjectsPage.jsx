@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
-import { useI18n } from '../i18n/useI18n.js';
+import { useI18n } from '../i18n/useI18n.jsx';
 
 function createProjectPayload(formState) {
   const id =
