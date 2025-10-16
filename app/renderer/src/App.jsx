@@ -151,14 +151,12 @@ function App() {
   const [briefLoading, setBriefLoading] = useState(false);
   const [planDraft, setPlanDraft] = useState({ text: '', updatedAt: null });
   const [planLoading, setPlanLoading] = useState(false);
-
   const [versionModal, setVersionModal] = useState({
     open: false,
     entityType: null,
     entityId: null,
     entityName: ''
   });
-
 
   const { agentsData, providerStatus, providerUpdatedAt, refreshAgents } = useAgentResources();
   const { pipelines, refreshPipelines } = usePipelineResources();
@@ -252,7 +250,6 @@ function App() {
     setRuns([]);
     showToast('История запусков очищена', 'info');
   };
-
 
   const closeVersionModal = () => {
     setVersionModal({ open: false, entityType: null, entityId: null, entityName: '' });
