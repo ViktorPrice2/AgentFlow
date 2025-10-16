@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
+import { useI18n } from '../i18n/useI18n.js';
 
-const DEFAULT_BRIEF = {
+export const DEFAULT_BRIEF = {
   goals: '',
   audience: '',
   offer: '',
@@ -13,7 +14,22 @@ const DEFAULT_BRIEF = {
   references: ''
 };
 
-export function BriefPage({ project = null, brief = DEFAULT_BRIEF, onUpdateBrief, onNotify }) {
+export function BriefPage({
+  project = null,
+  brief = DEFAULT_BRIEF,
+  latestBrief = null,
+  planText = '',
+  telegramStatus = null,
+  onUpdateBrief,
+  onNotify,
+  onRefreshBrief = () => {},
+  onImportBrief = () => {},
+  onGeneratePlan = () => {},
+  isRefreshing = false,
+  isGenerating = false
+}) {
+  const { t, language } = useI18n();
+  const locale = language === 'en' ? 'en-US' : 'ru-RU';
   const [formState, setFormState] = useState({ ...DEFAULT_BRIEF, ...brief });
 
   useEffect(() => {
@@ -28,129 +44,206 @@ export function BriefPage({ project = null, brief = DEFAULT_BRIEF, onUpdateBrief
   const handleSubmit = (event) => {
     event.preventDefault();
     onUpdateBrief(formState);
-    onNotify('Бриф обновлён', 'success');
+    onNotify(t('brief.toast.saved'), 'success');
   };
 
   const summary = useMemo(() => {
     const fields = [
-      { label: 'Цели', value: formState.goals },
-      { label: 'Аудитория', value: formState.audience },
-      { label: 'Предложение', value: formState.offer },
-      { label: 'Тон коммуникации', value: formState.tone },
-      { label: 'Ключевые сообщения', value: formState.keyMessages },
-      { label: 'Призыв к действию', value: formState.callToAction },
-      { label: 'Метрики успеха', value: formState.successMetrics },
-      { label: 'Референсы', value: formState.references }
+      { label: t('brief.labels.goals'), value: formState.goals },
+      { label: t('brief.labels.audience'), value: formState.audience },
+      { label: t('brief.labels.offer'), value: formState.offer },
+      { label: t('brief.labels.tone'), value: formState.tone },
+      { label: t('brief.labels.keyMessages'), value: formState.keyMessages },
+      { label: t('brief.labels.callToAction'), value: formState.callToAction },
+      { label: t('brief.labels.successMetrics'), value: formState.successMetrics },
+      { label: t('brief.labels.references'), value: formState.references }
     ];
 
     return fields.filter((field) => field.value?.trim()).map((field) => field.label);
-  }, [formState]);
+  }, [formState, t]);
+
+  const latestBriefDetails = latestBrief?.details ?? {};
+  const statusLabel = telegramStatus?.running
+    ? t('brief.telegram.statusActive')
+    : t('brief.telegram.statusInactive');
+  const deeplink = project && telegramStatus?.deeplinkBase ? `${telegramStatus.deeplinkBase}?start=project=${project.id}` : null;
 
   return (
     <div className="page-grid brief-grid">
       <InfoCard
-        title="Бриф"
+        title={t('brief.title')}
         subtitle={
           project
-            ? `Работаем с проектом «${project.name}». Эти данные будут доступны агентам и пайплайнам.`
-            : 'Сначала выберите проект во вкладке «Проекты».'
+            ? t('brief.subtitle.withProject', { project: project.name })
+            : t('brief.subtitle.withoutProject')
         }
       >
         <form className="form" onSubmit={handleSubmit}>
           <label>
-            Цели кампании
+            {t('brief.form.goals')}
             <textarea
               name="goals"
               rows={3}
               value={formState.goals}
               onChange={handleChange}
-              placeholder="Повысить узнаваемость, сделать запуск продукта, получить лиды..."
+              placeholder={t('brief.form.goalsPlaceholder')}
             />
           </label>
           <label>
-            Целевая аудитория
+            {t('brief.form.audience')}
             <textarea
               name="audience"
               rows={3}
               value={formState.audience}
               onChange={handleChange}
-              placeholder="Кто клиент? Какие боли, мотивация, возражения?"
+              placeholder={t('brief.form.audiencePlaceholder')}
             />
           </label>
           <label>
-            Предложение / оффер
+            {t('brief.form.offer')}
             <textarea
               name="offer"
               rows={2}
               value={formState.offer}
               onChange={handleChange}
-              placeholder="Коротко о продукте, услуге или спецпредложении"
+              placeholder={t('brief.form.offerPlaceholder')}
             />
           </label>
           <label>
-            Тон и стиль
+            {t('brief.form.tone')}
             <input
               name="tone"
               value={formState.tone}
               onChange={handleChange}
-              placeholder="Дружелюбный, экспертный, дерзкий, деловой..."
+              placeholder={t('brief.form.tonePlaceholder')}
             />
           </label>
           <label>
-            Ключевые сообщения
+            {t('brief.form.keyMessages')}
             <textarea
               name="keyMessages"
               rows={3}
               value={formState.keyMessages}
               onChange={handleChange}
-              placeholder="2-3 тезиса, которые обязательно нужно упомянуть"
+              placeholder={t('brief.form.keyMessagesPlaceholder')}
             />
           </label>
           <label>
-            Призыв к действию
+            {t('brief.form.callToAction')}
             <input
               name="callToAction"
               value={formState.callToAction}
               onChange={handleChange}
-              placeholder="Например, зарегистрируйтесь, оформите заказ, подпишитесь"
+              placeholder={t('brief.form.callToActionPlaceholder')}
             />
           </label>
           <label>
-            Метрики успеха
+            {t('brief.form.successMetrics')}
             <input
               name="successMetrics"
               value={formState.successMetrics}
               onChange={handleChange}
-              placeholder="Конверсии, заявки, охват, продажи..."
+              placeholder={t('brief.form.successMetricsPlaceholder')}
             />
           </label>
           <label>
-            Референсы / ссылки
+            {t('brief.form.references')}
             <textarea
               name="references"
               rows={2}
               value={formState.references}
               onChange={handleChange}
-              placeholder="Полезные примеры, прошлые кампании, материалы"
+              placeholder={t('brief.form.referencesPlaceholder')}
             />
           </label>
           <button type="submit" className="primary-button" disabled={!project}>
-            Сохранить бриф
+            {t('brief.form.save')}
           </button>
         </form>
       </InfoCard>
 
       <InfoCard
-        title="Сводка для агентов"
-        subtitle="Список заполняется автоматически — помогает быстро оценить полноту брифа."
+        title={t('brief.summary.title')}
+        subtitle={t('brief.summary.subtitle')}
       >
         <ul className="brief-summary">
           {summary.length === 0 ? (
-            <li>Добавьте данные слева, чтобы сформировать сводку.</li>
+            <li>{t('brief.summary.empty')}</li>
           ) : (
             summary.map((item) => <li key={item}>{item}</li>)
           )}
         </ul>
+      </InfoCard>
+
+      <InfoCard
+        title={t('brief.telegram.title')}
+        subtitle={t('brief.telegram.subtitle')}
+        footer={
+          <div className="button-row">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onRefreshBrief}
+              disabled={!project || isRefreshing}
+            >
+              {isRefreshing ? t('brief.telegram.refreshing') : t('brief.telegram.refresh')}
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onImportBrief}
+              disabled={!latestBrief || !project}
+            >
+              {t('brief.telegram.apply')}
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={onGeneratePlan}
+              disabled={!project || isGenerating}
+            >
+              {isGenerating ? t('brief.telegram.generating') : t('brief.telegram.generate')}
+            </button>
+          </div>
+        }
+      >
+        <div className="telegram-brief-status">
+          <p>
+            <strong>{t('common.status')}:</strong> {statusLabel}
+            {telegramStatus?.lastError ? <span className="status-label warn">{telegramStatus.lastError}</span> : null}
+          </p>
+          {deeplink ? (
+            <p className="hint">
+              {t('common.deeplink')}: <code>{deeplink}</code>
+            </p>
+          ) : (
+            <p className="hint">{t('brief.telegram.deeplinkHint')}</p>
+          )}
+        </div>
+        {latestBrief ? (
+          <div className="telegram-brief-preview">
+            <p className="telegram-brief-preview__meta">
+              {t('brief.telegram.receivedAt')}: {new Date(latestBrief.createdAt || latestBrief.updatedAt).toLocaleString(locale)}
+            </p>
+            <ul>
+              {Object.entries(latestBriefDetails).map(([key, value]) => (
+                <li key={key}>
+                  <strong>{key}:</strong> {value || t('common.notAvailable')}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p className="hint">{t('brief.telegram.noBriefs')}</p>
+        )}
+      </InfoCard>
+
+      <InfoCard title={t('brief.telegram.planTitle')} subtitle={t('brief.telegram.planSubtitle')}>
+        {planText ? (
+          <pre className="plan-preview">{planText}</pre>
+        ) : (
+          <p className="hint">{t('brief.telegram.planEmpty')}</p>
+        )}
       </InfoCard>
     </div>
   );
@@ -172,5 +265,24 @@ BriefPage.propTypes = {
     references: PropTypes.string
   }),
   onUpdateBrief: PropTypes.func.isRequired,
-  onNotify: PropTypes.func.isRequired
+  onNotify: PropTypes.func.isRequired,
+  latestBrief: PropTypes.shape({
+    id: PropTypes.string,
+    projectId: PropTypes.string,
+    summary: PropTypes.string,
+    details: PropTypes.object,
+    createdAt: PropTypes.string,
+    updatedAt: PropTypes.string
+  }),
+  planText: PropTypes.string,
+  telegramStatus: PropTypes.shape({
+    running: PropTypes.bool,
+    lastError: PropTypes.string,
+    deeplinkBase: PropTypes.string
+  }),
+  onRefreshBrief: PropTypes.func,
+  onImportBrief: PropTypes.func,
+  onGeneratePlan: PropTypes.func,
+  isRefreshing: PropTypes.bool,
+  isGenerating: PropTypes.bool
 };

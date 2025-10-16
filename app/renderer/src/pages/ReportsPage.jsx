@@ -1,6 +1,7 @@
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
+import { useI18n } from '../i18n/useI18n.js';
 
 function calculateMetrics(runs) {
   const total = runs.length;
@@ -22,40 +23,36 @@ function calculateMetrics(runs) {
 }
 
 export function ReportsPage({ runs = [] }) {
+  const { t, language } = useI18n();
+  const locale = language === 'en' ? 'en-US' : 'ru-RU';
   const metrics = calculateMetrics(runs);
 
   return (
-    <InfoCard
-      title="Отчёты"
-      subtitle="Сводные метрики по запуску пайплайнов. Подробные JSON-отчёты находятся в data/logs."
-    >
+    <InfoCard title={t('reports.title')} subtitle={t('reports.subtitle')}>
       {runs.length === 0 ? (
-        <EmptyState
-          title="Нет данных для отчётов"
-          description="Запустите хотя бы один сценарий, чтобы собрать статистику."
-        />
+        <EmptyState title={t('reports.emptyTitle')} description={t('reports.emptyDescription')} />
       ) : (
         <div className="reports-grid">
           <section className="report-metric">
-            <h4>Всего запусков</h4>
+            <h4>{t('reports.totalRuns')}</h4>
             <p>{metrics.total}</p>
           </section>
           <section className="report-metric">
-            <h4>Успешно</h4>
+            <h4>{t('reports.success')}</h4>
             <p>{metrics.success}</p>
           </section>
           <section className="report-metric">
-            <h4>Ошибки</h4>
+            <h4>{t('reports.errors')}</h4>
             <p>{metrics.failed}</p>
           </section>
           <section className="report-metric">
-            <h4>Последний запуск</h4>
+            <h4>{t('reports.lastRun')}</h4>
             <p>
               {metrics.lastRun
-                ? `${metrics.lastRun.pipelineName || 'Pipeline'} • ${new Date(
+                ? `${metrics.lastRun.pipelineName || t('common.pipeline')} • ${new Date(
                     metrics.lastRun.timestamp
-                  ).toLocaleString('ru-RU')} • ${metrics.lastRun.status}`
-                : '—'}
+                  ).toLocaleString(locale)} • ${metrics.lastRun.status}`
+                : t('common.notAvailable')}
             </p>
           </section>
         </div>
