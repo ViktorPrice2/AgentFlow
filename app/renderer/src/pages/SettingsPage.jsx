@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
@@ -15,8 +16,58 @@ function getEnvironmentInfo() {
   ];
 }
 
-export function SettingsPage({ providerStatus = [], apiAvailable, onRefresh }) {
+export function SettingsPage({
+  providerStatus = [],
+  apiAvailable,
+  onRefresh,
+  botStatus,
+  onSaveToken,
+  onStartBot,
+  onStopBot,
+  onRefreshBot,
+  botBusy = false
+}) {
   const envInfo = getEnvironmentInfo();
+  const [tokenInput, setTokenInput] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    setTokenInput('');
+  }, [botStatus?.tokenStored]);
+
+  useEffect(() => {
+    setCopied(false);
+  }, [botStatus?.deeplinkBase]);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    if (typeof onSaveToken === 'function') {
+      await onSaveToken(tokenInput);
+      setTokenInput('');
+    }
+  };
+
+  const handleCopy = async () => {
+    if (!botStatus?.deeplinkBase) {
+      return;
+    }
+
+    const deeplinkTemplate = `${botStatus.deeplinkBase}?start=project=PRJ_ID`;
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(deeplinkTemplate);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('Clipboard copy failed', error);
+    }
+  };
+
+  const statusText = botStatus?.running ? 'бот активен' : 'бот остановлен';
+  const deeplinkTemplate = botStatus?.deeplinkBase ? `${botStatus.deeplinkBase}?start=project=PRJ_ID` : null;
 
   return (
     <div className="page-grid two-columns">
@@ -86,6 +137,78 @@ export function SettingsPage({ providerStatus = [], apiAvailable, onRefresh }) {
           </table>
         )}
       </InfoCard>
+
+      <InfoCard
+        title="Telegram-бот"
+        subtitle="Укажите токен бота и управляйте запуском встроенного опросника."
+        footer={
+          <div className="button-row">
+            <button type="button" className="secondary-button" onClick={onRefreshBot} disabled={botBusy}>
+              Обновить статус
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={handleCopy}
+              disabled={!deeplinkTemplate}
+            >
+              {copied ? 'Скопировано' : 'Скопировать deeplink'}
+            </button>
+          </div>
+        }
+      >
+        <form className="form" onSubmit={handleSubmit}>
+          <label>
+            Токен Telegram Bot API
+            <input
+              type="password"
+              value={tokenInput}
+              onChange={(event) => setTokenInput(event.target.value)}
+              placeholder="Введите значение вида 1234567890:ABC..."
+            />
+          </label>
+          <div className="button-row">
+            <button type="submit" className="primary-button" disabled={botBusy}>
+              Сохранить токен
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onStartBot}
+              disabled={botBusy || !botStatus?.tokenStored}
+            >
+              Старт бота
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onStopBot}
+              disabled={botBusy || !botStatus?.running}
+            >
+              Стоп бота
+            </button>
+          </div>
+        </form>
+        <p className="hint">Оставьте поле пустым и сохраните, чтобы удалить сохранённый токен.</p>
+        <p className="hint">
+          Статус: <strong>{statusText}</strong>
+          {botStatus?.username ? ` (@${botStatus.username})` : ''}
+        </p>
+        {botStatus?.startedAt ? (
+          <p className="hint">Запущен: {new Date(botStatus.startedAt).toLocaleString('ru-RU')}</p>
+        ) : null}
+        {botStatus?.lastActivityAt ? (
+          <p className="hint">Последняя активность: {new Date(botStatus.lastActivityAt).toLocaleString('ru-RU')}</p>
+        ) : null}
+        {botStatus?.lastError ? <p className="hint warn">Ошибка: {botStatus.lastError}</p> : null}
+        {deeplinkTemplate ? (
+          <p className="hint">
+            Шаблон deeplink: <code>{deeplinkTemplate}</code>
+          </p>
+        ) : (
+          <p className="hint">После запуска бот покажет username, и deeplink станет доступен.</p>
+        )}
+      </InfoCard>
     </div>
   );
 }
@@ -101,5 +224,19 @@ SettingsPage.propTypes = {
     })
   ),
   apiAvailable: PropTypes.bool.isRequired,
-  onRefresh: PropTypes.func.isRequired
+  onRefresh: PropTypes.func.isRequired,
+  botStatus: PropTypes.shape({
+    running: PropTypes.bool,
+    tokenStored: PropTypes.bool,
+    username: PropTypes.string,
+    deeplinkBase: PropTypes.string,
+    startedAt: PropTypes.string,
+    lastActivityAt: PropTypes.string,
+    lastError: PropTypes.string
+  }),
+  onSaveToken: PropTypes.func.isRequired,
+  onStartBot: PropTypes.func.isRequired,
+  onStopBot: PropTypes.func.isRequired,
+  onRefreshBot: PropTypes.func.isRequired,
+  botBusy: PropTypes.bool
 };
