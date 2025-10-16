@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import { createPluginRegistry } from '../core/pluginLoader.js';
 import { registerIpcHandlers } from '../core/api.js';
 import { createProviderManager } from '../core/providers/manager.js';
+import { runMigrations } from '../db/migrate.js';
 
 const isDevelopment = process.env.NODE_ENV === 'development';
 const __filename = fileURLToPath(import.meta.url);
@@ -105,6 +106,7 @@ const bootstrapCore = async () => {
 };
 
 app.whenReady().then(async () => {
+  await runMigrations();
   await bootstrapCore();
   await createMainWindow();
 
