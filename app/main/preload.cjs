@@ -32,5 +32,4 @@ contextBridge.exposeInMainWorld('AgentAPI', {
     ipcRenderer.invoke('AgentFlow:diff:entity', { entityType, idA, idB })
 
   generateBriefPlan: (projectId) => ipcRenderer.invoke('AgentFlow:briefs:plan', projectId)
-
 });

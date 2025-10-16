@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
+import { useI18n } from '../i18n/useI18n.js';
 
 function createProjectPayload(formState) {
   const id =
@@ -36,6 +37,8 @@ export function ProjectsPage({
   onSelectProject,
   onNotify
 }) {
+  const { t, language } = useI18n();
+  const locale = language === 'en' ? 'en-US' : 'ru-RU';
   const [formState, setFormState] = useState(INITIAL_FORM_STATE);
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) || null,
@@ -51,13 +54,13 @@ export function ProjectsPage({
     event.preventDefault();
 
     if (!formState.name.trim()) {
-      onNotify('Укажите название проекта', 'error');
+      onNotify(t('projects.toast.nameRequired'), 'error');
       return;
     }
 
     const payload = createProjectPayload(formState);
     onCreateProject(payload);
-    onNotify('Проект сохранён', 'success');
+    onNotify(t('projects.toast.saved'), 'success');
     setFormState(INITIAL_FORM_STATE);
     onSelectProject(payload.id);
   };
@@ -65,13 +68,13 @@ export function ProjectsPage({
   return (
     <div className="page-grid">
       <InfoCard
-        title="Проекты"
-        subtitle="Список активных инициатив. Выберите проект, чтобы продолжить настройку."
+        title={t('projects.list.title')}
+        subtitle={t('projects.list.subtitle')}
       >
         {projects.length === 0 ? (
           <EmptyState
-            title="Проектов пока нет"
-            description="Добавьте первый проект, чтобы сформировать бриф и пайплайны."
+            title={t('projects.list.emptyTitle')}
+            description={t('projects.list.emptyDescription')}
           />
         ) : (
           <ul className="project-list">
@@ -84,9 +87,9 @@ export function ProjectsPage({
                 >
                   <div>
                     <h4>{project.name}</h4>
-                    <p>{project.industry || 'Отрасль не указана'}</p>
+                    <p>{project.industry || t('projects.list.industryMissing')}</p>
                   </div>
-                  <span>{new Date(project.updatedAt).toLocaleString('ru-RU')}</span>
+                  <span>{new Date(project.updatedAt).toLocaleString(locale)}</span>
                 </button>
               </li>
             ))}
@@ -95,94 +98,92 @@ export function ProjectsPage({
       </InfoCard>
 
       <InfoCard
-        title="Добавить проект"
-        subtitle="Заполните ключевые поля: описание, каналы, deeplink. Эти данные используют агенты."
+        title={t('projects.form.title')}
+        subtitle={t('projects.form.subtitle')}
       >
         <form className="form" onSubmit={handleSubmit}>
           <label>
-            Название
+            {t('projects.form.name')}
             <input
               name="name"
               value={formState.name}
               onChange={handleInputChange}
-              placeholder="Например, AgentFlow Launch"
+              placeholder={t('projects.form.namePlaceholder')}
             />
           </label>
           <label>
-            Отрасль / ниша
+            {t('projects.form.industry')}
             <input
               name="industry"
               value={formState.industry}
               onChange={handleInputChange}
-              placeholder="SaaS, e-commerce, образование..."
+              placeholder={t('projects.form.industryPlaceholder')}
             />
           </label>
           <label>
-            Краткое описание
+            {t('projects.form.description')}
             <textarea
               name="description"
               value={formState.description}
               onChange={handleInputChange}
               rows={4}
-              placeholder="Цели, продукт, особенности предложения"
+              placeholder={t('projects.form.descriptionPlaceholder')}
             />
           </label>
           <label>
-            Каналы
+            {t('projects.form.channels')}
             <input
               name="channels"
               value={formState.channels}
               onChange={handleInputChange}
-              placeholder="Telegram, VK, Email, Ads..."
+              placeholder={t('projects.form.channelsPlaceholder')}
             />
           </label>
           <label>
-            Deeplink / URL
+            {t('projects.form.deeplink')}
             <input
               name="deeplink"
               value={formState.deeplink}
               onChange={handleInputChange}
-              placeholder="https://..."
+              placeholder={t('projects.form.deeplinkPlaceholder')}
             />
           </label>
 
-          <button type="submit" className="primary-button">
-            Сохранить
-          </button>
+          <button type="submit" className="primary-button">{t('common.saveProject')}</button>
         </form>
       </InfoCard>
 
       {selectedProject ? (
         <InfoCard
-          title="Выбранный проект"
-          subtitle="Эти данные используются при генерации контента и запуске пайплайнов."
+          title={t('projects.details.title')}
+          subtitle={t('projects.details.subtitle')}
         >
           <dl className="project-details">
             <div>
-              <dt>Название</dt>
+              <dt>{t('projects.details.name')}</dt>
               <dd>{selectedProject.name}</dd>
             </div>
             <div>
-              <dt>Отрасль</dt>
-              <dd>{selectedProject.industry || '—'}</dd>
+              <dt>{t('projects.details.industry')}</dt>
+              <dd>{selectedProject.industry || t('common.notAvailable')}</dd>
             </div>
             <div>
-              <dt>Описание</dt>
-              <dd>{selectedProject.description || '—'}</dd>
+              <dt>{t('projects.details.description')}</dt>
+              <dd>{selectedProject.description || t('common.notAvailable')}</dd>
             </div>
             <div>
-              <dt>Каналы</dt>
-              <dd>{selectedProject.channels || '—'}</dd>
+              <dt>{t('projects.details.channels')}</dt>
+              <dd>{selectedProject.channels || t('common.notAvailable')}</dd>
             </div>
             <div>
-              <dt>Deeplink</dt>
+              <dt>{t('projects.details.deeplink')}</dt>
               <dd>
                 {selectedProject.deeplink ? (
                   <a href={selectedProject.deeplink} target="_blank" rel="noreferrer">
                     {selectedProject.deeplink}
                   </a>
                 ) : (
-                  '—'
+                  t('common.notAvailable')
                 )}
               </dd>
             </div>

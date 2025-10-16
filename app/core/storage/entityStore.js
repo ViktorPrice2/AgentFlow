@@ -1,7 +1,6 @@
 import path from 'node:path';
-
 import { randomUUID } from 'node:crypto';
-
+import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 
 const DEFAULT_DB_PATH = path.join(process.cwd(), 'data', 'app.db');
@@ -92,7 +91,6 @@ function buildPipelineRecord(row) {
     payload: normalizedPayload
   };
 }
-
 
 function buildScheduleRecord(row) {
   if (!row) {
@@ -648,6 +646,7 @@ export function createEntityStore(options = {}) {
     saveSchedule,
     deleteSchedule,
     setScheduleEnabled,
+    updateScheduleNextRun,
     updateScheduleNextRun,
     savePipeline,
     listHistory,

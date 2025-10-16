@@ -1,0 +1,398 @@
+{
+  "app": {
+    "title": "AgentFlow Desktop",
+    "tagline": "Модульная платформа для AI-маркетинга. Все настройки выполняются через интерфейс.",
+    "nav": {
+      "projects": "Проекты",
+      "brief": "Бриф",
+      "agents": "Агенты",
+      "pipelines": "Пайплайны",
+      "runs": "Запуски",
+      "reports": "Отчёты",
+      "scheduler": "Планировщик",
+      "settings": "Настройки"
+    },
+    "defaults": {
+      "topic": "Маркетинговая активность",
+      "tone": "Нейтральный",
+      "message": "Сообщения не заданы"
+    },
+    "toasts": {
+      "schedulesLoadError": "Не удалось загрузить расписания",
+      "telegramStatusUpdated": "Статус Telegram обновлён",
+      "pipelineSaveError": "Не удалось сохранить пайплайн",
+      "pipelineRun": "Пайплайн «{name}» выполнен ({status})",
+      "pipelineRunError": "Ошибка запуска пайплайна",
+      "runsCleared": "История запусков очищена",
+      "telegramTokenSaved": "Токен Telegram сохранён",
+      "telegramTokenRemoved": "Токен Telegram удалён",
+      "telegramTokenError": "Не удалось сохранить токен Telegram",
+      "telegramStarted": "Telegram-бот запущен",
+      "telegramStartError": "Не удалось запустить Telegram-бота",
+      "telegramStopped": "Telegram-бот остановлен",
+      "telegramStopError": "Не удалось остановить Telegram-бота",
+      "telegramProjectRequired": "Выберите проект, чтобы получить бриф из Telegram",
+      "telegramBriefUpdated": "Бриф из Telegram обновлён",
+      "telegramNoBrief": "Для проекта пока нет новых брифов",
+      "telegramBriefError": "Не удалось получить бриф из Telegram",
+      "telegramApplyEmpty": "Нет данных для применения — обновите бриф из Telegram",
+      "telegramApplied": "Форма брифа обновлена данными из Telegram",
+      "planProjectRequired": "Выберите проект, чтобы сформировать план",
+      "planReady": "План кампании готов",
+      "planMissingData": "Недостаточно данных для плана — заполните бриф",
+      "planError": "Не удалось сформировать план кампании"
+    }
+  },
+  "common": {
+    "save": "Сохранить",
+    "saveToken": "Сохранить токен",
+    "savePipeline": "Сохранить пайплайн",
+    "saveProject": "Сохранить",
+    "update": "Обновить",
+    "refresh": "Обновить",
+    "refreshStatus": "Обновить статус",
+    "refreshList": "Обновить список",
+    "apply": "Использовать в форме",
+    "generatePlan": "Сформировать план",
+    "generatePlanInProgress": "Готовим...",
+    "copyDeeplink": "Скопировать deeplink",
+    "copied": "Скопировано",
+    "start": "Старт бота",
+    "stop": "Стоп бота",
+    "status": "Статус",
+    "deeplink": "Deeplink",
+    "notAvailable": "—",
+    "selectProject": "Выберите проект, чтобы привязать сценарий.",
+    "cancel": "Отмена",
+    "delete": "Удалить",
+    "edit": "Изменить",
+    "enabled": "Активно",
+    "paused": "Пауза",
+    "yes": "Да",
+    "no": "Нет",
+    "loading": "Загрузка…",
+    "loadingHistory": "Загрузка истории…",
+    "computing": "Вычисление…",
+    "showChanges": "Показать изменения",
+    "changes": "Изменения",
+    "close": "Закрыть",
+    "pipeline": "Пайплайн"
+  },
+  "projects": {
+    "toast": {
+      "nameRequired": "Укажите название проекта",
+      "saved": "Проект сохранён"
+    },
+    "list": {
+      "title": "Проекты",
+      "subtitle": "Список активных инициатив. Выберите проект, чтобы продолжить настройку.",
+      "emptyTitle": "Проектов пока нет",
+      "emptyDescription": "Добавьте первый проект, чтобы сформировать бриф и пайплайны.",
+      "industryMissing": "Отрасль не указана"
+    },
+    "form": {
+      "title": "Добавить проект",
+      "subtitle": "Заполните ключевые поля: описание, каналы, deeplink. Эти данные используют агенты.",
+      "name": "Название",
+      "namePlaceholder": "Например, AgentFlow Launch",
+      "industry": "Отрасль / ниша",
+      "industryPlaceholder": "SaaS, e-commerce, образование...",
+      "description": "Краткое описание",
+      "descriptionPlaceholder": "Цели, продукт, особенности предложения",
+      "channels": "Каналы",
+      "channelsPlaceholder": "Telegram, VK, Email, Ads...",
+      "deeplink": "Deeplink / URL",
+      "deeplinkPlaceholder": "https://..."
+    },
+    "details": {
+      "title": "Выбранный проект",
+      "subtitle": "Эти данные используются при генерации контента и запуске пайплайнов.",
+      "name": "Название",
+      "industry": "Отрасль",
+      "description": "Описание",
+      "channels": "Каналы",
+      "deeplink": "Deeplink"
+    }
+  },
+  "brief": {
+    "toast": {
+      "saved": "Бриф обновлён"
+    },
+    "title": "Бриф",
+    "subtitle": {
+      "withProject": "Работаем с проектом «{project}». Эти данные будут доступны агентам и пайплайнам.",
+      "withoutProject": "Сначала выберите проект во вкладке «Проекты»."
+    },
+    "form": {
+      "goals": "Цели кампании",
+      "goalsPlaceholder": "Повысить узнаваемость, сделать запуск продукта, получить лиды...",
+      "audience": "Целевая аудитория",
+      "audiencePlaceholder": "Кто клиент? Какие боли, мотивация, возражения?",
+      "offer": "Предложение / оффер",
+      "offerPlaceholder": "Коротко о продукте, услуге или спецпредложении",
+      "tone": "Тон и стиль",
+      "tonePlaceholder": "Дружелюбный, экспертный, дерзкий, деловой...",
+      "keyMessages": "Ключевые сообщения",
+      "keyMessagesPlaceholder": "Что важно донести до аудитории",
+      "callToAction": "Призыв к действию",
+      "callToActionPlaceholder": "Зарегистрируйтесь, оставьте заявку, свяжитесь с нами...",
+      "successMetrics": "Метрики успеха",
+      "successMetricsPlaceholder": "KPI, количество лидов, конверсия, охваты...",
+      "references": "Референсы",
+      "referencesPlaceholder": "Ссылки или примеры, на которые стоит ориентироваться",
+      "save": "Сохранить бриф"
+    },
+    "summary": {
+      "title": "Сводка для агентов",
+      "subtitle": "Список заполняется автоматически — помогает быстро оценить полноту брифа.",
+      "empty": "Добавьте данные слева, чтобы сформировать сводку."
+    },
+    "labels": {
+      "goals": "Цели",
+      "audience": "Аудитория",
+      "offer": "Предложение",
+      "tone": "Тон коммуникации",
+      "keyMessages": "Ключевые сообщения",
+      "callToAction": "Призыв к действию",
+      "successMetrics": "Метрики успеха",
+      "references": "Референсы"
+    },
+    "telegram": {
+      "title": "Telegram-бот",
+      "subtitle": "Получайте брифы из чата: обновите ответы и сформируйте план кампании.",
+      "refresh": "Обновить",
+      "refreshing": "Обновляем...",
+      "apply": "Использовать в форме",
+      "generate": "Сформировать план",
+      "generating": "Готовим...",
+      "statusActive": "Бот активен",
+      "statusInactive": "Бот не запущен",
+      "deeplinkHint": "Скопируйте deeplink и запустите бота через вкладку «Настройки».",
+      "receivedAt": "Получен",
+      "noBriefs": "Пока нет брифов от Telegram-бота для текущего проекта.",
+      "planTitle": "План кампании",
+      "planSubtitle": "Результат генератора по последнему брифу.",
+      "planEmpty": "Сформируйте план после получения брифа из Telegram, чтобы увидеть шаги кампании."
+    }
+  },
+  "agents": {
+    "title": "Поставщики контента",
+    "subtitle": "Статусы подключения LLM, Image и Video движков. При отсутствии ключей используется mock-режим.",
+    "refresh": "Обновить статусы",
+    "emptyTitle": "Нет данных о провайдерах",
+    "emptyDescription": "Проверьте файл config/providers.json и повторите попытку.",
+    "type": "Тип",
+    "models": "Модели",
+    "apiKey": "API ключ",
+    "apiKeyPresent": "указан",
+    "apiKeyMissing": "нет ({ref})",
+    "apiKeyNotRequired": "не требуется",
+    "updatedAt": "Обновлено",
+    "agentsTitle": "Агенты",
+    "agentsSubtitle": "Плагины и пользовательские конфигурации. Управление конфигами добавим в следующих релизах.",
+    "plugins": "Загруженные плагины",
+    "pluginsEmpty": "Плагины не найдены",
+    "configs": "Конфигурации проекта",
+    "configsEmpty": "Конфигурации агентов ещё не созданы",
+    "table": {
+      "name": "Название",
+      "type": "Тип",
+      "version": "Версия",
+      "source": "Источник",
+      "description": "Описание",
+      "history": "История",
+      "changes": "Изменения"
+    }
+  },
+  "pipelines": {
+    "toast": {
+      "nameRequired": "Имя пайплайна обязательно",
+      "overrideError": "Некорректный JSON в поле Override",
+      "saved": "Пайплайн сохранён"
+    },
+    "list": {
+      "title": "Пайплайны",
+      "subtitle": "Линейные сценарии: Writer → StyleGuard → HumanGate → Uploader. Позже добавим визуальный редактор.",
+      "refresh": "Обновить список",
+      "emptyTitle": "Пайплайны ещё не созданы",
+      "emptyDescription": "Используйте форму справа, чтобы сохранить первый сценарий.",
+      "project": "Проект: {project}",
+      "noProject": "Без проекта",
+      "descriptionMissing": "Описание не указано",
+      "run": "Запустить",
+      "history": "Изменения версии"
+    },
+    "form": {
+      "title": "Создать пайплайн",
+      "subtitle": "Задайте название, описание и при необходимости JSON-override для шагов.",
+      "name": "Название",
+      "namePlaceholder": "Лонгрид + посты",
+      "description": "Описание",
+      "descriptionPlaceholder": "Кратко опишите, что делает сценарий",
+      "override": "Override (JSON)",
+      "overridePlaceholder": "{\"writer\":{\"params\":{\"tone\":\"friendly\"}}}",
+      "submit": "Сохранить пайплайн",
+      "projectHint": "Выберите проект, чтобы привязать сценарий."
+    }
+  },
+  "runs": {
+    "title": "Запуски",
+    "subtitle": "История выполненных пайплайнов. Логи и артефакты сохраняются в папке data.",
+    "clear": "Очистить историю",
+    "emptyTitle": "Ещё не было запусков",
+    "emptyDescription": "После выполнения пайплайна краткий отчёт появится здесь.",
+    "status": "Статус",
+    "project": "Проект",
+    "summary": "Сводка",
+    "artifacts": "Артефакты",
+    "noArtifacts": "Артефактов не было."
+  },
+  "reports": {
+    "title": "Отчёты",
+    "subtitle": "Сводные метрики по запуску пайплайнов. Подробные JSON-отчёты находятся в data/logs.",
+    "emptyTitle": "Нет данных для отчётов",
+    "emptyDescription": "Запустите хотя бы один сценарий, чтобы собрать статистику.",
+    "totalRuns": "Всего запусков",
+    "success": "Успешно",
+    "errors": "Ошибки",
+    "lastRun": "Последний запуск"
+  },
+  "settings": {
+    "system": {
+      "title": "Системные параметры",
+      "subtitle": "Информация об окружении AgentFlow Desktop.",
+      "refresh": "Проверить провайдеры",
+      "ipcAvailable": "доступен",
+      "ipcUnavailable": "нет",
+      "hint": "Файл окружения: <code>.env</code>. Конфигурация провайдеров: <code>config/providers.json</code>."
+    },
+    "providers": {
+      "title": "Провайдеры",
+      "subtitle": "Текущее состояние подключения к внешним сервисам.",
+      "emptyTitle": "Нет данных о провайдерах",
+      "emptyDescription": "Убедитесь, что файл config/providers.json присутствует, и обновите статусы.",
+      "id": "ID",
+      "type": "Тип",
+      "models": "Модели",
+      "key": "Ключ",
+      "keyPresent": "указан",
+      "keyMissing": "{ref}",
+      "keyNotRequired": "не требуется"
+    },
+    "telegram": {
+      "title": "Telegram-бот",
+      "subtitle": "Укажите токен бота и управляйте запуском встроенного опросника.",
+      "refresh": "Обновить статус",
+      "copy": "Скопировать deeplink",
+      "copied": "Скопировано",
+      "tokenLabel": "Токен Telegram Bot API",
+      "tokenPlaceholder": "Введите значение вида 1234567890:ABC...",
+      "save": "Сохранить токен",
+      "start": "Старт бота",
+      "stop": "Стоп бота",
+      "clearHint": "Оставьте поле пустым и сохраните, чтобы удалить сохранённый токен.",
+      "statusRunning": "бот активен",
+      "statusStopped": "бот остановлен",
+      "status": "Статус: <strong>{status}</strong>{username}",
+      "startedAt": "Запущен: {date}",
+      "lastActivity": "Последняя активность: {date}",
+      "error": "Ошибка: {message}",
+      "deeplink": "Шаблон deeplink: <code>{deeplink}</code>",
+      "deeplinkHint": "После запуска бот покажет username, и deeplink станет доступен."
+    },
+    "language": {
+      "title": "Интерфейс",
+      "subtitle": "Выберите язык приложения.",
+      "label": "Язык",
+      "ru": "Русский",
+      "en": "English"
+    }
+  },
+  "scheduler": {
+    "toast": {
+      "selectPipeline": "Выберите пайплайн для расписания",
+      "cronRequired": "Укажите cron-выражение",
+      "saved": "Расписание сохранено",
+      "saveError": "Не удалось сохранить расписание",
+      "deleted": "Расписание удалено",
+      "deleteError": "Не удалось удалить расписание",
+      "toggled": "Расписание {state}",
+      "toggleError": "Не удалось обновить расписание",
+      "run": "Пайплайн запущен вручную",
+      "runError": "Не удалось запустить пайплайн",
+      "refreshed": "Расписания обновлены",
+      "refreshError": "Не удалось обновить расписания"
+    },
+    "form": {
+      "title": "Новое расписание",
+      "project": "Проект: <strong>{name}</strong>",
+      "pipeline": "Пайплайн",
+      "noPipelines": "Нет доступных пайплайнов",
+      "cron": "Cron-выражение",
+      "cronPlaceholder": "*/5 * * * *",
+      "enabled": "Активно",
+      "submitUpdate": "Обновить",
+      "submitCreate": "Добавить",
+      "cancel": "Отмена",
+      "refresh": "Обновить список",
+      "hint": "Используйте cron-выражение формата <code>минуты часы день-месяца месяц день-недели</code>.",
+      "hintExample": "Например, <code>*/30 * * * *</code> — каждые 30 минут."
+    },
+    "status": {
+      "title": "Статус планировщика",
+      "running": "Работает: <strong>{value}</strong>",
+      "started": "<strong>Запущен</strong>",
+      "lastRun": "<strong>Последний запуск</strong>",
+      "activeJobs": "<strong>Активные задачи</strong>",
+      "note": "Все расписания сохраняются в базе данных и перезапускаются при старте приложения."
+    },
+    "list": {
+      "title": "Список расписаний",
+      "subtitle": "Контролируйте активные задачи и запускайте пайплайны вручную.",
+      "emptyTitle": "Расписаний пока нет",
+      "emptyDescription": "Создайте новое расписание, чтобы запускать пайплайны автоматически.",
+      "pipeline": "Пайплайн",
+      "nextRun": "Следующий запуск",
+      "state": "Статус",
+      "actions": "Действия",
+      "pause": "Пауза",
+      "enable": "Включить",
+      "run": "Запустить",
+      "delete": "Удалить"
+    },
+    "state": {
+      "enabled": "включено",
+      "disabled": "отключено"
+    }
+  },
+  "versionHistory": {
+    "title": "Изменения версии",
+    "entity": "{name} · {type}",
+    "agent": "Агент",
+    "pipeline": "Пайплайн",
+    "loading": "Загрузка истории…",
+    "empty": "Для этой сущности ещё нет версий.",
+    "current": "Текущая версия",
+    "compareWith": "Сравнить с",
+    "showDiff": "Показать изменения",
+    "showDiffLoading": "Вычисление…",
+    "logTitle": "Журнал версий",
+    "diffTitle": "Различия",
+    "diffPrompt": "Выберите две разные версии для сравнения.",
+    "diffEqual": "Версии идентичны.",
+    "change": {
+      "added": "Добавлено",
+      "removed": "Удалено",
+      "changed": "Изменено",
+      "was": "Было:",
+      "became": "Стало:"
+    },
+    "diffLoading": "Вычисление изменений…",
+    "diffHint": "Выберите версии и нажмите «Показать изменения», чтобы увидеть дифф.",
+    "close": "Закрыть",
+    "comparison": "Сравнение v{left} ↔ v{right}"
+  },
+  "toast": {
+    "close": "Закрыть"
+  }
+}

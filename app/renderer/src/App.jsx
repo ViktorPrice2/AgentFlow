@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import './App.css';
 import {
   fetchLatestBrief,
@@ -18,7 +18,7 @@ import {
   deleteSchedule,
   toggleSchedule,
   runScheduleNow,
-  getSchedulerStatus
+  getSchedulerStatus,
   setTelegramToken,
   startTelegramBot,
   stopTelegramBot,
@@ -36,6 +36,17 @@ import { SettingsPage } from './pages/SettingsPage.jsx';
 import { SchedulerPage } from './pages/SchedulerPage.jsx';
 import { usePersistentState } from './hooks/usePersistentState.js';
 import { VersionHistoryModal } from './components/VersionHistoryModal.jsx';
+import { useI18n } from './i18n/useI18n.js';
+
+const SECTION_CONFIG = [
+  { id: 'projects', labelKey: 'app.nav.projects' },
+  { id: 'brief', labelKey: 'app.nav.brief' },
+  { id: 'agents', labelKey: 'app.nav.agents' },
+  { id: 'pipelines', labelKey: 'app.nav.pipelines' },
+  { id: 'runs', labelKey: 'app.nav.runs' },
+  { id: 'reports', labelKey: 'app.nav.reports' },
+  { id: 'scheduler', labelKey: 'app.nav.scheduler' },
+  { id: 'settings', labelKey: 'app.nav.settings' }
 
 const SECTIONS = [
   { id: 'projects', label: 'Проекты' },
@@ -69,13 +80,13 @@ function generateRunRecord(pipeline, result, project) {
   };
 }
 
-function buildPipelineInput(project, brief) {
+function buildPipelineInput(project, brief, defaults) {
   return {
     project,
     brief,
-    topic: brief?.goals?.split(/[.!?]/)[0]?.trim() || project?.name || 'Маркетинговая активность',
-    tone: brief?.tone || 'Нейтральный',
-    message: brief?.keyMessages || 'Сообщения не заданы',
+    topic: brief?.goals?.split(/[.!?]/)[0]?.trim() || project?.name || defaults.topic,
+    tone: brief?.tone || defaults.tone,
+    message: brief?.keyMessages || defaults.message,
     audience: brief?.audience || '',
     callToAction: brief?.callToAction || ''
   };
@@ -99,25 +110,28 @@ function mapBriefDetails(details = {}) {
   }, {});
 }
 
+function useAgentResources(locale) {
+
 function useAgentResources() {
   const [agentsData, setAgentsData] = useState({ plugins: [], configs: [] });
   const [providerStatus, setProviderStatus] = useState([]);
   const [providerUpdatedAt, setProviderUpdatedAt] = useState(null);
 
-  const refreshAgents = async () => {
+  const refreshAgents = useCallback(async () => {
     try {
       const [agents, providers] = await Promise.all([listAgents(), listProviderStatus()]);
       setAgentsData(agents);
       setProviderStatus(providers);
-      setProviderUpdatedAt(new Date().toLocaleString('ru-RU'));
+      const timestamp = new Date();
+      setProviderUpdatedAt(timestamp.toLocaleString(locale));
     } catch (error) {
       console.error('Failed to load agent resources', error);
     }
-  };
+  }, [locale]);
 
   useEffect(() => {
     refreshAgents();
-  }, []);
+  }, [refreshAgents]);
 
   return {
     agentsData,
@@ -150,6 +164,8 @@ function usePipelineResources() {
 }
 
 function App() {
+  const { t, language } = useI18n();
+  const locale = language === 'en' ? 'en-US' : 'ru-RU';
   const [activeSection, setActiveSection] = useState('projects');
   const [toast, setToast] = useState({ message: null, type: 'info' });
 
@@ -173,7 +189,21 @@ function App() {
     entityName: ''
   });
 
-  const { agentsData, providerStatus, providerUpdatedAt, refreshAgents } = useAgentResources();
+  const sections = useMemo(
+    () => SECTION_CONFIG.map((section) => ({ id: section.id, label: t(section.labelKey) })),
+    [t]
+  );
+
+  const pipelineDefaults = useMemo(
+    () => ({
+      topic: t('app.defaults.topic'),
+      tone: t('app.defaults.tone'),
+      message: t('app.defaults.message')
+    }),
+    [t]
+  );
+
+  const { agentsData, providerStatus, providerUpdatedAt, refreshAgents } = useAgentResources(locale);
   const { pipelines, refreshPipelines } = usePipelineResources();
 
   const selectedProject = useMemo(
@@ -211,12 +241,14 @@ function App() {
 
   useEffect(() => {
     loadSchedules(selectedProjectId).catch((error) => {
+      showToast(error.message || t('app.toasts.schedulesLoadError'), 'error');
       showToast(error.message || 'Не удалось загрузить расписания', 'error');
     });
   }, [selectedProjectId]);
 
   const handleRefreshBotStatus = async () => {
     await refreshBotStatus();
+    showToast(t('app.toasts.telegramStatusUpdated'), 'info');
     showToast('Статус Telegram обновлён', 'info');
   };
 
@@ -275,13 +307,13 @@ function App() {
       await refreshPipelines();
     } catch (error) {
       console.error('Failed to create pipeline', error);
-      showToast('Не удалось сохранить пайплайн', 'error');
+      showToast(t('app.toasts.pipelineSaveError'), 'error');
     }
   };
 
   const handleRunPipeline = async (pipeline, context) => {
     try {
-      const inputPayload = buildPipelineInput(context.project, context.brief);
+      const inputPayload = buildPipelineInput(context.project, context.brief, pipelineDefaults);
       const response = await runPipeline(pipeline, inputPayload);
 
       if (!response.ok) {
@@ -290,16 +322,205 @@ function App() {
 
       const record = generateRunRecord(pipeline, response.result, context.project);
       setRuns((prev) => [record, ...prev].slice(0, 20));
-      showToast(`Пайплайн «${pipeline.name}» выполнен (${record.status})`, 'success');
+      showToast(t('app.toasts.pipelineRun', { name: pipeline.name, status: record.status }), 'success');
     } catch (error) {
       console.error('Pipeline execution error', error);
-      showToast('Ошибка запуска пайплайна', 'error');
+      showToast(t('app.toasts.pipelineRunError'), 'error');
     }
   };
 
   const handleClearRuns = () => {
     setRuns([]);
-    showToast('История запусков очищена', 'info');
+    showToast(t('app.toasts.runsCleared'), 'info');
+  };
+
+  const closeVersionModal = () => {
+    setVersionModal({ open: false, entityType: null, entityId: null, entityName: '' });
+  };
+
+  const handleShowAgentHistory = (agent) => {
+    if (!agent?.id) {
+      return;
+    }
+
+    setVersionModal({
+      open: true,
+      entityType: 'agent',
+      entityId: agent.id,
+      entityName: agent.name || agent.id
+    });
+  };
+
+  const handleShowPipelineHistory = (pipeline) => {
+    if (!pipeline?.id) {
+      return;
+    }
+
+    setVersionModal({
+      open: true,
+      entityType: 'pipeline',
+      entityId: pipeline.id,
+      entityName: pipeline.name || pipeline.id
+    });
+  };
+
+  const handleSaveBotToken = async (token) => {
+    setBotBusy(true);
+
+    try {
+      const status = await setTelegramToken(token);
+      setBotStatus(status);
+      if (token?.trim()) {
+        showToast(t('app.toasts.telegramTokenSaved'), 'success');
+      } else {
+        showToast(t('app.toasts.telegramTokenRemoved'), 'info');
+      }
+    } catch (error) {
+      console.error('Failed to store Telegram token', error);
+      showToast(error.message || t('app.toasts.telegramTokenError'), 'error');
+    } finally {
+      setBotBusy(false);
+    }
+  };
+
+  const handleStartBot = async () => {
+    setBotBusy(true);
+
+    try {
+      const status = await startTelegramBot();
+      setBotStatus(status);
+      showToast(t('app.toasts.telegramStarted'), 'success');
+    } catch (error) {
+      console.error('Failed to start Telegram bot', error);
+      showToast(error.message || t('app.toasts.telegramStartError'), 'error');
+    } finally {
+      setBotBusy(false);
+    }
+  };
+
+  const handleStopBot = async () => {
+    setBotBusy(true);
+
+    try {
+      const status = await stopTelegramBot();
+      setBotStatus(status);
+      showToast(t('app.toasts.telegramStopped'), 'info');
+    } catch (error) {
+      console.error('Failed to stop Telegram bot', error);
+      showToast(error.message || t('app.toasts.telegramStopError'), 'error');
+    } finally {
+      setBotBusy(false);
+    }
+  };
+
+  const handleRefreshBriefFromBot = async () => {
+    if (!selectedProject) {
+      showToast(t('app.toasts.telegramProjectRequired'), 'warn');
+      return;
+    }
+
+    setBriefLoading(true);
+
+    try {
+      const briefData = await fetchLatestBrief(selectedProject.id);
+      setLatestBrief(briefData);
+
+      if (briefData) {
+        showToast(t('app.toasts.telegramBriefUpdated'), 'success');
+      } else {
+        showToast(t('app.toasts.telegramNoBrief'), 'info');
+      }
+    } catch (error) {
+      console.error('Failed to load Telegram brief', error);
+      showToast(error.message || t('app.toasts.telegramBriefError'), 'error');
+    } finally {
+      setBriefLoading(false);
+    }
+  };
+
+  const handleImportBriefFromBot = () => {
+    if (!latestBrief?.details) {
+      showToast(t('app.toasts.telegramApplyEmpty'), 'warn');
+      return;
+    }
+
+    const normalized = mapBriefDetails(latestBrief.details);
+    setBrief(normalized);
+    showToast(t('app.toasts.telegramApplied'), 'success');
+  };
+
+  const handleGeneratePlanFromBot = async () => {
+    if (!selectedProject) {
+      showToast(t('app.toasts.planProjectRequired'), 'warn');
+      return;
+    }
+
+    setPlanLoading(true);
+
+    try {
+      const result = await generateBriefPlan(selectedProject.id);
+
+      if (result?.plan) {
+        setPlanDraft({ text: result.plan, updatedAt: new Date().toISOString() });
+
+        if (result.brief) {
+          setLatestBrief(result.brief);
+        }
+
+        showToast(t('app.toasts.planReady'), 'success');
+      } else {
+        showToast(t('app.toasts.planMissingData'), 'warn');
+      }
+    } catch (error) {
+      console.error('Failed to generate campaign plan', error);
+      showToast(error.message || t('app.toasts.planError'), 'error');
+    } finally {
+      setPlanLoading(false);
+    }
+  };
+
+  const handleRefreshSchedules = async () => {
+    await Promise.all([loadSchedules(selectedProjectId), loadSchedulerStatus()]);
+  };
+
+  const handleSaveSchedule = async (schedule) => {
+    try {
+      const stored = await upsertSchedule(schedule);
+      await handleRefreshSchedules();
+      return stored;
+    } catch (error) {
+      await loadSchedulerStatus().catch(() => {});
+      throw error;
+    }
+  };
+
+  const handleDeleteSchedule = async (scheduleId) => {
+    try {
+      await deleteSchedule(scheduleId);
+      await handleRefreshSchedules();
+    } catch (error) {
+      await loadSchedulerStatus().catch(() => {});
+      throw error;
+    }
+  };
+
+  const handleToggleSchedule = async (scheduleId, enabled) => {
+    try {
+      await toggleSchedule(scheduleId, enabled);
+      await handleRefreshSchedules();
+    } catch (error) {
+      await loadSchedulerStatus().catch(() => {});
+      throw error;
+    }
+  };
+
+  const handleRunScheduleNow = async (scheduleId) => {
+    try {
+      await runScheduleNow(scheduleId);
+      await loadSchedulerStatus();
+    } catch (error) {
+      throw error;
+    }
   };
 
   const closeVersionModal = () => {
@@ -599,6 +820,7 @@ function App() {
     planLoading,
     schedules,
     schedulerStatusState,
+    schedulesLoading
     schedulesLoading,
     planLoading
   ]);
@@ -607,12 +829,12 @@ function App() {
     <div className="app-container">
       <header className="app-header">
         <div>
-          <h1>AgentFlow Desktop</h1>
-          <p>Модульная платформа для AI-маркетинга. Все настройки выполняются через интерфейс.</p>
+          <h1>{t('app.title')}</h1>
+          <p>{t('app.tagline')}</p>
         </div>
       </header>
 
-      <Navigation sections={SECTIONS} activeId={activeSection} onChange={setActiveSection} />
+      <Navigation sections={sections} activeId={activeSection} onChange={setActiveSection} />
 
       <main className="app-main">{currentSection}</main>
 
