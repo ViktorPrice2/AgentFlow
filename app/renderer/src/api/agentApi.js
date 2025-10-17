@@ -323,3 +323,28 @@ export async function generateBriefPlan(projectId) {
   await fallbackDelay();
   return { plan: '', brief: null };
 }
+
+export function subscribeToBriefUpdates(handler) {
+  if (hasWindowAPI && typeof agentApi.onBriefUpdated === 'function') {
+    return agentApi.onBriefUpdated(handler);
+  }
+
+  return () => {};
+}
+
+export async function runProviderDiagnostic(command) {
+  if (hasWindowAPI && typeof agentApi.runProviderDiagnostic === 'function') {
+    const response = await agentApi.runProviderDiagnostic(command);
+
+    if (response?.ok) {
+      return response.result;
+    }
+
+    throw new Error(
+      response?.error || 'Не удалось выполнить диагностическую команду провайдеров'
+    );
+  }
+
+  await fallbackDelay();
+  return { ok: false };
+}

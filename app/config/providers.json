@@ -74,13 +74,13 @@
     },
     "retry": {
       "maxRetries": 3,
-      "baseDelayMs": 300,
-      "maxDelayMs": 6000
+      "baseDelayMs": 200,
+      "maxDelayMs": 1600
     },
     "breaker": {
       "threshold": 5,
       "intervalMs": 60000,
-      "cooldownMs": 120000
+      "cooldownMs": 30000
     }
   }
 }

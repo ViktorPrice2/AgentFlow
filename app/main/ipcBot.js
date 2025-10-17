@@ -1,7 +1,10 @@
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createTelegramBotService } from '../services/tg-bot/index.js';
 
 let telegramBotService;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function ensureService() {
   if (!telegramBotService) {
@@ -23,8 +26,26 @@ function respond(ok, payload = {}) {
   };
 }
 
-export async function registerTelegramIpcHandlers(ipcMain) {
+export async function registerTelegramIpcHandlers(ipcMain, options = {}) {
   const service = await ensureService();
+  const { onBriefUpdate } = options;
+
+  if (typeof onBriefUpdate === 'function') {
+    if (service._briefUpdateForwarder) {
+      service.off('brief:updated', service._briefUpdateForwarder);
+    }
+
+    const forwarder = (payload) => {
+      try {
+        onBriefUpdate(payload);
+      } catch (error) {
+        console.error('Failed to forward brief updated payload', error);
+      }
+    };
+
+    service.on('brief:updated', forwarder);
+    service._briefUpdateForwarder = forwarder;
+  }
 
   ipcMain.handle('AgentFlow:bot:status', async () => {
     return respond(true, { status: service.getStatus() });

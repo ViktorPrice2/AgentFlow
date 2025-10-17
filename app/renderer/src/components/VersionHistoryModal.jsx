@@ -26,9 +26,9 @@ function stringifyValue(value) {
 
 export function VersionHistoryModal({
   isOpen,
-  entityType,
-  entityId,
-  entityName,
+  entityType = null,
+  entityId = null,
+  entityName = '',
   onClose
 }) {
   const [history, setHistory] = useState([]);
@@ -274,10 +274,4 @@ VersionHistoryModal.propTypes = {
   entityId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   entityName: PropTypes.string,
   onClose: PropTypes.func.isRequired
-};
-
-VersionHistoryModal.defaultProps = {
-  entityType: null,
-  entityId: null,
-  entityName: ''
 };

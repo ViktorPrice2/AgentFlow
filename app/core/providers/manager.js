@@ -12,7 +12,7 @@ import {
 
 const CONFIG_PATH = resolveConfigPath('providers.json');
 const DEFAULT_TIMEOUT = 30_000;
-const PROVIDER_LOG_PATH = resolveDataPath('logs', 'provider-manager.jsonl');
+const PROVIDER_LOG_PATH = resolveDataPath('logs', 'providers.jsonl');
 
 const MOCK_TEXT = (providerId, model, prompt) =>
   `[MOCK:${providerId}:${model}] ${prompt?.slice(0, 200) ?? 'Нет входных данных'}`;
@@ -44,6 +44,7 @@ class ProviderManager {
     this.defaultPolicies = this.buildPolicies(config.limits || {});
     this.rateLimiterState = new Map();
     this.breakerState = new Map();
+    this.mockDiagnostics = new Map();
   }
 
   ensureEnvLoaded() {
@@ -184,6 +185,187 @@ class ProviderManager {
     };
   }
 
+  getMockDiagnostic(providerId, type) {
+    if (!providerId) {
+      return null;
+    }
+
+    const entry = this.mockDiagnostics.get(providerId);
+
+    if (!entry) {
+      return null;
+    }
+
+    return entry[type] || null;
+  }
+
+  setMockDiagnostic(providerId, type, options = {}) {
+    const targetId = providerId || 'mock';
+    const normalized = {
+      remaining: Math.max(0, options.failures ?? options.remaining ?? 1),
+      status: options.status ?? 503,
+      message: options.message ?? 'Forced mock failure',
+      code: options.code ?? 'MOCK_FORCED_ERROR',
+      persist: Boolean(options.persist)
+    };
+
+    if (normalized.remaining <= 0) {
+      this.clearMockDiagnostic(targetId, type);
+      return null;
+    }
+
+    const bucket = this.mockDiagnostics.get(targetId) || {};
+    bucket[type] = normalized;
+    this.mockDiagnostics.set(targetId, bucket);
+
+    return normalized;
+  }
+
+  consumeMockDiagnostic(providerId, type) {
+    const entry = this.getMockDiagnostic(providerId, type);
+
+    if (!entry) {
+      return null;
+    }
+
+    const shouldFail = entry.remaining > 0;
+
+    if (shouldFail) {
+      entry.remaining = Math.max(0, entry.remaining - 1);
+    }
+
+    const snapshot = { ...entry, shouldFail };
+
+    if (entry.remaining <= 0 && !entry.persist) {
+      this.clearMockDiagnostic(providerId, type);
+    }
+
+    return snapshot;
+  }
+
+  clearMockDiagnostic(providerId, type) {
+    const targetId = providerId || 'mock';
+
+    if (!this.mockDiagnostics.has(targetId)) {
+      return;
+    }
+
+    if (!type) {
+      this.mockDiagnostics.delete(targetId);
+      return;
+    }
+
+    const entry = this.mockDiagnostics.get(targetId);
+
+    if (!entry) {
+      return;
+    }
+
+    delete entry[type];
+
+    if (Object.keys(entry).length === 0) {
+      this.mockDiagnostics.delete(targetId);
+    } else {
+      this.mockDiagnostics.set(targetId, entry);
+    }
+  }
+
+  applyDiagnosticCommand(command = {}) {
+    const { action } = command;
+
+    switch (action) {
+      case 'mock.fail': {
+        const providerId = command.providerId || 'mock';
+        const allowedKinds = ['llm', 'image', 'video'];
+        const kind = allowedKinds.includes(command.kind) ? command.kind : 'llm';
+        const result = this.setMockDiagnostic(providerId, kind, {
+          failures: command.failures,
+          status: command.status,
+          message: command.message,
+          code: command.code,
+          persist: command.persist
+        });
+
+        return {
+          action,
+          providerId,
+          kind,
+          remaining: result?.remaining ?? 0,
+          status: result?.status ?? null
+        };
+      }
+      case 'mock.clear': {
+        const providerId = command.providerId || 'mock';
+        const allowedKinds = ['llm', 'image', 'video'];
+        const kind =
+          typeof command.kind === 'string' && allowedKinds.includes(command.kind)
+            ? command.kind
+            : null;
+        this.clearMockDiagnostic(providerId, kind);
+
+        return {
+          action,
+          providerId,
+          kind
+        };
+      }
+      default:
+        throw new Error(`Unknown diagnostic action: ${action}`);
+    }
+  }
+
+  async executeMockOperation({ engine, type, agentName, params, ctx, buildResult }) {
+    const providerId = engine.providerId || 'mock';
+    const providerType = engine.provider?.type || type;
+
+    const emitMockLog = async (extra = {}) => {
+      await ctx.log?.('provider:mock', {
+        agentName,
+        providerId,
+        type,
+        reason: engine.reason,
+        ...extra
+      });
+    };
+
+    const runSuccess = async () => {
+      await emitMockLog();
+      return buildResult();
+    };
+
+    const meta = {
+      operation: type,
+      agentName,
+      model: engine.model,
+      mock: true,
+      diagnostic: true
+    };
+
+    const diagnosticActive = Boolean(this.getMockDiagnostic(providerId, type));
+
+    if (!diagnosticActive) {
+      return runSuccess();
+    }
+
+    return this.runWithPolicies(providerId, providerType, async () => {
+      const snapshot = this.consumeMockDiagnostic(providerId, type) || {};
+
+      if (snapshot.shouldFail) {
+        await emitMockLog({ diagnostic: true, failure: true });
+        const error = new Error(snapshot.message || 'Forced mock failure');
+        if (snapshot.status !== undefined) {
+          error.status = snapshot.status;
+        }
+        if (snapshot.code) {
+          error.code = snapshot.code;
+        }
+        throw error;
+      }
+
+      return runSuccess();
+    }, meta);
+  }
+
   createExecutionContext(ctx) {
     return {
       listStatus: () => this.getProviderStatus(),
@@ -228,21 +410,23 @@ class ProviderManager {
         (Array.isArray(params.messages)
           ? params.messages.map((item) => item.content || '').join(' ')
           : '');
-      const content = MOCK_TEXT(engine.providerId, engine.model, prompt);
 
-      await ctx.log?.('provider:mock', {
-        agentName,
-        providerId: engine.providerId,
+      return this.executeMockOperation({
+        engine,
         type: 'llm',
-        reason: engine.reason
+        agentName,
+        params,
+        ctx,
+        buildResult: () => {
+          const content = MOCK_TEXT(engine.providerId, engine.model, prompt);
+          return {
+            mode: 'mock',
+            content,
+            providerId: engine.providerId,
+            model: engine.model
+          };
+        }
       });
-
-      return {
-        mode: 'mock',
-        content,
-        providerId: engine.providerId,
-        model: engine.model
-      };
     }
 
     const providerType = engine.provider?.type ?? 'llm';
@@ -399,22 +583,22 @@ class ProviderManager {
     });
 
     if (engine.mode === 'mock') {
-      await ctx.log?.('provider:mock', {
-        agentName,
-        providerId: engine.providerId,
+      return this.executeMockOperation({
+        engine,
         type: 'image',
-        reason: engine.reason
+        agentName,
+        params,
+        ctx,
+        buildResult: () => ({
+          mode: 'mock',
+          images: [
+            {
+              id: crypto.randomUUID(),
+              dataUri: MOCK_IMAGE_DATA_URI
+            }
+          ]
+        })
       });
-
-      return {
-        mode: 'mock',
-        images: [
-          {
-            id: crypto.randomUUID(),
-            dataUri: MOCK_IMAGE_DATA_URI
-          }
-        ]
-      };
     }
 
     const providerType = engine.provider?.type ?? 'image';
@@ -446,22 +630,22 @@ class ProviderManager {
     });
 
     if (engine.mode === 'mock') {
-      await ctx.log?.('provider:mock', {
-        agentName,
-        providerId: engine.providerId,
+      return this.executeMockOperation({
+        engine,
         type: 'video',
-        reason: engine.reason
+        agentName,
+        params,
+        ctx,
+        buildResult: () => ({
+          mode: 'mock',
+          videos: [
+            {
+              id: crypto.randomUUID(),
+              url: MOCK_VIDEO_URL
+            }
+          ]
+        })
       });
-
-      return {
-        mode: 'mock',
-        videos: [
-          {
-            id: crypto.randomUUID(),
-            url: MOCK_VIDEO_URL
-          }
-        ]
-      };
     }
 
     const providerType = engine.provider?.type ?? 'video';
@@ -495,13 +679,13 @@ class ProviderManager {
       },
       retry: {
         maxRetries: Math.max(0, Math.min(retry.maxRetries ?? 3, 3)),
-        baseDelayMs: Math.max(50, retry.baseDelayMs ?? 300),
-        maxDelayMs: Math.max(retry.baseDelayMs ?? 300, retry.maxDelayMs ?? 6_000)
+        baseDelayMs: Math.max(50, retry.baseDelayMs ?? 200),
+        maxDelayMs: Math.max(retry.baseDelayMs ?? 200, retry.maxDelayMs ?? 1_600)
       },
       breaker: {
         threshold: Math.max(1, breaker.threshold ?? 5),
         intervalMs: Math.max(1_000, breaker.intervalMs ?? 60_000),
-        cooldownMs: Math.max(5_000, breaker.cooldownMs ?? 120_000)
+        cooldownMs: Math.max(5_000, breaker.cooldownMs ?? 30_000)
       }
     };
   }
@@ -574,9 +758,12 @@ class ProviderManager {
 
       await this.logEvent({
         level: 'info',
-        event: 'rate.wait',
+        event: 'rate.limit',
         providerId,
         waitMs,
+        tokens: state.tokens,
+        capacity: state.capacity,
+        refillRate: state.refillRate,
         ...meta
       });
 
@@ -627,7 +814,7 @@ class ProviderManager {
 
       await this.logEvent({
         level: 'error',
-        event: 'breaker.open',
+        event: 'circuit.open',
         providerId,
         type,
         openUntil: new Date(state.openUntil).toISOString(),
@@ -651,7 +838,7 @@ class ProviderManager {
     if (hadFailures) {
       await this.logEvent({
         level: 'info',
-        event: 'breaker.close',
+        event: 'circuit.close',
         providerId,
         type,
         ...meta
@@ -690,7 +877,7 @@ class ProviderManager {
     if (breakerState.openUntil && now < breakerState.openUntil) {
       await this.logEvent({
         level: 'warn',
-        event: 'breaker.blocked',
+        event: 'circuit.blocked',
         providerId,
         type,
         openUntil: new Date(breakerState.openUntil).toISOString(),
@@ -708,7 +895,7 @@ class ProviderManager {
 
       await this.logEvent({
         level: 'info',
-        event: 'breaker.half-open',
+        event: 'circuit.half',
         providerId,
         type,
         ...meta
@@ -762,7 +949,7 @@ class ProviderManager {
 
         await this.logEvent({
           level: 'warn',
-          event: 'retry.schedule',
+          event: 'retry.backoff',
           providerId,
           type,
           attempt: attempt + 1,

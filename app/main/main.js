@@ -18,6 +18,103 @@ let pluginRegistry;
 let providerManager;
 let scheduler;
 const rendererDistPath = path.join(__dirname, '../renderer/dist/index.html');
+let mainWindowInstance;
+const rendererEventQueue = [];
+const RENDERER_EVENT_QUEUE_LIMIT = 100;
+
+const queueRendererEvent = (event) => {
+  if (rendererEventQueue.length >= RENDERER_EVENT_QUEUE_LIMIT) {
+    rendererEventQueue.shift();
+  }
+
+  rendererEventQueue.push(event);
+};
+
+const getActiveWindows = () =>
+  BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
+
+const getReadyWindows = () =>
+  getActiveWindows().filter((window) => {
+    const contents = window.webContents;
+    return contents && !contents.isDestroyed() && !contents.isLoadingMainFrame();
+  });
+
+const flushRendererEvents = () => {
+  if (!rendererEventQueue.length) {
+    return;
+  }
+
+  const targets = getReadyWindows();
+
+  if (!targets.length) {
+    return;
+  }
+
+  const failed = [];
+
+  while (rendererEventQueue.length) {
+    const event = rendererEventQueue.shift();
+    let deferred = false;
+
+    targets.forEach((window) => {
+      try {
+        window.webContents.send(event.channel, event.payload);
+      } catch (error) {
+        console.error(`Failed to deliver renderer event "${event.channel}"`, error);
+        deferred = true;
+      }
+    });
+
+    if (deferred) {
+      failed.push(event);
+    }
+  }
+
+  failed.forEach((event) => queueRendererEvent(event));
+};
+
+const enqueueRendererEvent = (channel, payload) => {
+  const targets = getReadyWindows();
+
+  if (!targets.length) {
+    queueRendererEvent({ channel, payload });
+    return;
+  }
+
+  let deferred = false;
+
+  targets.forEach((window) => {
+    try {
+      window.webContents.send(channel, payload);
+    } catch (error) {
+      console.error(`Failed to deliver renderer event "${channel}"`, error);
+      deferred = true;
+    }
+  });
+
+  if (deferred) {
+    queueRendererEvent({ channel, payload });
+  }
+};
+
+const trackRendererWindow = (window) => {
+  if (!window || window.isDestroyed()) {
+    return;
+  }
+
+  const handleFlush = () => {
+    flushRendererEvents();
+  };
+
+  window.webContents.on('did-finish-load', handleFlush);
+  window.once('ready-to-show', handleFlush);
+  window.on('show', handleFlush);
+  window.on('closed', () => {
+    if (mainWindowInstance === window) {
+      mainWindowInstance = null;
+    }
+  });
+};
 
 dotenv.config({ path: path.join(process.cwd(), '.env') });
 
@@ -111,7 +208,11 @@ const createMainWindow = async () => {
     }
   });
 
+  mainWindowInstance = window;
+  trackRendererWindow(window);
+
   await loadRenderer(window);
+  flushRendererEvents();
 
   return window;
 };
@@ -150,13 +251,21 @@ const bootstrapCore = async () => {
   registerSchedulerIpcHandlers(ipcMain, scheduler);
 
   try {
-    await registerTelegramIpcHandlers(ipcMain);
+    await registerTelegramIpcHandlers(ipcMain, {
+      onBriefUpdate: (payload) => {
+        enqueueRendererEvent('brief:updated', payload);
+      }
+    });
   } catch (error) {
     const message = 'Failed to register Telegram IPC handlers';
     console.error(`${message}:`, error);
     errorBus.error(message, { message: error?.message, stack: error?.stack });
   }
 };
+
+app.on('browser-window-created', (_event, window) => {
+  trackRendererWindow(window);
+});
 
 app.whenReady().then(async () => {
   try {

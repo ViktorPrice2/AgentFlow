@@ -31,7 +31,24 @@ contextBridge.exposeInMainWorld('AgentAPI', {
   toggleSchedule: (scheduleId, enabled) =>
     ipcRenderer.invoke('AgentFlow:schedules:toggle', { id: scheduleId, enabled }),
   runScheduleNow: (scheduleId) => ipcRenderer.invoke('AgentFlow:schedules:runNow', scheduleId),
-  getSchedulerStatus: () => ipcRenderer.invoke('AgentFlow:schedules:status')
+  getSchedulerStatus: () => ipcRenderer.invoke('AgentFlow:schedules:status'),
+  runProviderDiagnostic: (command) => ipcRenderer.invoke('AgentFlow:providers:diagnostic', command),
+  onBriefUpdated(handler) {
+    if (typeof handler !== 'function') {
+      return () => {};
+    }
+
+    const channel = 'brief:updated';
+    const listener = (_event, payload) => {
+      handler(payload);
+    };
+
+    ipcRenderer.on(channel, listener);
+
+    return () => {
+      ipcRenderer.removeListener(channel, listener);
+    };
+  }
 });
 
 contextBridge.exposeInMainWorld('ErrorAPI', {

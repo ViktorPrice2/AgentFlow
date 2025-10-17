@@ -1,5 +1,6 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { EventEmitter } from 'node:events';
 import keytar from 'keytar';
 import Database from 'better-sqlite3';
 import { createBriefSurvey, summarizeAnswers, buildExecutionPlan } from './survey.js';
@@ -55,13 +56,18 @@ function openDatabase(dbPath) {
   return db;
 }
 
-function insertBrief(dbPath, record) {
+function upsertBrief(dbPath, record) {
   const db = openDatabase(dbPath);
 
   try {
     const statement = db.prepare(
       `INSERT INTO Briefs (id, projectId, summary, details, createdAt, updatedAt)
-       VALUES (@id, @projectId, @summary, @details, @createdAt, @updatedAt)`
+       VALUES (@id, @projectId, @summary, @details, @createdAt, @updatedAt)
+       ON CONFLICT(id) DO UPDATE SET
+         projectId = excluded.projectId,
+         summary = excluded.summary,
+         details = excluded.details,
+         updatedAt = excluded.updatedAt`
     );
 
     statement.run(record);
@@ -107,8 +113,9 @@ function selectLatestBrief(dbPath, projectId) {
   }
 }
 
-export class TelegramBotService {
+export class TelegramBotService extends EventEmitter {
   constructor({ dataDirectory, dbPath, logPath, restartDelay = DEFAULT_RESTART_DELAY } = {}) {
+    super();
     const defaultDataDir = resolveDataPath();
     const allowedRoots = [defaultDataDir];
 
@@ -406,10 +413,10 @@ export class TelegramBotService {
       updatedAt: completedAt.toISOString()
     };
 
-    await insertBrief(this.dbPath, record);
+    await upsertBrief(this.dbPath, record);
 
-    const safeBriefId = sanitizeFileName(briefId, 'brief');
-    const filePath = assertAllowedPath(path.join(this.briefsDirectory, `${safeBriefId}.json`), {
+    const safeChatId = sanitizeFileName(String(chatId), 'chat');
+    const filePath = assertAllowedPath(path.join(this.briefsDirectory, `brief-${safeChatId}.json`), {
       allowedRoots: this.allowedRoots
     });
     const filePayload = {
@@ -428,6 +435,8 @@ export class TelegramBotService {
       briefId,
       reason
     });
+
+    this.emit('brief:updated', { projectId: session.projectId, briefId });
 
     this.sessions.delete(chatId);
 

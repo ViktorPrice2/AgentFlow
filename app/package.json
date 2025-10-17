@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "concurrently -k -p \"[{name}]\" -n renderer,main \"npm run dev:renderer\" \"npm run dev:main\"",
     "dev:renderer": "cd renderer && npm run dev",
-    "dev:main": "cross-env NODE_ENV=development ELECTRON_RENDERER_URL=http://localhost:5173 electron .",
+    "dev:main": "cross-env NODE_ENV=development ELECTRON_RENDERER_URL=http://localhost:5173 node scripts/run-electron.cjs",
     "build:ui": "cd renderer && npm run build",
     "build": "npm run build:ui && electron-builder",
     "test": "vitest run",
@@ -20,10 +20,10 @@
     "postinstall": "cd renderer && npm install"
   },
   "dependencies": {
-    "better-sqlite3": "^9.5.0",
+    "better-sqlite3": "^12.4.1",
     "cross-env": "^7.0.3",
     "dotenv": "^16.4.5",
-    "electron": "^31.2.0",
+    "electron": "31.7.7",
     "electron-builder": "^24.13.3",
     "electron-updater": "^6.1.6",
     "keytar": "^7.9.0",
@@ -31,9 +31,10 @@
     "telegraf": "^4.16.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.48.2",
     "@vitejs/plugin-react": "^4.0.1",
     "concurrently": "^8.2.2",
-    "@playwright/test": "^1.48.2",
+    "electron-rebuild": "^3.2.9",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "vite": "^5.3.3",

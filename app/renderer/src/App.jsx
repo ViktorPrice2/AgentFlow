@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 import {
   fetchLatestBrief,
+  subscribeToBriefUpdates,
   generateBriefPlan,
   getTelegramStatus,
   isAgentApiAvailable,
@@ -292,6 +293,44 @@ function App() {
     setPlanDraft({ text: '', updatedAt: null });
     setLatestBrief(null);
   }, [selectedProjectId]);
+
+  useEffect(() => {
+    let active = true;
+
+    const unsubscribe = subscribeToBriefUpdates(async (payload = {}) => {
+      const { projectId } = payload;
+
+      if (selectedProjectId && projectId === selectedProjectId) {
+        setBriefLoading(true);
+        try {
+          const briefData = await fetchLatestBrief(projectId);
+          if (active) {
+            setLatestBrief(briefData);
+          }
+        } catch (error) {
+          if (active) {
+            console.error('Failed to refresh brief after Telegram update', error);
+          }
+        } finally {
+          if (active) {
+            setBriefLoading(false);
+          }
+        }
+      }
+
+      showToast('Бриф обновлён', 'success', {
+        source: 'telegram',
+        details: payload
+      });
+    });
+
+    return () => {
+      active = false;
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [selectedProjectId, showToast, fetchLatestBrief, subscribeToBriefUpdates]);
 
   useEffect(() => {
     loadSchedulerStatus().catch(() => {});

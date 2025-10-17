@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo } from 'react';
-import en from './en.json' assert { type: 'json' };
-import ru from './ru.json' assert { type: 'json' };
+import en from './en.json';
+import ru from './ru.json';
 import { usePersistentState } from '../hooks/usePersistentState.js';
 
 const dictionaries = { en, ru };

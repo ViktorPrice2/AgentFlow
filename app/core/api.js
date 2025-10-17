@@ -190,6 +190,15 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
     return providerManager.getProviderStatus();
   });
 
+  ipcMain.handle('AgentFlow:providers:diagnostic', async (_event, command = {}) => {
+    try {
+      const result = providerManager.applyDiagnosticCommand(command);
+      return { ok: true, result };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
   ipcMain.handle('AgentFlow:pipeline:runSimple', async (_event, input) => {
     const result = await runDemoPipeline(pluginRegistry, input, {
       providerManager,
