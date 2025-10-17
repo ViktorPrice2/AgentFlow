@@ -6,10 +6,10 @@ import dotenv from 'dotenv';
 import { createPluginRegistry } from '../core/pluginLoader.js';
 import { registerIpcHandlers } from '../core/api.js';
 import { createProviderManager } from '../core/providers/manager.js';
-import { runMigrations } from '../db/migrate.js';
 import { registerTelegramIpcHandlers } from './ipcBot.js';
 import { createScheduler, registerSchedulerIpcHandlers } from '../core/scheduler.js';
 import { errorBus, logRendererError, registerProcessErrorHandlers } from '../core/errors.js';
+import { ensureMigrations } from './db/migrate.js';
 
 const isDevelopment = process.env.NODE_ENV === 'development';
 const __filename = fileURLToPath(import.meta.url);
@@ -269,9 +269,12 @@ app.on('browser-window-created', (_event, window) => {
 
 app.whenReady().then(async () => {
   try {
-    await runMigrations();
+    await ensureMigrations();
   } catch (error) {
-    errorBus.error('Failed to run database migrations', { message: error?.message, stack: error?.stack });
+    errorBus.error('Failed to ensure database migrations', {
+      message: error?.message,
+      stack: error?.stack
+    });
     throw error;
   }
 

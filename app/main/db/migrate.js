@@ -3,13 +3,13 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
-import { resolveDataPath, assertAllowedPath } from '../core/utils/security.js';
+import { resolveDataPath, assertAllowedPath } from '../../core/utils/security.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const dataDir = resolveDataPath();
-const dbPath = resolveDataPath('app.db');
-const migrationsDir = path.join(__dirname, 'migrations');
+const dbPath = resolveDataPath('db.sqlite');
+const migrationsDir = path.join(__dirname, '../../db/migrations');
 const SCHEMA_TABLE_NAME = 'schema_migrations';
 const SCHEMA_TABLE_SQL = `CREATE TABLE IF NOT EXISTS ${SCHEMA_TABLE_NAME} (
   version TEXT PRIMARY KEY,
@@ -22,6 +22,7 @@ const REQUIRED_TABLES = [
   'Pipelines',
   'Runs',
   'Briefs',
+  'Logs',
   'Schedules',
   'Metrics',
   'Reports',
@@ -48,12 +49,26 @@ const REQUIRED_INDEXES = [
   { table: 'Reports', name: 'idx_reports_createdAt' },
   { table: 'EntityHistory', name: 'idx_history_entity' },
   { table: 'EntityHistory', name: 'idx_history_entity_version' },
-  { table: 'EntityHistory', name: 'idx_history_createdAt' }
+  { table: 'EntityHistory', name: 'idx_history_createdAt' },
+  { table: 'Logs', name: 'idx_logs_createdAt' },
+  { table: 'Logs', name: 'idx_logs_runId' }
 ];
 
-const ensureDataDirectory = async () => {
+const REQUIRED_RUNTIME_TABLES = ['Agents', 'Pipelines', 'Runs', 'Briefs', 'Logs'];
+
+const ensureDataDirectory = () => {
+  const rootDataPath = path.join(process.cwd(), 'data');
+  fs.mkdirSync(rootDataPath, { recursive: true });
+
   if (!fs.existsSync(dataDir)) {
-    await fsp.mkdir(assertAllowedPath(dataDir), { recursive: true });
+    fs.mkdirSync(assertAllowedPath(dataDir), { recursive: true });
+  }
+};
+
+const ensureDatabaseFile = (targetPath) => {
+  if (!fs.existsSync(targetPath)) {
+    const handle = fs.openSync(targetPath, 'a');
+    fs.closeSync(handle);
   }
 };
 
@@ -93,10 +108,11 @@ const getIndexNamesForTable = (db, table) => {
 };
 
 export const runMigrations = async () => {
-  await ensureDataDirectory();
+  ensureDataDirectory();
 
   const migrations = await loadMigrations();
   const safeDbPath = assertAllowedPath(dbPath);
+  ensureDatabaseFile(safeDbPath);
   const db = new Database(safeDbPath);
 
   try {
@@ -139,7 +155,7 @@ export const runMigrations = async () => {
 };
 
 export const getMigrationStatus = async () => {
-  await ensureDataDirectory();
+  ensureDataDirectory();
 
   const migrationFiles = await loadMigrations();
   const migrationVersions = migrationFiles.map((file) => toMigrationVersion(file));
@@ -243,6 +259,24 @@ export const printMigrationStatus = async () => {
   }
 };
 
+export const ensureMigrations = async ({ logger = console } = {}) => {
+  await runMigrations();
+  const status = await getMigrationStatus();
+  const missing = new Set(status.tables.missing);
+  const missingRuntime = REQUIRED_RUNTIME_TABLES.filter((table) => missing.has(table));
+
+  if (missingRuntime.length > 0) {
+    throw new Error(`Missing required tables after migrations: ${missingRuntime.join(', ')}`);
+  }
+
+  if (logger) {
+    logger.log(`✅ Database ready at ${status.dbPath}`);
+    logger.log(`Tables: ${REQUIRED_RUNTIME_TABLES.join(', ')}`);
+  }
+
+  return status;
+};
+
 const isMainModule = () => {
   const scriptPath = process.argv[1];
   if (!scriptPath) {
@@ -260,6 +294,12 @@ if (isMainModule()) {
       console.error('Migration status check failed:', error);
       process.exitCode = 1;
     });
+  } else if (args.has('--test')) {
+    ensureMigrations()
+      .catch((error) => {
+        console.error('Migration test run failed:', error);
+        process.exitCode = 1;
+      });
   } else {
     runMigrations().catch((error) => {
       console.error('Migration execution failed:', error);
