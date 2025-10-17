@@ -36,6 +36,7 @@ const fallbackBotStatus = {
   lastError: null,
   startedAt: null,
   lastActivityAt: null,
+  updatedAt: null,
   deeplinkBase: null
 };
 
@@ -253,7 +254,7 @@ export function isAgentApiAvailable() {
   return hasWindowAPI;
 }
 
-function normalizeBotStatus(status) {
+export function normalizeBotStatus(status) {
   const merged = { ...fallbackBotStatus, ...(status || {}) };
 
   if (!merged.status) {
@@ -275,10 +276,12 @@ function normalizeBotStatus(status) {
 
 function unwrapStatusResponse(response) {
   if (response?.ok) {
-    return normalizeBotStatus(response.status);
+    const snapshot = response.state ?? response.status ?? null;
+    return normalizeBotStatus(snapshot);
   }
 
-  throw new Error(response?.error || 'Не удалось получить состояние Telegram-бота');
+  const message = response?.error || 'settings.telegram.errorUnknown';
+  throw new Error(message);
 }
 
 export async function getTelegramStatus() {
@@ -298,7 +301,7 @@ export async function setTelegramToken(token) {
   }
 
   await fallbackDelay();
-  return normalizeBotStatus();
+  throw new Error('settings.telegram.errorUnavailable');
 }
 
 export async function startTelegramBot() {
@@ -308,7 +311,7 @@ export async function startTelegramBot() {
   }
 
   await fallbackDelay();
-  throw new Error('Запуск Telegram-бота доступен только в приложении');
+  throw new Error('settings.telegram.errorUnavailable');
 }
 
 export async function stopTelegramBot() {
@@ -319,6 +322,14 @@ export async function stopTelegramBot() {
 
   await fallbackDelay();
   return normalizeBotStatus();
+}
+
+export function subscribeToTelegramStatus(handler) {
+  if (hasWindowAPI && typeof agentApi.onTelegramStatusChanged === 'function') {
+    return agentApi.onTelegramStatusChanged(handler);
+  }
+
+  return () => {};
 }
 
 export async function tailTelegramLog(limit = 20) {

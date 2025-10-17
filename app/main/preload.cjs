@@ -21,6 +21,22 @@ contextBridge.exposeInMainWorld('AgentAPI', {
   tailTelegramLog: (limit) => ipcRenderer.invoke('bot:tailLog', { limit }),
   getTelegramProxyConfig: () => ipcRenderer.invoke('bot:getProxy'),
   setTelegramProxyConfig: (config) => ipcRenderer.invoke('bot:setProxy', config),
+  onTelegramStatusChanged(handler) {
+    if (typeof handler !== 'function') {
+      return () => {};
+    }
+
+    const channel = 'bot:status:changed';
+    const listener = (_event, payload) => {
+      handler(payload);
+    };
+
+    ipcRenderer.on(channel, listener);
+
+    return () => {
+      ipcRenderer.removeListener(channel, listener);
+    };
+  },
   fetchLatestBrief: (projectId) => ipcRenderer.invoke('AgentFlow:briefs:latest', projectId),
   generateBriefPlan: (projectId) => ipcRenderer.invoke('AgentFlow:briefs:plan', projectId),
   listEntityHistory: (entityType, entityId) =>

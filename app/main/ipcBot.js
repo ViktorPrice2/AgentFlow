@@ -27,6 +27,8 @@ const BOT_STATUS = {
   ERROR: 'error'
 };
 
+const BOT_STATUS_CHANNEL = 'bot:status:changed';
+
 const TELEGRAM_CHANNELS = [
   'bot:start',
   'bot:stop',
@@ -71,6 +73,8 @@ let keytarUnavailable = false;
 let handlersRegistered = false;
 let botInstance = null;
 let botLaunchPromise = null;
+let launchingBot = null;
+let launchAbortReason = null;
 let proxyBootstrapped = false;
 let networkConfig = {
   httpsProxy: '',
@@ -433,6 +437,39 @@ function getStatus() {
 
 function setState(partial) {
   Object.assign(state, partial, { updatedAt: new Date().toISOString() });
+}
+
+function emitStatusSnapshot(snapshot, reason) {
+  if (!snapshot || typeof snapshot !== 'object') {
+    return;
+  }
+
+  const payload = reason ? { ...snapshot, reason } : snapshot;
+  emitToRenderer(BOT_STATUS_CHANNEL, payload);
+}
+
+function updateBotState(partial, options = {}) {
+  const { broadcast = true, reason = null } = options;
+  const previous = { ...state };
+
+  setState(partial);
+
+  const changed = Object.keys(partial).some((key) => previous[key] !== state[key]);
+  const snapshot = getStatus();
+
+  if (broadcast && changed) {
+    emitStatusSnapshot(snapshot, reason);
+  }
+
+  return snapshot;
+}
+
+function withStatusPayload(payload = {}, snapshot = getStatus()) {
+  return {
+    ...payload,
+    status: snapshot,
+    state: snapshot
+  };
 }
 
 function getDbConnection(options) {
@@ -999,7 +1036,9 @@ async function computeBriefPlan(projectId) {
 
 function touchActivity(event = 'activity') {
   const timestamp = new Date().toISOString();
-  setState({ lastActivityAt: timestamp });
+  const reason =
+    typeof event === 'string' && event.length ? `activity:${event}` : 'activity';
+  updateBotState({ lastActivityAt: timestamp }, { reason });
   log('bot.activity', { event, timestamp }).catch(() => {});
 }
 
@@ -1094,12 +1133,14 @@ async function ensureBot() {
     throw new Error('settings.telegram.errorTokenRequired');
   }
 
-  setState({ tokenStored: true, tokenSource: source, lastError: null });
+  updateBotState({ tokenStored: true, tokenSource: source, lastError: null }, { reason: 'token:resolved' });
   await log('bot.ensure', { source, maskedToken: maskToken(token) });
 
   ensureProxyBootstrap();
+  launchAbortReason = null;
 
   const bot = new Telegraf(token, { handlerTimeout: BOT_HANDLER_TIMEOUT });
+  launchingBot = bot;
 
   bot.catch((error, ctx) => {
     const chatId = ctx?.chat?.id ?? null;
@@ -1112,7 +1153,7 @@ async function ensureBot() {
 
   registerBotHandlers(bot);
 
-  setState({ status: BOT_STATUS.STARTING, lastError: null });
+  updateBotState({ status: BOT_STATUS.STARTING, lastError: null }, { reason: 'start:launching' });
   await log('bot.launch.attempt', { source });
 
   botLaunchPromise = (async () => {
@@ -1121,19 +1162,33 @@ async function ensureBot() {
       const me = await bot.telegram.getMe().catch(() => null);
       botInstance = bot;
       const startedAt = new Date().toISOString();
-      setState({
-        status: BOT_STATUS.RUNNING,
-        startedAt,
-        lastActivityAt: startedAt,
-        lastError: null,
-        username: me?.username ?? null
-      });
+      const runningSnapshot = updateBotState(
+        {
+          status: BOT_STATUS.RUNNING,
+          startedAt,
+          lastActivityAt: startedAt,
+          lastError: null,
+          username: me?.username ?? null
+        },
+        { reason: 'start:running' }
+      );
       await log('bot.launch.success', {
-        username: state.username,
+        username: runningSnapshot.username,
         source
+      });
+      await log('ipc.bot.start.success', {
+        status: runningSnapshot.status,
+        username: runningSnapshot.username
       });
       return bot;
     } catch (error) {
+      const abortReason = launchAbortReason;
+      launchAbortReason = null;
+      if (abortReason) {
+        await log('bot.launch.aborted', { reason: abortReason, error: error.message || null });
+        return null;
+      }
+
       const friendly = mapBotLaunchError(error);
       await log(
         'bot.launch.error',
@@ -1145,11 +1200,18 @@ async function ensureBot() {
         },
         'error'
       );
-      setState({
-        status: BOT_STATUS.ERROR,
-        lastError: friendly.message,
-        username: null
+      getLogger().error('Failed to launch Telegram bot', {
+        message: error?.message,
+        code: friendly.code
       });
+      updateBotState(
+        {
+          status: BOT_STATUS.ERROR,
+          lastError: friendly.message,
+          username: null
+        },
+        { reason: 'start:error' }
+      );
       try {
         bot.stop('launch-failed');
       } catch (stopError) {
@@ -1157,6 +1219,7 @@ async function ensureBot() {
       }
       throw new Error(friendly.message);
     } finally {
+      launchingBot = null;
       botLaunchPromise = null;
     }
   })();
@@ -1164,23 +1227,53 @@ async function ensureBot() {
   return botLaunchPromise;
 }
 
-async function shutdownBot(reason = 'manual stop') {
-  if (!botInstance && botLaunchPromise) {
-    try {
-      await botLaunchPromise;
-    } catch {
-      // ignore launch failures during shutdown
-    }
+async function abortLaunchingBot(reason = 'abort-start') {
+  if (!launchingBot) {
+    return false;
   }
 
-  if (!botInstance) {
-    setState({
+  launchAbortReason = reason;
+  const pendingBot = launchingBot;
+  launchingBot = null;
+  botLaunchPromise = null;
+
+  try {
+    await Promise.resolve(pendingBot.stop(reason));
+  } catch (error) {
+    getLogger().warn('Failed to stop bot during launch', { message: error?.message });
+  }
+
+  updateBotState(
+    {
       status: BOT_STATUS.STOPPED,
       lastError: null,
       startedAt: null,
       lastActivityAt: null,
       username: null
-    });
+    },
+    { reason: 'stop:aborted-launch' }
+  );
+
+  await log('bot.stop.aborted_launch', { reason });
+  return true;
+}
+
+async function shutdownBot(reason = 'manual stop') {
+  if (!botInstance && launchingBot) {
+    return abortLaunchingBot(reason);
+  }
+
+  if (!botInstance) {
+    updateBotState(
+      {
+        status: BOT_STATUS.STOPPED,
+        lastError: null,
+        startedAt: null,
+        lastActivityAt: null,
+        username: null
+      },
+      { reason: 'stop:idle' }
+    );
     return false;
   }
 
@@ -1189,75 +1282,112 @@ async function shutdownBot(reason = 'manual stop') {
 
   try {
     await Promise.resolve(bot.stop(reason));
-    setState({
-      status: BOT_STATUS.STOPPED,
-      lastError: null,
-      startedAt: null,
-      lastActivityAt: null,
-      username: null
-    });
+    updateBotState(
+      {
+        status: BOT_STATUS.STOPPED,
+        lastError: null,
+        startedAt: null,
+        lastActivityAt: null,
+        username: null
+      },
+      { reason: 'stop:completed' }
+    );
     await log('bot.stop.invoked', { reason });
     return true;
   } catch (error) {
-    setState({
-      status: BOT_STATUS.ERROR,
-      lastError: error.message
-    });
+    updateBotState(
+      {
+        status: BOT_STATUS.ERROR,
+        lastError: error.message
+      },
+      { reason: 'stop:error' }
+    );
     await log('bot.stop.error', { error: error.message, reason }, 'error');
     throw error;
   }
 }
 
 const handleStart = async () => {
-  await log('bot.start.requested', { status: state.status });
+  await log('ipc.bot.start.intent', { status: state.status });
+
+  let tokenCheck;
   try {
-    await ensureBot();
-    return respond(true, { status: getStatus() });
+    tokenCheck = await getToken({ allowMissing: true });
   } catch (error) {
+    const message = error?.message || 'settings.telegram.errorUnknown';
+    updateBotState({ status: BOT_STATUS.ERROR, lastError: message }, { reason: 'start:token-error' });
+    await log('ipc.bot.start.error', { error: message, code: 'token_lookup' }, 'error');
+    getLogger().error('Failed to resolve Telegram bot token', { message: error?.message });
+    return respond(false, withStatusPayload({ error: message }));
+  }
+
+  if (!tokenCheck?.token) {
+    const message = 'settings.telegram.errorTokenRequired';
+    updateBotState({ status: BOT_STATUS.ERROR, lastError: message }, { reason: 'start:missing-token' });
+    await log('ipc.bot.start.error', { error: 'token-missing', friendly: message, code: 'token_missing' }, 'error');
+    return respond(false, withStatusPayload({ error: message }));
+  }
+
+  ensureBot().catch(async (error) => {
     const friendly = mapBotLaunchError(error);
     await log(
-      'bot.start.error',
+      'ipc.bot.start.error',
       { error: error.message, friendly: friendly.message, code: friendly.code },
       'error'
     );
-    setState({ status: BOT_STATUS.ERROR, lastError: friendly.message });
-    return respond(false, { error: friendly.message, status: getStatus() });
-  }
+    getLogger().error('Failed to start Telegram bot', {
+      message: error?.message,
+      code: friendly.code
+    });
+    return null;
+  });
+
+  const snapshot = getStatus();
+  await log('ipc.bot.start.enqueued', {
+    status: snapshot.status,
+    username: snapshot.username
+  });
+  return respond(true, withStatusPayload({}, snapshot));
 };
 
 const handleStop = async () => {
-  await log('bot.stop.requested', { status: state.status });
+  await log('ipc.bot.stop.intent', { status: state.status });
   try {
     const stopped = await shutdownBot('ipc-stop');
+    const snapshot = getStatus();
     if (stopped) {
-      await log('bot.stop.success', { reason: 'ipc-stop' });
+      await log('ipc.bot.stop.success', { reason: 'ipc-stop' });
     } else {
-      await log('bot.stop.skip', { reason: 'not-running' });
+      await log('ipc.bot.stop.skip', { reason: 'not-running' });
     }
-    return respond(true, { status: getStatus() });
+    return respond(true, withStatusPayload({}, snapshot));
   } catch (error) {
-    await log('bot.stop.error', { error: error.message }, 'error');
+    await log('ipc.bot.stop.error', { error: error.message }, 'error');
     getLogger().error('Failed to stop Telegram bot', { message: error?.message });
-    return respond(false, { error: error.message, status: getStatus() });
+    return respond(false, withStatusPayload({ error: error.message }));
   }
 };
 
-const handleStatus = async () => respond(true, { status: getStatus() });
+const handleStatus = async () => respond(true, withStatusPayload());
 
 const handleSetToken = async (_event, token) => {
+  await log('ipc.bot.token.intent', { hasToken: Boolean(token) });
   try {
     const storage = await persistToken(token);
-    setState({ tokenStored: true, tokenSource: storage, lastError: null });
+    updateBotState(
+      { tokenStored: true, tokenSource: storage, lastError: null },
+      { reason: 'token:set' }
+    );
     await log('bot.token.set', { storage, token: maskToken(token) });
     if (state.status === BOT_STATUS.RUNNING) {
       await shutdownBot('token-updated');
     }
-    return respond(true, { status: getStatus(), storage });
+    return respond(true, withStatusPayload({ storage }));
   } catch (error) {
-    setState({ lastError: error.message });
+    const snapshot = updateBotState({ lastError: error.message }, { reason: 'token:error' });
     await log('bot.token.error', { error: error.message }, 'error');
     getLogger().error('Failed to persist Telegram bot token', { message: error?.message });
-    return respond(false, { error: error.message });
+    return respond(false, withStatusPayload({ error: error.message }, snapshot));
   }
 };
 
@@ -1414,6 +1544,7 @@ export async function registerTelegramIpcHandlers(mainWindow, deps = {}) {
   registerHandlers();
 
   await ensureInitialState();
+  emitStatusSnapshot(getStatus(), 'initial');
   await log('ipc.handlers.registered', { channels: TELEGRAM_CHANNELS });
   loggerRef.info('ipcBot: handlers registered');
 

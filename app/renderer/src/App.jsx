@@ -18,6 +18,8 @@ import {
   tailTelegramLog,
   getTelegramProxyConfig,
   setTelegramProxyConfig,
+  subscribeToTelegramStatus,
+  normalizeBotStatus,
   upsertPipeline,
   deleteSchedule,
   toggleSchedule,
@@ -168,12 +170,16 @@ function App() {
   const [selectedProjectId, setSelectedProjectId] = usePersistentState('af.selectedProject', null);
   const [brief, setBrief] = usePersistentState('af.brief', {});
   const [runs, setRuns] = usePersistentState('af.runs', []);
-const [botStatus, setBotStatus] = useState(null);
-const [botBusy, setBotBusy] = useState(false);
-const [botLogEntries, setBotLogEntries] = useState([]);
-const [botLogLoading, setBotLogLoading] = useState(false);
-const [proxyValue, setProxyValue] = useState('');
-const [proxyBusy, setProxyBusy] = useState(false);
+  const [botStatus, setBotStatus] = useState(null);
+  const [botBusy, setBotBusy] = useState(false);
+  const botBusyRef = useRef(false);
+  const lastErrorRef = useRef(null);
+  const lastStatusRef = useRef(null);
+  const statusChangeOriginRef = useRef('external');
+  const [botLogEntries, setBotLogEntries] = useState([]);
+  const [botLogLoading, setBotLogLoading] = useState(false);
+  const [proxyValue, setProxyValue] = useState('');
+  const [proxyBusy, setProxyBusy] = useState(false);
   const [latestBrief, setLatestBrief] = useState(null);
   const [briefLoading, setBriefLoading] = useState(false);
   const [planDraft, setPlanDraft] = useState({ text: '', updatedAt: null });
@@ -305,19 +311,80 @@ const [proxyBusy, setProxyBusy] = useState(false);
     }
   }, [projects, selectedProject, setSelectedProjectId]);
 
-  const refreshBotStatus = useCallback(async () => {
+  const setBotBusyState = useCallback((busy) => {
+    botBusyRef.current = busy;
+    setBotBusy(busy);
+  }, []);
+
+  const refreshBotStatus = useCallback(async (origin = 'external') => {
     try {
       const status = await getTelegramStatus();
+      statusChangeOriginRef.current = origin;
       setBotStatus(status);
     } catch (error) {
       console.error('Failed to load Telegram bot status', error);
     }
-  }, []);
+  }, [getTelegramStatus]);
 
   useEffect(() => {
     refreshBotStatus();
     loadProxyConfig().catch(() => {});
   }, [refreshBotStatus, loadProxyConfig]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToTelegramStatus((payload = {}) => {
+      const snapshot = normalizeBotStatus(payload);
+      statusChangeOriginRef.current = 'external';
+      setBotStatus(snapshot);
+
+      if (snapshot.status === 'starting') {
+        setBotBusyState(true);
+      } else if (botBusyRef.current) {
+        setBotBusyState(false);
+      }
+    });
+
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [setBotBusyState, subscribeToTelegramStatus, normalizeBotStatus]);
+
+  useEffect(() => {
+    if (!botStatus) {
+      lastErrorRef.current = null;
+      lastStatusRef.current = null;
+      return;
+    }
+
+    const origin = statusChangeOriginRef.current;
+    const currentError = botStatus.lastError || null;
+    if (currentError && currentError !== lastErrorRef.current && origin === 'external') {
+      showToast(resolveMessage(currentError), 'error', {
+        source: 'telegram',
+        details: { status: botStatus.status, error: currentError }
+      });
+    }
+
+    if (botStatus.status !== lastStatusRef.current && lastStatusRef.current && origin === 'external') {
+      if (botStatus.status === 'running' && lastStatusRef.current && lastStatusRef.current !== 'running') {
+        showToast(t('app.toasts.telegramStarted'), 'success', {
+          source: 'telegram',
+          details: { status: botStatus.status }
+        });
+      } else if (botStatus.status === 'stopped' && lastStatusRef.current && lastStatusRef.current !== 'stopped') {
+        showToast(t('app.toasts.telegramStopped'), 'info', {
+          source: 'telegram',
+          details: { status: botStatus.status }
+        });
+      }
+    }
+
+    lastErrorRef.current = currentError;
+    lastStatusRef.current = botStatus.status;
+    statusChangeOriginRef.current = 'external';
+  }, [botStatus, resolveMessage, showToast, t]);
 
   useEffect(() => {
     setPlanDraft({ text: '', updatedAt: null });
@@ -382,7 +449,7 @@ const [proxyBusy, setProxyBusy] = useState(false);
   }, [selectedProjectId]);
 
   const handleRefreshBotStatus = async () => {
-    await refreshBotStatus();
+    await refreshBotStatus('external');
     await loadProxyConfig();
     showToast(t('app.toasts.telegramStatusUpdated'), 'info');
   };
@@ -592,10 +659,11 @@ const [proxyBusy, setProxyBusy] = useState(false);
   };
 
   const handleSaveBotToken = async (token) => {
-    setBotBusy(true);
+    setBotBusyState(true);
 
     try {
       const status = await setTelegramToken(token);
+      statusChangeOriginRef.current = 'local';
       setBotStatus(status);
       if (token?.trim()) {
         showToast(t('app.toasts.telegramTokenSaved'), 'success');
@@ -605,41 +673,43 @@ const [proxyBusy, setProxyBusy] = useState(false);
     } catch (error) {
       console.error('Failed to store Telegram token', error);
       showToast(resolveMessage(error.message) || t('app.toasts.telegramTokenError'), 'error');
-      await refreshBotStatus();
+      await refreshBotStatus('local');
     } finally {
-      setBotBusy(false);
+      setBotBusyState(false);
     }
   };
 
   const handleStartBot = async () => {
-    setBotBusy(true);
+    setBotBusyState(true);
 
     try {
       const status = await startTelegramBot();
+      statusChangeOriginRef.current = 'local';
       setBotStatus(status);
       showToast(t('app.toasts.telegramStarted'), 'success');
     } catch (error) {
       console.error('Failed to start Telegram bot', error);
       showToast(resolveMessage(error.message) || t('app.toasts.telegramStartError'), 'error');
-      await refreshBotStatus();
+      await refreshBotStatus('local');
     } finally {
-      setBotBusy(false);
+      setBotBusyState(false);
     }
   };
 
   const handleStopBot = async () => {
-    setBotBusy(true);
+    setBotBusyState(true);
 
     try {
       const status = await stopTelegramBot();
+      statusChangeOriginRef.current = 'local';
       setBotStatus(status);
       showToast(t('app.toasts.telegramStopped'), 'info');
     } catch (error) {
       console.error('Failed to stop Telegram bot', error);
       showToast(resolveMessage(error.message) || t('app.toasts.telegramStopError'), 'error');
-      await refreshBotStatus();
+      await refreshBotStatus('local');
     } finally {
-      setBotBusy(false);
+      setBotBusyState(false);
     }
   };
 
@@ -930,9 +1000,4 @@ const [proxyBusy, setProxyBusy] = useState(false);
 }
 
 export default App;
-
-
-
-
-
 
