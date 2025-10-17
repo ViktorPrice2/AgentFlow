@@ -83,6 +83,9 @@ app/test-results/
 # Vite cache
 .vite/
 
+# Config data files
+data/config/*.json
+
 # Better SQLite3 build artifacts
 **/better-sqlite3/build/Release/obj/
 

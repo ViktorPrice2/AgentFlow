@@ -1,435 +1,459 @@
-﻿{
-    "app":  {
-                "title":  "AgentFlow Desktop",
-                "tagline":  "Modular AI marketing console. Configure everything from the interface.",
-                "nav":  {
-                            "projects":  "Projects",
-                            "brief":  "Brief",
-                            "agents":  "Agents",
-                            "pipelines":  "Pipelines",
-                            "runs":  "Runs",
-                            "reports":  "Reports",
-                            "scheduler":  "Scheduler",
-                            "settings":  "Settings"
-                        },
-                "defaults":  {
-                                 "topic":  "Marketing activity",
-                                 "tone":  "Neutral",
-                                 "message":  "No messages provided"
-                             },
-                "toasts":  {
-                               "schedulesLoadError":  "Failed to load schedules",
-                               "telegramStatusUpdated":  "Telegram status updated",
-                               "pipelineSaveError":  "Failed to save pipeline",
-                               "pipelineRun":  "Pipeline \"{name}\" finished ({status})",
-                               "pipelineRunError":  "Pipeline launch failed",
-                               "runsCleared":  "Run history cleared",
-                               "telegramTokenSaved":  "Telegram token saved",
-                               "telegramTokenRemoved":  "Telegram token removed",
-                               "telegramTokenError":  "Failed to store Telegram token",
-                               "telegramStarted":  "Telegram bot started",
-                               "telegramStartError":  "Failed to start Telegram bot",
-                               "telegramStopped":  "Telegram bot stopped",
-                               "telegramStopError":  "Failed to stop Telegram bot",
-                               "telegramProjectRequired":  "Select a project to fetch the Telegram brief",
-                               "telegramBriefUpdated":  "Telegram brief updated",
-                               "telegramNoBrief":  "No new briefs for this project yet",
-                               "telegramBriefError":  "Failed to fetch Telegram brief",
-                               "telegramApplyEmpty":  "Nothing to apply вЂ” refresh the Telegram brief",
-                               "telegramApplied":  "Brief form updated with Telegram data",
-                               "planProjectRequired":  "Select a project to generate a plan",
-                               "planReady":  "Campaign plan is ready",
-                               "planMissingData":  "Not enough data for the plan вЂ” fill in the brief",
-                               "planError":  "Failed to generate campaign plan",
-                               "themeChanged":  "Theme switched to {theme}",
-                               "genericError":  "Unexpected error captured",
-                               "genericWarn":  "Warning recorded",
-                               "genericInfo":  "Notification received"
-                           },
-                "actions":  {
-                                "openLogs":  "Open log panel",
-                                "closeLogs":  "Hide log panel"
-                            },
-                "theme":  {
-                              "light":  "Light theme",
-                              "dark":  "Dark theme"
-                          },
-                "log":  {
-                            "title":  "Notifications",
-                            "empty":  "No events captured yet.",
-                            "clear":  "Clear",
-                            "close":  "Hide",
-                            "level":  {
-                                          "info":  "Info",
-                                          "warn":  "Warning",
-                                          "error":  "Error",
-                                          "success":  "Success"
-                                      }
-                        }
-            },
-    "common":  {
-                   "save":  "Save",
-                   "saveToken":  "Save token",
-                   "savePipeline":  "Save pipeline",
-                   "saveProject":  "Save",
-                   "update":  "Update",
-                   "refresh":  "Refresh",
-                   "refreshStatus":  "Refresh status",
-                   "refreshList":  "Refresh list",
-                   "apply":  "Apply to form",
-                   "generatePlan":  "Generate plan",
-                   "generatePlanInProgress":  "Preparing...",
-                   "copyDeeplink":  "Copy deeplink",
-                   "copied":  "Copied",
-                   "start":  "Start bot",
-                   "stop":  "Stop bot",
-                   "status":  "Status",
-                   "deeplink":  "Deeplink",
-                   "notAvailable":  "вЂ”",
-                   "selectProject":  "Select a project to link the scenario.",
-                   "cancel":  "Cancel",
-                   "delete":  "Delete",
-                   "edit":  "Edit",
-                   "enabled":  "Active",
-                   "paused":  "Paused",
-                   "yes":  "Yes",
-                   "no":  "No",
-                   "loading":  "Loading...",
-                   "loadingHistory":  "Loading history...",
-                   "computing":  "Calculating...",
-                   "showChanges":  "Show changes",
-                   "changes":  "Changes",
-                   "close":  "Close",
-                   "pipeline":  "Pipeline"
-               },
-    "projects":  {
-                     "toast":  {
-                                   "nameRequired":  "Enter a project name",
-                                   "saved":  "Project saved"
-                               },
-                     "list":  {
-                                  "title":  "Projects",
-                                  "subtitle":  "Active initiatives. Pick a project to continue setup.",
-                                  "emptyTitle":  "No projects yet",
-                                  "emptyDescription":  "Add the first project to prepare the brief and pipelines.",
-                                  "industryMissing":  "Industry not specified"
-                              },
-                     "form":  {
-                                  "title":  "Add project",
-                                  "subtitle":  "Fill in the key fields: description, channels, deeplink. Agents rely on this data.",
-                                  "name":  "Name",
-                                  "namePlaceholder":  "e.g. AgentFlow Launch",
-                                  "industry":  "Industry / niche",
-                                  "industryPlaceholder":  "SaaS, e-commerce, education...",
-                                  "description":  "Description",
-                                  "descriptionPlaceholder":  "Goals, product and unique value",
-                                  "channels":  "Channels",
-                                  "channelsPlaceholder":  "Telegram, VK, Email, Ads...",
-                                  "deeplink":  "Deeplink / URL",
-                                  "deeplinkPlaceholder":  "https://..."
-                              },
-                     "details":  {
-                                     "title":  "Selected project",
-                                     "subtitle":  "Used when generating content and running pipelines.",
-                                     "name":  "Name",
-                                     "industry":  "Industry",
-                                     "description":  "Description",
-                                     "channels":  "Channels",
-                                     "deeplink":  "Deeplink"
-                                 }
-                 },
-    "brief":  {
-                  "toast":  {
-                                "saved":  "Brief updated"
-                            },
-                  "title":  "Brief",
-                  "subtitle":  {
-                                   "withProject":  "Working on \"{project}\". Agents and pipelines will use this data.",
-                                   "withoutProject":  "Select a project on the Projects tab first."
-                               },
-                  "form":  {
-                               "goals":  "Campaign goals",
-                               "goalsPlaceholder":  "Increase awareness, launch a product, capture leads...",
-                               "audience":  "Target audience",
-                               "audiencePlaceholder":  "Who are we talking to? Pains, motivation, objections?",
-                               "offer":  "Offer",
-                               "offerPlaceholder":  "Short product, service or promotion summary",
-                               "tone":  "Tone and style",
-                               "tonePlaceholder":  "Friendly, expert, bold, formal...",
-                               "keyMessages":  "Key messages",
-                               "keyMessagesPlaceholder":  "What must be communicated",
-                               "callToAction":  "Call to action",
-                               "callToActionPlaceholder":  "Sign up, leave a request, contact us...",
-                               "successMetrics":  "Success metrics",
-                               "successMetricsPlaceholder":  "KPIs, leads, conversion, reach...",
-                               "references":  "References",
-                               "referencesPlaceholder":  "Links or examples for inspiration",
-                               "save":  "Save brief"
-                           },
-                  "summary":  {
-                                  "title":  "Agent summary",
-                                  "subtitle":  "Filled automatically вЂ” helps gauge brief completeness.",
-                                  "empty":  "Fill the form on the left to see the summary."
-                              },
-                  "labels":  {
-                                 "goals":  "Goals",
-                                 "audience":  "Audience",
-                                 "offer":  "Offer",
-                                 "tone":  "Tone",
-                                 "keyMessages":  "Key messages",
-                                 "callToAction":  "Call to action",
-                                 "successMetrics":  "Success metrics",
-                                 "references":  "References"
-                             },
-                  "telegram":  {
-                                   "title":  "Telegram bot",
-                                   "subtitle":  "Sync answers from chat, update the brief and generate a plan.",
-                                   "refresh":  "Refresh",
-                                   "refreshing":  "Refreshing...",
-                                   "apply":  "Apply to form",
-                                   "generate":  "Generate plan",
-                                   "generating":  "Preparing...",
-                                   "statusActive":  "Bot is running",
-                                   "statusInactive":  "Bot is offline",
-                                   "deeplinkHint":  "Copy the deeplink and start the bot on the Settings tab.",
-                                   "receivedAt":  "Received",
-                                   "noBriefs":  "No Telegram briefs for this project yet.",
-                                   "planTitle":  "Campaign plan",
-                                   "planSubtitle":  "Generator output based on the latest brief.",
-                                   "planEmpty":  "Generate a plan after receiving a Telegram brief to see the steps."
-                               }
-              },
-    "agents":  {
-                   "title":  "Content providers",
-                   "subtitle":  "LLM, Image and Video engines status. Mock mode is used if no keys are configured.",
-                   "refresh":  "Refresh status",
-                   "emptyTitle":  "No provider data",
-                   "emptyDescription":  "Check config/providers.json and try again.",
-                   "type":  "Type",
-                   "models":  "Models",
-                   "apiKey":  "API key",
-                   "apiKeyPresent":  "present",
-                   "apiKeyMissing":  "missing ({ref})",
-                   "apiKeyNotRequired":  "not required",
-                   "updatedAt":  "Updated",
-                   "agentsTitle":  "Agents",
-                   "agentsSubtitle":  "Plugins and custom configs. UI management is coming later.",
-                   "plugins":  "Loaded plugins",
-                   "pluginsEmpty":  "No plugins found",
-                   "configs":  "Project configs",
-                   "configsEmpty":  "Agent configs not created yet",
-                   "table":  {
-                                 "name":  "Name",
-                                 "type":  "Type",
-                                 "version":  "Version",
-                                 "source":  "Source",
-                                 "description":  "Description",
-                                 "history":  "History",
-                                 "changes":  "Changes"
-                             }
-               },
-    "pipelines":  {
-                      "toast":  {
-                                    "nameRequired":  "Pipeline name is required",
-                                    "overrideError":  "Invalid JSON in Override",
-                                    "saved":  "Pipeline saved"
-                                },
-                      "list":  {
-                                   "title":  "Pipelines",
-                                   "subtitle":  "Linear flow: Writer в†’ StyleGuard в†’ HumanGate в†’ Uploader. Visual editor coming soon.",
-                                   "refresh":  "Refresh list",
-                                   "emptyTitle":  "No pipelines yet",
-                                   "emptyDescription":  "Use the form on the right to store the first scenario.",
-                                   "project":  "Project: {project}",
-                                   "noProject":  "No project",
-                                   "descriptionMissing":  "No description",
-                                   "run":  "Run",
-                                   "history":  "Version changes"
-                               },
-                      "form":  {
-                                   "title":  "Create pipeline",
-                                   "subtitle":  "Provide a name, description and optional JSON override for steps.",
-                                   "name":  "Name",
-                                   "namePlaceholder":  "Longread + posts",
-                                   "description":  "Description",
-                                   "descriptionPlaceholder":  "Describe what the scenario does",
-                                   "override":  "Override (JSON)",
-                                   "overridePlaceholder":  "{\"writer\":{\"params\":{\"tone\":\"friendly\"}}}",
-                                   "submit":  "Save pipeline",
-                                   "projectHint":  "Select a project to link the scenario.",
-                                   "steps":  "Pipeline steps",
-                                   "stepsHint":  "Drag the cards to rearrange the order before saving.",
-                                   "stepsReset":  "Reset order",
-                                   "kind":  {
-                                                "task":  "Task",
-                                                "guard":  "Guard",
-                                                "humanGate":  "Human gate"
-                                            }
-                               }
-                  },
-    "runs":  {
-                 "title":  "Runs",
-                 "subtitle":  "Pipeline execution history. Logs and artifacts live in the data folder.",
-                 "clear":  "Clear history",
-                 "emptyTitle":  "No runs yet",
-                 "emptyDescription":  "After you run a pipeline the summary will appear here.",
-                 "status":  "Status",
-                 "project":  "Project",
-                 "summary":  "Summary",
-                 "artifacts":  "Artifacts",
-                 "noArtifacts":  "No artifacts were produced."
-             },
-    "reports":  {
-                    "title":  "Reports",
-                    "subtitle":  "Aggregated metrics for pipeline runs. Detailed JSON reports are stored in data/logs.",
-                    "emptyTitle":  "No report data",
-                    "emptyDescription":  "Run at least one scenario to collect statistics.",
-                    "totalRuns":  "Total runs",
-                    "success":  "Successful",
-                    "errors":  "Errors",
-                    "lastRun":  "Last run"
-                },
-    "settings":  {
-                     "system":  {
-                                    "title":  "System info",
-                                    "subtitle":  "Environment details for AgentFlow Desktop.",
-                                    "refresh":  "Check providers",
-                                    "ipcAvailable":  "available",
-                                    "ipcUnavailable":  "offline",
-                                    "hint":  "Environment file: \u003ccode\u003e.env\u003c/code\u003e. Provider config: \u003ccode\u003econfig/providers.json\u003c/code\u003e."
-                                },
-                     "providers":  {
-                                       "title":  "Providers",
-                                       "subtitle":  "Current status of external services.",
-                                       "emptyTitle":  "No provider data",
-                                       "emptyDescription":  "Ensure config/providers.json exists and refresh statuses.",
-                                       "id":  "ID",
-                                       "type":  "Type",
-                                       "models":  "Models",
-                                       "key":  "Key",
-                                       "keyPresent":  "present",
-                                       "keyMissing":  "{ref}",
-                                       "keyNotRequired":  "not required"
-                                   },
-                     "telegram":  {
-                                      "title":  "Telegram bot",
-                                      "subtitle":  "Store the bot token and manage the built-in survey.",
-                                      "refresh":  "Refresh status",
-                                      "copy":  "Copy deeplink",
-                                      "copied":  "Copied",
-                                      "tokenLabel":  "Telegram Bot API token",
-                                      "tokenPlaceholder":  "Value like 1234567890:ABC...",
-                                      "save":  "Save token",
-                                      "start":  "Start bot",
-                                      "stop":  "Stop bot",
-                                      "clearHint":  "Leave the field empty and save to remove the stored token.",
-                                      "statusRunning":  "bot running",
-                                      "statusStopped":  "bot stopped",
-                                      "status":  "Status: \u003cstrong\u003e{status}\u003c/strong\u003e{username}",
-                                      "startedAt":  "Started: {date}",
-                                      "lastActivity":  "Last activity: {date}",
-                                      "error":  "Error: {message}",
-                                      "deeplink":  "Deeplink template: \u003ccode\u003e{deeplink}\u003c/code\u003e",
-                                      "deeplinkHint":  "The bot shows username after start and the deeplink becomes available."
-                                  },
-                     "language":  {
-                                      "title":  "Interface",
-                                      "subtitle":  "Choose the application language.",
-                                      "label":  "Language",
-                                      "ru":  "Russian",
-                                      "en":  "English"
-                                  },
-                     "theme":  {
-                                   "title":  "Theme",
-                                   "subtitle":  "Switch between light and dark modes.",
-                                   "label":  "Theme"
-                               }
-                 },
-    "scheduler":  {
-                      "toast":  {
-                                    "selectPipeline":  "Select a pipeline for the schedule",
-                                    "cronRequired":  "Provide a cron expression",
-                                    "saved":  "Schedule saved",
-                                    "saveError":  "Failed to save schedule",
-                                    "deleted":  "Schedule deleted",
-                                    "deleteError":  "Failed to delete schedule",
-                                    "toggled":  "Schedule {state}",
-                                    "toggleError":  "Failed to update schedule",
-                                    "run":  "Pipeline launched manually",
-                                    "runError":  "Failed to run pipeline",
-                                    "refreshed":  "Schedules refreshed",
-                                    "refreshError":  "Failed to refresh schedules"
-                                },
-                      "form":  {
-                                   "title":  "New schedule",
-                                   "project":  "Project: \u003cstrong\u003e{name}\u003c/strong\u003e",
-                                   "pipeline":  "Pipeline",
-                                   "noPipelines":  "No pipelines available",
-                                   "cron":  "Cron expression",
-                                   "cronPlaceholder":  "*/5 * * * *",
-                                   "enabled":  "Enabled",
-                                   "submitUpdate":  "Update",
-                                   "submitCreate":  "Add",
-                                   "cancel":  "Cancel",
-                                   "refresh":  "Refresh list",
-                                   "hint":  "Use cron format \u003ccode\u003eminute hour day-of-month month day-of-week\u003c/code\u003e.",
-                                   "hintExample":  "For example, \u003ccode\u003e*/30 * * * *\u003c/code\u003e вЂ” every 30 minutes."
-                               },
-                      "status":  {
-                                     "title":  "Scheduler status",
-                                     "running":  "Running: \u003cstrong\u003e{value}\u003c/strong\u003e",
-                                     "started":  "\u003cstrong\u003eStarted\u003c/strong\u003e",
-                                     "lastRun":  "\u003cstrong\u003eLast run\u003c/strong\u003e",
-                                     "activeJobs":  "\u003cstrong\u003eActive jobs\u003c/strong\u003e",
-                                     "note":  "Schedules are persisted and restored on app start."
-                                 },
-                      "list":  {
-                                   "title":  "Schedule list",
-                                   "subtitle":  "Monitor jobs and trigger pipelines manually.",
-                                   "emptyTitle":  "No schedules yet",
-                                   "emptyDescription":  "Create a schedule to trigger pipelines automatically.",
-                                   "pipeline":  "Pipeline",
-                                   "nextRun":  "Next run",
-                                   "state":  "State",
-                                   "actions":  "Actions",
-                                   "pause":  "Pause",
-                                   "enable":  "Enable",
-                                   "run":  "Run",
-                                   "delete":  "Delete"
-                               },
-                      "state":  {
-                                    "enabled":  "enabled",
-                                    "disabled":  "disabled"
-                                }
-                  },
-    "versionHistory":  {
-                           "title":  "Version changes",
-                           "entity":  "{name} В· {type}",
-                           "agent":  "Agent",
-                           "pipeline":  "Pipeline",
-                           "loading":  "Loading history...",
-                           "empty":  "No versions recorded yet.",
-                           "current":  "Current version",
-                           "compareWith":  "Compare with",
-                           "showDiff":  "Show changes",
-                           "showDiffLoading":  "Calculating...",
-                           "logTitle":  "Version log",
-                           "diffTitle":  "Diff",
-                           "diffPrompt":  "Pick two different versions to compare.",
-                           "diffEqual":  "Versions are identical.",
-                           "change":  {
-                                          "added":  "Added",
-                                          "removed":  "Removed",
-                                          "changed":  "Changed",
-                                          "was":  "Was:",
-                                          "became":  "Now:"
-                                      },
-                           "diffLoading":  "Calculating diff...",
-                           "diffHint":  "Select versions and click \"Show changes\" to inspect the diff.",
-                           "close":  "Close",
-                           "comparison":  "Comparing v{left} в†” v{right}"
-                       },
-    "toast":  {
-                  "close":  "Close"
-              }
+{
+  "app": {
+    "title": "AgentFlow Desktop",
+    "tagline": "Modular AI marketing console. Configure everything from the interface.",
+    "nav": {
+      "projects": "Projects",
+      "brief": "Brief",
+      "agents": "Agents",
+      "pipelines": "Pipelines",
+      "runs": "Runs",
+      "reports": "Reports",
+      "scheduler": "Scheduler",
+      "settings": "Settings"
+    },
+    "defaults": {
+      "topic": "Marketing activity",
+      "tone": "Neutral",
+      "message": "No messages provided"
+    },
+    "toasts": {
+      "schedulesLoadError": "Failed to load schedules",
+      "telegramStatusUpdated": "Telegram status updated",
+      "pipelineSaveError": "Failed to save pipeline",
+      "pipelineRun": "Pipeline \"{name}\" finished ({status})",
+      "pipelineRunError": "Pipeline launch failed",
+      "runsCleared": "Run history cleared",
+      "telegramTokenSaved": "Telegram token saved",
+      "telegramTokenRemoved": "Telegram token removed",
+      "telegramTokenError": "Failed to store Telegram token",
+      "telegramStarted": "Telegram bot started",
+      "telegramStartError": "Failed to start Telegram bot",
+      "telegramStopped": "Telegram bot stopped",
+      "telegramStopError": "Failed to stop Telegram bot",
+      "telegramProjectRequired": "Select a project to fetch the Telegram brief",
+      "telegramBriefUpdated": "Telegram brief updated",
+      "telegramNoBrief": "No new briefs for this project yet",
+      "telegramBriefError": "Failed to fetch Telegram brief",
+      "telegramApplyEmpty": "Nothing to apply вЂ” refresh the Telegram brief",
+      "telegramApplied": "Brief form updated with Telegram data",
+      "planProjectRequired": "Select a project to generate a plan",
+      "planReady": "Campaign plan is ready",
+      "planMissingData": "Not enough data for the plan вЂ” fill in the brief",
+      "planError": "Failed to generate campaign plan",
+      "themeChanged": "Theme switched to {theme}",
+      "genericError": "Unexpected error captured",
+      "genericWarn": "Warning recorded",
+      "genericInfo": "Notification received",
+      "telegramLogEmpty": "Log is empty.",
+      "telegramLogError": "Failed to load Telegram bot log.",
+      "telegramProxySaved": "Proxy saved",
+      "telegramProxyCleared": "Proxy cleared",
+      "telegramProxyError": "Failed to update proxy settings",
+      "telegramProxyLoadError": "Failed to load proxy settings"
+    },
+    "actions": {
+      "openLogs": "Open log panel",
+      "closeLogs": "Hide log panel"
+    },
+    "theme": {
+      "light": "Light theme",
+      "dark": "Dark theme"
+    },
+    "log": {
+      "title": "Notifications",
+      "empty": "No events captured yet.",
+      "clear": "Clear",
+      "close": "Hide",
+      "level": {
+        "info": "Info",
+        "warn": "Warning",
+        "error": "Error",
+        "success": "Success"
+      }
+    }
+  },
+  "common": {
+    "save": "Save",
+    "saveToken": "Save token",
+    "savePipeline": "Save pipeline",
+    "saveProject": "Save",
+    "update": "Update",
+    "refresh": "Refresh",
+    "refreshStatus": "Refresh status",
+    "refreshList": "Refresh list",
+    "apply": "Apply to form",
+    "generatePlan": "Generate plan",
+    "generatePlanInProgress": "Preparing...",
+    "copyDeeplink": "Copy deeplink",
+    "copied": "Copied",
+    "start": "Start bot",
+    "stop": "Stop bot",
+    "status": "Status",
+    "deeplink": "Deeplink",
+    "notAvailable": "вЂ”",
+    "selectProject": "Select a project to link the scenario.",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "enabled": "Active",
+    "paused": "Paused",
+    "yes": "Yes",
+    "no": "No",
+    "loading": "Loading...",
+    "loadingHistory": "Loading history...",
+    "computing": "Calculating...",
+    "showChanges": "Show changes",
+    "changes": "Changes",
+    "close": "Close",
+    "pipeline": "Pipeline"
+  },
+  "projects": {
+    "toast": {
+      "nameRequired": "Enter a project name",
+      "saved": "Project saved"
+    },
+    "list": {
+      "title": "Projects",
+      "subtitle": "Active initiatives. Pick a project to continue setup.",
+      "emptyTitle": "No projects yet",
+      "emptyDescription": "Add the first project to prepare the brief and pipelines.",
+      "industryMissing": "Industry not specified"
+    },
+    "form": {
+      "title": "Add project",
+      "subtitle": "Fill in the key fields: description, channels, deeplink. Agents rely on this data.",
+      "name": "Name",
+      "namePlaceholder": "e.g. AgentFlow Launch",
+      "industry": "Industry / niche",
+      "industryPlaceholder": "SaaS, e-commerce, education...",
+      "description": "Description",
+      "descriptionPlaceholder": "Goals, product and unique value",
+      "channels": "Channels",
+      "channelsPlaceholder": "Telegram, VK, Email, Ads...",
+      "deeplink": "Deeplink / URL",
+      "deeplinkPlaceholder": "https://..."
+    },
+    "details": {
+      "title": "Selected project",
+      "subtitle": "Used when generating content and running pipelines.",
+      "name": "Name",
+      "industry": "Industry",
+      "description": "Description",
+      "channels": "Channels",
+      "deeplink": "Deeplink"
+    }
+  },
+  "brief": {
+    "toast": {
+      "saved": "Brief updated"
+    },
+    "title": "Brief",
+    "subtitle": {
+      "withProject": "Working on \"{project}\". Agents and pipelines will use this data.",
+      "withoutProject": "Select a project on the Projects tab first."
+    },
+    "form": {
+      "goals": "Campaign goals",
+      "goalsPlaceholder": "Increase awareness, launch a product, capture leads...",
+      "audience": "Target audience",
+      "audiencePlaceholder": "Who are we talking to? Pains, motivation, objections?",
+      "offer": "Offer",
+      "offerPlaceholder": "Short product, service or promotion summary",
+      "tone": "Tone and style",
+      "tonePlaceholder": "Friendly, expert, bold, formal...",
+      "keyMessages": "Key messages",
+      "keyMessagesPlaceholder": "What must be communicated",
+      "callToAction": "Call to action",
+      "callToActionPlaceholder": "Sign up, leave a request, contact us...",
+      "successMetrics": "Success metrics",
+      "successMetricsPlaceholder": "KPIs, leads, conversion, reach...",
+      "references": "References",
+      "referencesPlaceholder": "Links or examples for inspiration",
+      "save": "Save brief"
+    },
+    "summary": {
+      "title": "Agent summary",
+      "subtitle": "Filled automatically вЂ” helps gauge brief completeness.",
+      "empty": "Fill the form on the left to see the summary."
+    },
+    "labels": {
+      "goals": "Goals",
+      "audience": "Audience",
+      "offer": "Offer",
+      "tone": "Tone",
+      "keyMessages": "Key messages",
+      "callToAction": "Call to action",
+      "successMetrics": "Success metrics",
+      "references": "References"
+    },
+    "telegram": {
+      "title": "Telegram bot",
+      "subtitle": "Sync answers from chat, update the brief and generate a plan.",
+      "refresh": "Refresh",
+      "refreshing": "Refreshing...",
+      "apply": "Apply to form",
+      "generate": "Generate plan",
+      "generating": "Preparing...",
+      "statusActive": "Bot is running",
+      "statusInactive": "Bot is offline",
+      "deeplinkHint": "Copy the deeplink and start the bot on the Settings tab.",
+      "receivedAt": "Received",
+      "noBriefs": "No Telegram briefs for this project yet.",
+      "planTitle": "Campaign plan",
+      "planSubtitle": "Generator output based on the latest brief.",
+      "planEmpty": "Generate a plan after receiving a Telegram brief to see the steps."
+    }
+  },
+  "agents": {
+    "title": "Content providers",
+    "subtitle": "LLM, Image and Video engines status. Mock mode is used if no keys are configured.",
+    "refresh": "Refresh status",
+    "emptyTitle": "No provider data",
+    "emptyDescription": "Check config/providers.json and try again.",
+    "type": "Type",
+    "models": "Models",
+    "apiKey": "API key",
+    "apiKeyPresent": "present",
+    "apiKeyMissing": "missing ({ref})",
+    "apiKeyNotRequired": "not required",
+    "updatedAt": "Updated",
+    "agentsTitle": "Agents",
+    "agentsSubtitle": "Plugins and custom configs. UI management is coming later.",
+    "plugins": "Loaded plugins",
+    "pluginsEmpty": "No plugins found",
+    "configs": "Project configs",
+    "configsEmpty": "Agent configs not created yet",
+    "table": {
+      "name": "Name",
+      "type": "Type",
+      "version": "Version",
+      "source": "Source",
+      "description": "Description",
+      "history": "History",
+      "changes": "Changes"
+    }
+  },
+  "pipelines": {
+    "toast": {
+      "nameRequired": "Pipeline name is required",
+      "overrideError": "Invalid JSON in Override",
+      "saved": "Pipeline saved"
+    },
+    "list": {
+      "title": "Pipelines",
+      "subtitle": "Linear flow: Writer в†’ StyleGuard в†’ HumanGate в†’ Uploader. Visual editor coming soon.",
+      "refresh": "Refresh list",
+      "emptyTitle": "No pipelines yet",
+      "emptyDescription": "Use the form on the right to store the first scenario.",
+      "project": "Project: {project}",
+      "noProject": "No project",
+      "descriptionMissing": "No description",
+      "run": "Run",
+      "history": "Version changes"
+    },
+    "form": {
+      "title": "Create pipeline",
+      "subtitle": "Provide a name, description and optional JSON override for steps.",
+      "name": "Name",
+      "namePlaceholder": "Longread + posts",
+      "description": "Description",
+      "descriptionPlaceholder": "Describe what the scenario does",
+      "override": "Override (JSON)",
+      "overridePlaceholder": "{\"writer\":{\"params\":{\"tone\":\"friendly\"}}}",
+      "submit": "Save pipeline",
+      "projectHint": "Select a project to link the scenario.",
+      "steps": "Pipeline steps",
+      "stepsHint": "Drag the cards to rearrange the order before saving.",
+      "stepsReset": "Reset order",
+      "kind": {
+        "task": "Task",
+        "guard": "Guard",
+        "humanGate": "Human gate"
+      }
+    }
+  },
+  "runs": {
+    "title": "Runs",
+    "subtitle": "Pipeline execution history. Logs and artifacts live in the data folder.",
+    "clear": "Clear history",
+    "emptyTitle": "No runs yet",
+    "emptyDescription": "After you run a pipeline the summary will appear here.",
+    "status": "Status",
+    "project": "Project",
+    "summary": "Summary",
+    "artifacts": "Artifacts",
+    "noArtifacts": "No artifacts were produced."
+  },
+  "reports": {
+    "title": "Reports",
+    "subtitle": "Aggregated metrics for pipeline runs. Detailed JSON reports are stored in data/logs.",
+    "emptyTitle": "No report data",
+    "emptyDescription": "Run at least one scenario to collect statistics.",
+    "totalRuns": "Total runs",
+    "success": "Successful",
+    "errors": "Errors",
+    "lastRun": "Last run"
+  },
+  "settings": {
+    "system": {
+      "title": "System info",
+      "subtitle": "Environment details for AgentFlow Desktop.",
+      "refresh": "Check providers",
+      "ipcAvailable": "available",
+      "ipcUnavailable": "offline",
+      "hint": "Environment file: <code>.env</code>. Provider config: <code>config/providers.json</code>."
+    },
+    "providers": {
+      "title": "Providers",
+      "subtitle": "Current status of external services.",
+      "emptyTitle": "No provider data",
+      "emptyDescription": "Ensure config/providers.json exists and refresh statuses.",
+      "id": "ID",
+      "type": "Type",
+      "models": "Models",
+      "key": "Key",
+      "keyPresent": "present",
+      "keyMissing": "{ref}",
+      "keyNotRequired": "not required"
+    },
+    "telegram": {
+      "title": "Telegram bot",
+      "subtitle": "Store the bot token and manage the built-in survey.",
+      "refresh": "Refresh status",
+      "copy": "Copy deeplink",
+      "copied": "Copied",
+      "tokenLabel": "Telegram Bot API token",
+      "tokenPlaceholder": "Value like 1234567890:ABC...",
+      "save": "Save token",
+      "start": "Start bot",
+      "stop": "Stop bot",
+      "clearHint": "Leave the field empty and save to remove the stored token.",
+      "statusRunning": "Running",
+      "statusStopped": "Stopped",
+      "status": "Status: <strong>{status}</strong>{username}",
+      "startedAt": "Started: {date}",
+      "lastActivity": "Last activity: {date}",
+      "error": "Error: {message}",
+      "deeplink": "Deeplink template: <code>{deeplink}</code>",
+      "deeplinkHint": "The bot shows username after start and the deeplink becomes available.",
+      "statusLabel": "Status: {status}",
+      "statusErrorLabel": "Status: {status}. Error: {message}",
+      "showLog": "Show last 20 log lines",
+      "loadingLog": "Loading log...",
+      "logHint": "Load the log to inspect recent bot events.",
+      "statusStarting": "Starting...",
+      "statusErrorShort": "Error",
+      "statusUnknown": "Unknown",
+      "flowHint": "Flow: <code>/start project=ID → /setup → /finish</code>",
+      "proxyLabel": "HTTPS proxy (optional)",
+      "proxyPlaceholder": "https://user:pass@host:port",
+      "proxySave": "Save proxy",
+      "proxyClear": "Clear proxy",
+      "proxyHint": "Set HTTPS_PROXY or HTTP_PROXY when the bot must use a proxy server.",
+      "errorTokenRequired": "Check the stored token",
+      "errorAuth": "Check the token",
+      "errorProxy": "Set the HTTPS_PROXY environment variable",
+      "errorUnknown": "See the Telegram log for details"
+    },
+    "language": {
+      "title": "Interface",
+      "subtitle": "Choose the application language.",
+      "label": "Language",
+      "ru": "Russian",
+      "en": "English"
+    },
+    "theme": {
+      "title": "Theme",
+      "subtitle": "Switch between light and dark modes.",
+      "label": "Theme"
+    }
+  },
+  "scheduler": {
+    "toast": {
+      "selectPipeline": "Select a pipeline for the schedule",
+      "cronRequired": "Provide a cron expression",
+      "saved": "Schedule saved",
+      "saveError": "Failed to save schedule",
+      "deleted": "Schedule deleted",
+      "deleteError": "Failed to delete schedule",
+      "toggled": "Schedule {state}",
+      "toggleError": "Failed to update schedule",
+      "run": "Pipeline launched manually",
+      "runError": "Failed to run pipeline",
+      "refreshed": "Schedules refreshed",
+      "refreshError": "Failed to refresh schedules"
+    },
+    "form": {
+      "title": "New schedule",
+      "project": "Project: <strong>{name}</strong>",
+      "pipeline": "Pipeline",
+      "noPipelines": "No pipelines available",
+      "cron": "Cron expression",
+      "cronPlaceholder": "*/5 * * * *",
+      "enabled": "Enabled",
+      "submitUpdate": "Update",
+      "submitCreate": "Add",
+      "cancel": "Cancel",
+      "refresh": "Refresh list",
+      "hint": "Use cron format <code>minute hour day-of-month month day-of-week</code>.",
+      "hintExample": "For example, <code>*/30 * * * *</code> вЂ” every 30 minutes."
+    },
+    "status": {
+      "title": "Scheduler status",
+      "running": "Running: <strong>{value}</strong>",
+      "started": "<strong>Started</strong>",
+      "lastRun": "<strong>Last run</strong>",
+      "activeJobs": "<strong>Active jobs</strong>",
+      "note": "Schedules are persisted and restored on app start."
+    },
+    "list": {
+      "title": "Schedule list",
+      "subtitle": "Monitor jobs and trigger pipelines manually.",
+      "emptyTitle": "No schedules yet",
+      "emptyDescription": "Create a schedule to trigger pipelines automatically.",
+      "pipeline": "Pipeline",
+      "nextRun": "Next run",
+      "state": "State",
+      "actions": "Actions",
+      "pause": "Pause",
+      "enable": "Enable",
+      "run": "Run",
+      "delete": "Delete"
+    },
+    "state": {
+      "enabled": "enabled",
+      "disabled": "disabled"
+    }
+  },
+  "versionHistory": {
+    "title": "Version changes",
+    "entity": "{name} В· {type}",
+    "agent": "Agent",
+    "pipeline": "Pipeline",
+    "loading": "Loading history...",
+    "empty": "No versions recorded yet.",
+    "current": "Current version",
+    "compareWith": "Compare with",
+    "showDiff": "Show changes",
+    "showDiffLoading": "Calculating...",
+    "logTitle": "Version log",
+    "diffTitle": "Diff",
+    "diffPrompt": "Pick two different versions to compare.",
+    "diffEqual": "Versions are identical.",
+    "change": {
+      "added": "Added",
+      "removed": "Removed",
+      "changed": "Changed",
+      "was": "Was:",
+      "became": "Now:"
+    },
+    "diffLoading": "Calculating diff...",
+    "diffHint": "Select versions and click \"Show changes\" to inspect the diff.",
+    "close": "Close",
+    "comparison": "Comparing v{left} в†” v{right}"
+  },
+  "toast": {
+    "close": "Close"
+  }
 }

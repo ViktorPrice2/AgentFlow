@@ -15,6 +15,9 @@ import {
   setTelegramToken,
   startTelegramBot,
   stopTelegramBot,
+  tailTelegramLog,
+  getTelegramProxyConfig,
+  setTelegramProxyConfig,
   upsertPipeline,
   deleteSchedule,
   toggleSchedule,
@@ -165,8 +168,12 @@ function App() {
   const [selectedProjectId, setSelectedProjectId] = usePersistentState('af.selectedProject', null);
   const [brief, setBrief] = usePersistentState('af.brief', {});
   const [runs, setRuns] = usePersistentState('af.runs', []);
-  const [botStatus, setBotStatus] = useState(null);
-  const [botBusy, setBotBusy] = useState(false);
+const [botStatus, setBotStatus] = useState(null);
+const [botBusy, setBotBusy] = useState(false);
+const [botLogEntries, setBotLogEntries] = useState([]);
+const [botLogLoading, setBotLogLoading] = useState(false);
+const [proxyValue, setProxyValue] = useState('');
+const [proxyBusy, setProxyBusy] = useState(false);
   const [latestBrief, setLatestBrief] = useState(null);
   const [briefLoading, setBriefLoading] = useState(false);
   const [planDraft, setPlanDraft] = useState({ text: '', updatedAt: null });
@@ -222,6 +229,11 @@ function App() {
     [isLogPanelOpen]
   );
 
+  const resolveMessage = useCallback(
+    (message) => t(message, undefined, message),
+    [t]
+  );
+
   const showToast = useCallback(
     (message, type = 'info', meta) => {
       if (toastTimerRef.current) {
@@ -247,6 +259,23 @@ function App() {
     },
     [pushLogEntry]
   );
+
+  const loadProxyConfig = useCallback(async () => {
+    try {
+      const config = await getTelegramProxyConfig();
+      const normalized = typeof config?.httpsProxy === 'string' ? config.httpsProxy.trim() : '';
+      setProxyValue(normalized);
+      return normalized;
+    } catch (error) {
+      console.error('Failed to load Telegram proxy config', error);
+      showToast(resolveMessage(error.message) || t('app.toasts.telegramProxyLoadError'), 'error', {
+        source: 'telegram',
+        details: { scope: 'proxy', message: error?.message }
+      });
+      setProxyValue('');
+      return '';
+    }
+  }, [resolveMessage, showToast, t]);
 
   const sections = useMemo(
     () => SECTION_CONFIG.map((section) => ({ id: section.id, label: t(section.labelKey) })),
@@ -276,18 +305,19 @@ function App() {
     }
   }, [projects, selectedProject, setSelectedProjectId]);
 
-  const refreshBotStatus = async () => {
+  const refreshBotStatus = useCallback(async () => {
     try {
       const status = await getTelegramStatus();
       setBotStatus(status);
     } catch (error) {
       console.error('Failed to load Telegram bot status', error);
     }
-  };
+  }, []);
 
   useEffect(() => {
     refreshBotStatus();
-  }, []);
+    loadProxyConfig().catch(() => {});
+  }, [refreshBotStatus, loadProxyConfig]);
 
   useEffect(() => {
     setPlanDraft({ text: '', updatedAt: null });
@@ -298,6 +328,15 @@ function App() {
     let active = true;
 
     const unsubscribe = subscribeToBriefUpdates(async (payload = {}) => {
+      if (payload?.error) {
+        showToast(
+          resolveMessage(payload.message) || t('app.toasts.telegramBriefError'),
+          'error',
+          { source: 'telegram', details: payload }
+        );
+        return;
+      }
+
       const { projectId } = payload;
 
       if (selectedProjectId && projectId === selectedProjectId) {
@@ -318,7 +357,7 @@ function App() {
         }
       }
 
-      showToast('Бриф обновлён', 'success', {
+      showToast(t('app.toasts.telegramBriefUpdated'), 'success', {
         source: 'telegram',
         details: payload
       });
@@ -330,7 +369,7 @@ function App() {
         unsubscribe();
       }
     };
-  }, [selectedProjectId, showToast, fetchLatestBrief, subscribeToBriefUpdates]);
+  }, [selectedProjectId, showToast, fetchLatestBrief, subscribeToBriefUpdates, t, resolveMessage]);
 
   useEffect(() => {
     loadSchedulerStatus().catch(() => {});
@@ -344,8 +383,53 @@ function App() {
 
   const handleRefreshBotStatus = async () => {
     await refreshBotStatus();
+    await loadProxyConfig();
     showToast(t('app.toasts.telegramStatusUpdated'), 'info');
   };
+
+  const handleSaveProxy = useCallback(
+    async (proxy) => {
+      setProxyBusy(true);
+
+      try {
+        const nextConfig = await setTelegramProxyConfig({ httpsProxy: proxy ?? '' });
+        const normalized = nextConfig?.httpsProxy ?? '';
+        setProxyValue(normalized);
+
+        const trimmed = (proxy ?? '').trim();
+        showToast(
+          trimmed
+            ? t('app.toasts.telegramProxySaved')
+            : t('app.toasts.telegramProxyCleared'),
+          'success'
+        );
+      } catch (error) {
+        console.error('Failed to save Telegram proxy config', error);
+        showToast(resolveMessage(error.message) || t('app.toasts.telegramProxyError'), 'error');
+      } finally {
+        setProxyBusy(false);
+      }
+    },
+    [resolveMessage, showToast, t]
+  );
+
+  const handleTailBotLog = useCallback(async () => {
+    setBotLogLoading(true);
+
+    try {
+      const lines = await tailTelegramLog(20);
+      setBotLogEntries(Array.isArray(lines) ? lines : []);
+
+      if (!lines || lines.length === 0) {
+        showToast(t('app.toasts.telegramLogEmpty'), 'info');
+      }
+    } catch (error) {
+      console.error('Failed to load Telegram bot log', error);
+      showToast(resolveMessage(error.message) || t('app.toasts.telegramLogError'), 'error');
+    } finally {
+      setBotLogLoading(false);
+    }
+  }, [resolveMessage, showToast, t, tailTelegramLog]);
 
   const handleToggleLogs = useCallback(() => {
     setLogPanelOpen((previous) => {
@@ -520,7 +604,8 @@ function App() {
       }
     } catch (error) {
       console.error('Failed to store Telegram token', error);
-      showToast(error.message || t('app.toasts.telegramTokenError'), 'error');
+      showToast(resolveMessage(error.message) || t('app.toasts.telegramTokenError'), 'error');
+      await refreshBotStatus();
     } finally {
       setBotBusy(false);
     }
@@ -535,7 +620,8 @@ function App() {
       showToast(t('app.toasts.telegramStarted'), 'success');
     } catch (error) {
       console.error('Failed to start Telegram bot', error);
-      showToast(error.message || t('app.toasts.telegramStartError'), 'error');
+      showToast(resolveMessage(error.message) || t('app.toasts.telegramStartError'), 'error');
+      await refreshBotStatus();
     } finally {
       setBotBusy(false);
     }
@@ -550,7 +636,8 @@ function App() {
       showToast(t('app.toasts.telegramStopped'), 'info');
     } catch (error) {
       console.error('Failed to stop Telegram bot', error);
-      showToast(error.message || t('app.toasts.telegramStopError'), 'error');
+      showToast(resolveMessage(error.message) || t('app.toasts.telegramStopError'), 'error');
+      await refreshBotStatus();
     } finally {
       setBotBusy(false);
     }
@@ -751,6 +838,12 @@ function App() {
             onStartBot={handleStartBot}
             onStopBot={handleStopBot}
             onRefreshBot={handleRefreshBotStatus}
+            onTailLog={handleTailBotLog}
+            proxyValue={proxyValue}
+            proxyBusy={proxyBusy}
+            onSaveProxy={handleSaveProxy}
+            botLogEntries={botLogEntries}
+            botLogLoading={botLogLoading}
             botBusy={botBusy}
             theme={theme}
             onThemeChange={handleThemeChange}
@@ -778,7 +871,10 @@ function App() {
     schedulerStatusState,
     schedulesLoading,
     theme,
-    handleThemeChange
+    handleThemeChange,
+    botLogEntries,
+    botLogLoading,
+    handleTailBotLog
   ]);
 
   return (
@@ -834,3 +930,9 @@ function App() {
 }
 
 export default App;
+
+
+
+
+
+

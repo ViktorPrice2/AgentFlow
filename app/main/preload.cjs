@@ -14,10 +14,13 @@ contextBridge.exposeInMainWorld('AgentAPI', {
   listPipelines: () => ipcRenderer.invoke('AgentFlow:pipeline:list'),
   upsertPipeline: (pipelineDefinition) =>
     ipcRenderer.invoke('AgentFlow:pipeline:upsert', pipelineDefinition),
-  getTelegramStatus: () => ipcRenderer.invoke('AgentFlow:bot:status'),
-  setTelegramToken: (token) => ipcRenderer.invoke('AgentFlow:bot:setToken', token),
-  startTelegramBot: () => ipcRenderer.invoke('AgentFlow:bot:start'),
-  stopTelegramBot: () => ipcRenderer.invoke('AgentFlow:bot:stop'),
+  getTelegramStatus: () => ipcRenderer.invoke('bot:status'),
+  setTelegramToken: (token) => ipcRenderer.invoke('bot:setToken', token),
+  startTelegramBot: () => ipcRenderer.invoke('bot:start'),
+  stopTelegramBot: () => ipcRenderer.invoke('bot:stop'),
+  tailTelegramLog: (limit) => ipcRenderer.invoke('bot:tailLog', { limit }),
+  getTelegramProxyConfig: () => ipcRenderer.invoke('bot:getProxy'),
+  setTelegramProxyConfig: (config) => ipcRenderer.invoke('bot:setProxy', config),
   fetchLatestBrief: (projectId) => ipcRenderer.invoke('AgentFlow:briefs:latest', projectId),
   generateBriefPlan: (projectId) => ipcRenderer.invoke('AgentFlow:briefs:plan', projectId),
   listEntityHistory: (entityType, entityId) =>
@@ -38,15 +41,23 @@ contextBridge.exposeInMainWorld('AgentAPI', {
       return () => {};
     }
 
-    const channel = 'brief:updated';
-    const listener = (_event, payload) => {
+    const updateChannel = 'brief:updated';
+    const errorChannel = 'brief:error';
+
+    const updateListener = (_event, payload) => {
       handler(payload);
     };
 
-    ipcRenderer.on(channel, listener);
+    const errorListener = (_event, payload) => {
+      handler({ ...(payload || {}), error: true });
+    };
+
+    ipcRenderer.on(updateChannel, updateListener);
+    ipcRenderer.on(errorChannel, errorListener);
 
     return () => {
-      ipcRenderer.removeListener(channel, listener);
+      ipcRenderer.removeListener(updateChannel, updateListener);
+      ipcRenderer.removeListener(errorChannel, errorListener);
     };
   }
 });

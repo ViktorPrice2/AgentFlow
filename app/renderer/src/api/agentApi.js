@@ -28,10 +28,12 @@ const fallbackProviderStatus = [
 ];
 
 const fallbackBotStatus = {
+  status: 'stopped',
   running: false,
   tokenStored: false,
+  tokenSource: null,
   username: null,
-  lastError: 'Бот доступен только в настольном приложении',
+  lastError: null,
   startedAt: null,
   lastActivityAt: null,
   deeplinkBase: null
@@ -42,6 +44,11 @@ const fallbackSchedulerStatus = {
   startedAt: null,
   lastRunAt: null,
   jobs: 0
+};
+
+const fallbackProxyConfig = {
+  httpsProxy: '',
+  httpProxy: ''
 };
 
 export async function listAgents() {
@@ -246,12 +253,32 @@ export function isAgentApiAvailable() {
   return hasWindowAPI;
 }
 
-function unwrapStatusResponse(response) {
-  if (response?.ok) {
-    return response.status ?? fallbackBotStatus;
+function normalizeBotStatus(status) {
+  const merged = { ...fallbackBotStatus, ...(status || {}) };
+
+  if (!merged.status) {
+    merged.status = merged.running ? 'running' : merged.lastError ? 'error' : 'stopped';
   }
 
-  throw new Error(response?.error || 'Не удалось получить ответ от Telegram-бота');
+  if (merged.status === 'running') {
+    merged.running = true;
+  } else if (merged.status === 'starting') {
+    merged.running = false;
+  } else if (merged.status === 'error') {
+    merged.running = false;
+  } else if (merged.status === 'stopped') {
+    merged.running = false;
+  }
+
+  return merged;
+}
+
+function unwrapStatusResponse(response) {
+  if (response?.ok) {
+    return normalizeBotStatus(response.status);
+  }
+
+  throw new Error(response?.error || 'Не удалось получить состояние Telegram-бота');
 }
 
 export async function getTelegramStatus() {
@@ -261,7 +288,7 @@ export async function getTelegramStatus() {
   }
 
   await fallbackDelay();
-  return fallbackBotStatus;
+  return normalizeBotStatus();
 }
 
 export async function setTelegramToken(token) {
@@ -271,7 +298,7 @@ export async function setTelegramToken(token) {
   }
 
   await fallbackDelay();
-  return fallbackBotStatus;
+  return normalizeBotStatus();
 }
 
 export async function startTelegramBot() {
@@ -291,9 +318,60 @@ export async function stopTelegramBot() {
   }
 
   await fallbackDelay();
-  return fallbackBotStatus;
+  return normalizeBotStatus();
 }
 
+export async function tailTelegramLog(limit = 20) {
+  if (hasWindowAPI && typeof agentApi.tailTelegramLog === 'function') {
+    const response = await agentApi.tailTelegramLog(limit);
+
+    if (response?.ok) {
+      const lines = Array.isArray(response.lines) ? response.lines : [];
+      return lines;
+    }
+
+    throw new Error(response?.error || 'Не удалось получить содержимое лога Telegram-бота');
+  }
+
+  await fallbackDelay();
+  return [];
+}
+
+export async function getTelegramProxyConfig() {
+  if (hasWindowAPI && typeof agentApi.getTelegramProxyConfig === "function") {
+    const response = await agentApi.getTelegramProxyConfig();
+
+    if (response?.ok) {
+      return response.config ?? { ...fallbackProxyConfig };
+    }
+
+    throw new Error(response?.error || "�� ������� �������� ��������� ������ Telegram");
+  }
+
+  await fallbackDelay();
+  return { ...fallbackProxyConfig };
+}
+
+export async function setTelegramProxyConfig(config) {
+  if (hasWindowAPI && typeof agentApi.setTelegramProxyConfig === "function") {
+    const response = await agentApi.setTelegramProxyConfig(config);
+
+    if (response?.ok) {
+      return response.config ?? { ...fallbackProxyConfig };
+    }
+
+    throw new Error(response?.error || "�� ������� ��������� ��������� ������ Telegram");
+  }
+
+  const httpsProxy = typeof config?.httpsProxy === "string" ? config.httpsProxy.trim() : "";
+  const httpProxy = typeof config?.httpProxy === "string" ? config.httpProxy.trim() : "";
+
+  fallbackProxyConfig.httpsProxy = httpsProxy;
+  fallbackProxyConfig.httpProxy = httpProxy;
+
+  await fallbackDelay();
+  return { ...fallbackProxyConfig };
+}
 export async function fetchLatestBrief(projectId) {
   if (hasWindowAPI && typeof agentApi.fetchLatestBrief === 'function') {
     const response = await agentApi.fetchLatestBrief(projectId);
@@ -348,3 +426,4 @@ export async function runProviderDiagnostic(command) {
   await fallbackDelay();
   return { ok: false };
 }
+

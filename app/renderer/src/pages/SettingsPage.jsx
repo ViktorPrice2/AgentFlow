@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
@@ -26,6 +26,12 @@ export function SettingsPage({
   onStartBot,
   onStopBot,
   onRefreshBot,
+  onTailLog,
+  proxyValue = '',
+  onSaveProxy,
+  proxyBusy = false,
+  botLogEntries = [],
+  botLogLoading = false,
   botBusy = false,
   theme = 'light',
   onThemeChange
@@ -33,7 +39,9 @@ export function SettingsPage({
   const { t, language, setLanguage } = useI18n();
   const locale = language === 'en' ? 'en-US' : 'ru-RU';
   const envInfo = getEnvironmentInfo();
+  const storedProxyValue = typeof proxyValue === 'string' ? proxyValue : '';
   const [tokenInput, setTokenInput] = useState('');
+  const [proxyInput, setProxyInput] = useState(storedProxyValue);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -44,12 +52,37 @@ export function SettingsPage({
     setCopied(false);
   }, [botStatus?.deeplinkBase]);
 
+  useEffect(() => {
+    setProxyInput(storedProxyValue);
+  }, [storedProxyValue]);
+
+  const normalizedProxyStored = storedProxyValue.trim();
+  const normalizedProxyInput = proxyInput.trim();
+  const proxyDirty = normalizedProxyInput !== normalizedProxyStored;
+  const canClearProxy = normalizedProxyStored.length > 0 || normalizedProxyInput.length > 0;
+
   const handleSubmit = async (event) => {
     event.preventDefault();
 
     if (typeof onSaveToken === 'function') {
       await onSaveToken(tokenInput);
       setTokenInput('');
+    }
+  };
+
+  const handleProxySubmit = async (event) => {
+    event.preventDefault();
+
+    if (typeof onSaveProxy === 'function' && proxyDirty) {
+      await onSaveProxy(proxyInput);
+    }
+  };
+
+  const handleProxyClear = async () => {
+    setProxyInput('');
+
+    if (typeof onSaveProxy === 'function') {
+      await onSaveProxy('');
     }
   };
 
@@ -71,11 +104,39 @@ export function SettingsPage({
     }
   };
 
-  const statusValue = botStatus?.running ? t('settings.telegram.statusRunning') : t('settings.telegram.statusStopped');
-  const statusMarkup = t('settings.telegram.status', {
-    status: statusValue,
-    username: botStatus?.username ? ` (@${botStatus.username})` : ''
-  });
+  const statusKey =
+    botStatus?.status || (botStatus?.running ? 'running' : botStatus?.lastError ? 'error' : 'stopped');
+  const statusLabels = {
+    running: t('settings.telegram.statusRunning', undefined, 'Running'),
+    starting: t('settings.telegram.statusStarting', undefined, 'Starting...'),
+    stopped: t('settings.telegram.statusStopped', undefined, 'Stopped'),
+    error: t('settings.telegram.statusErrorShort', undefined, 'Error'),
+    unknown: t('settings.telegram.statusUnknown', undefined, 'Unknown')
+  };
+  const normalizedStatusKey = statusLabels[statusKey] ? statusKey : 'unknown';
+  const statusLabel = statusLabels[normalizedStatusKey];
+  const usernameSuffix = botStatus?.username ? ` (@${botStatus.username})` : '';
+  const statusErrorMessage = botStatus?.lastError
+    ? t(botStatus.lastError, undefined, botStatus.lastError)
+    : null;
+  const statusLine =
+    normalizedStatusKey === 'error' && botStatus?.lastError
+      ? t(
+          'settings.telegram.statusErrorLabel',
+          {
+            status: `${statusLabel}${usernameSuffix}`,
+            message: statusErrorMessage || botStatus.lastError
+          },
+          'Status: {status}. Error: {message}'
+        )
+      : t(
+          'settings.telegram.statusLabel',
+          { status: `${statusLabel}${usernameSuffix}` },
+          'Status: {status}'
+        );
+  const isRunning = Boolean(botStatus?.running);
+  const isStarting = botStatus?.status === 'starting';
+  const hasTokenStored = Boolean(botStatus?.tokenStored);
   const deeplinkTemplate = botStatus?.deeplinkBase ? `${botStatus.deeplinkBase}?start=project=PRJ_ID` : null;
   const startedAtText = botStatus?.startedAt
     ? t('settings.telegram.startedAt', { date: new Date(botStatus.startedAt).toLocaleString(locale) })
@@ -83,9 +144,50 @@ export function SettingsPage({
   const lastActivityText = botStatus?.lastActivityAt
     ? t('settings.telegram.lastActivity', { date: new Date(botStatus.lastActivityAt).toLocaleString(locale) })
     : null;
-  const errorText = botStatus?.lastError
-    ? t('settings.telegram.error', { message: botStatus.lastError })
-    : null;
+  const hasLogEntries = Array.isArray(botLogEntries) && botLogEntries.length > 0;
+  const logText = hasLogEntries
+    ? botLogEntries
+        .map((entry) => {
+          if (!entry) {
+            return '';
+          }
+
+          if (typeof entry === 'string') {
+            return entry;
+          }
+
+          const timestamp = entry.ts || entry.timestamp || entry.time || null;
+          const level = (entry.level || entry.lvl || 'info').toUpperCase();
+          const event = entry.event || entry.message || entry.msg || '';
+          const data = entry.data ?? entry.payload ?? entry.details;
+          let dataText = '';
+
+          if (data !== undefined) {
+            if (typeof data === 'string') {
+              dataText = data;
+            } else {
+              try {
+                dataText = JSON.stringify(data);
+              } catch (serializationError) {
+                dataText = '[unserializable]';
+              }
+            }
+          }
+
+          return [timestamp ? `[${timestamp}]` : null, level, event, dataText]
+            .filter(Boolean)
+            .join(' ');
+        })
+        .join('\n')
+    : '';
+  const logButtonLabel = botLogLoading
+    ? t('settings.telegram.loadingLog', undefined, 'Loading log...')
+    : t('settings.telegram.showLog', undefined, 'Show last 20 log lines');
+  const handleTailLogClick = async () => {
+    if (typeof onTailLog === 'function') {
+      await onTailLog();
+    }
+  };
 
   return (
     <div className="page-grid two-columns">
@@ -136,7 +238,7 @@ export function SettingsPage({
         <ul className="env-info">
           {envInfo.map((item) => (
             <li key={item.label}>
-              <strong>{item.label}:</strong> {item.value || '—'}
+              <strong>{item.label}:</strong> {item.value || 'вЂ”'}
             </li>
           ))}
         </ul>
@@ -223,7 +325,7 @@ export function SettingsPage({
               type="button"
               className="secondary-button"
               onClick={onStartBot}
-              disabled={botBusy || !botStatus?.tokenStored}
+              disabled={botBusy || !hasTokenStored || isRunning || isStarting}
             >
               {t('settings.telegram.start')}
             </button>
@@ -231,21 +333,71 @@ export function SettingsPage({
               type="button"
               className="secondary-button"
               onClick={onStopBot}
-              disabled={botBusy || !botStatus?.running}
+              disabled={botBusy || (!isRunning && !isStarting)}
             >
               {t('settings.telegram.stop')}
             </button>
           </div>
         </form>
         <p className="hint">{t('settings.telegram.clearHint')}</p>
-        <p className="hint" dangerouslySetInnerHTML={{ __html: statusMarkup }} />
+        <p className="hint" dangerouslySetInnerHTML={{ __html: t('settings.telegram.flowHint') }} />
+        <form className="form" onSubmit={handleProxySubmit}>
+          <label>
+            {t('settings.telegram.proxyLabel')}
+            <input
+              type="text"
+              value={proxyInput}
+              onChange={(event) => setProxyInput(event.target.value)}
+              placeholder={t('settings.telegram.proxyPlaceholder')}
+              autoComplete="off"
+            />
+          </label>
+          <div className="button-row">
+            <button type="submit" className="secondary-button" disabled={proxyBusy || !proxyDirty}>
+              {t('settings.telegram.proxySave')}
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={handleProxyClear}
+              disabled={proxyBusy || !canClearProxy}
+            >
+              {t('settings.telegram.proxyClear')}
+            </button>
+          </div>
+        </form>
+        <p className="hint">{t('settings.telegram.proxyHint')}</p>
+        <p className={`hint ${normalizedStatusKey === 'error' ? 'warn' : ''}`}>{statusLine}</p>
         {startedAtText ? <p className="hint">{startedAtText}</p> : null}
         {lastActivityText ? <p className="hint">{lastActivityText}</p> : null}
-        {errorText ? <p className="hint warn">{errorText}</p> : null}
         {deeplinkTemplate ? (
-          <p className="hint" dangerouslySetInnerHTML={{ __html: t('settings.telegram.deeplink', { deeplink: deeplinkTemplate }) }} />
+          <p
+            className="hint"
+            dangerouslySetInnerHTML={{ __html: t('settings.telegram.deeplink', { deeplink: deeplinkTemplate }) }}
+          />
         ) : (
           <p className="hint">{t('settings.telegram.deeplinkHint')}</p>
+        )}
+        <div className="button-row">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={handleTailLogClick}
+            disabled={botLogLoading}
+          >
+            {logButtonLabel}
+          </button>
+        </div>
+        {botLogLoading ? (
+          <p className="hint">{t('settings.telegram.loadingLog', undefined, 'Loading log...')}</p>
+        ) : hasLogEntries ? (
+          <pre className="telegram-log-output" aria-live="polite">
+            {logText}
+          </pre>
+        ) : (
+          <p className="hint">
+            {t('settings.telegram.logHint', undefined, 'Load the log to inspect recent bot events.')}
+          </p>
         )}
       </InfoCard>
     </div>
@@ -271,13 +423,23 @@ SettingsPage.propTypes = {
     deeplinkBase: PropTypes.string,
     startedAt: PropTypes.string,
     lastActivityAt: PropTypes.string,
-    lastError: PropTypes.string
+    lastError: PropTypes.string,
+    tokenSource: PropTypes.string
   }),
   onSaveToken: PropTypes.func.isRequired,
   onStartBot: PropTypes.func.isRequired,
   onStopBot: PropTypes.func.isRequired,
   onRefreshBot: PropTypes.func.isRequired,
+  onTailLog: PropTypes.func,
+  proxyValue: PropTypes.string,
+  onSaveProxy: PropTypes.func,
+  proxyBusy: PropTypes.bool,
+  botLogEntries: PropTypes.arrayOf(PropTypes.oneOfType([PropTypes.string, PropTypes.object])),
+  botLogLoading: PropTypes.bool,
   botBusy: PropTypes.bool,
   theme: PropTypes.oneOf(['light', 'dark']),
   onThemeChange: PropTypes.func
 };
+
+
+

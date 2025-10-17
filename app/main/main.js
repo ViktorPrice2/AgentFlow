@@ -10,6 +10,8 @@ import { registerTelegramIpcHandlers } from './ipcBot.js';
 import { createScheduler, registerSchedulerIpcHandlers } from '../core/scheduler.js';
 import { errorBus, logRendererError, registerProcessErrorHandlers } from '../core/errors.js';
 import { ensureMigrations } from './db/migrate.js';
+import { resolveDataPath } from '../core/utils/security.js';
+import { openDatabase } from '../db/sqlite.js';
 
 const isDevelopment = process.env.NODE_ENV === 'development';
 const __filename = fileURLToPath(import.meta.url);
@@ -94,6 +96,70 @@ const enqueueRendererEvent = (channel, payload) => {
 
   if (deferred) {
     queueRendererEvent({ channel, payload });
+  }
+};
+
+const createTelegramLogger = () => ({
+  info(message, details) {
+    if (message) {
+      console.info(message);
+    }
+    return errorBus.info(message, details);
+  },
+  warn(message, details) {
+    if (message) {
+      console.warn(message);
+    }
+    return errorBus.warn(message, details);
+  },
+  error(message, details) {
+    if (message) {
+      console.error(message);
+    }
+    return errorBus.error(message, details);
+  },
+  capture(error, context) {
+    return errorBus.capture(error, context);
+  }
+});
+
+const createTelegramDependencies = () => {
+  const appDataDir = resolveDataPath();
+  const dbPath = resolveDataPath('app.db');
+
+  const getDb = (options) => {
+    const db = openDatabase(dbPath, options);
+
+    try {
+      if (!options?.readonly) {
+        db.pragma('journal_mode = WAL');
+      }
+    } catch (error) {
+      console.warn('[telegram] Failed to set WAL mode for database connection', error);
+    }
+
+    return db;
+  };
+
+  return {
+    appDataDir,
+    dbPath,
+    getDb,
+    logger: createTelegramLogger(),
+    enqueueRendererEvent: (channel, payload) => enqueueRendererEvent(channel, payload),
+    getMainWindow: () => mainWindowInstance
+  };
+};
+
+const registerTelegramHandlers = async (window) => {
+  const deps = createTelegramDependencies();
+
+  try {
+    await registerTelegramIpcHandlers(window, deps);
+  } catch (error) {
+    const message = 'Failed to register Telegram IPC handlers';
+    console.error(`${message}:`, error);
+    errorBus.error(message, { message: error?.message, stack: error?.stack });
   }
 };
 
@@ -249,18 +315,6 @@ const bootstrapCore = async () => {
   }
 
   registerSchedulerIpcHandlers(ipcMain, scheduler);
-
-  try {
-    await registerTelegramIpcHandlers(ipcMain, {
-      onBriefUpdate: (payload) => {
-        enqueueRendererEvent('brief:updated', payload);
-      }
-    });
-  } catch (error) {
-    const message = 'Failed to register Telegram IPC handlers';
-    console.error(`${message}:`, error);
-    errorBus.error(message, { message: error?.message, stack: error?.stack });
-  }
 };
 
 app.on('browser-window-created', (_event, window) => {
@@ -280,20 +334,27 @@ app.whenReady().then(async () => {
 
   await bootstrapCore();
 
+  let mainWindow;
   try {
-    await createMainWindow();
+    mainWindow = await createMainWindow();
   } catch (error) {
     errorBus.error('Failed to create main window', { message: error?.message, stack: error?.stack });
     throw error;
   }
 
+  if (mainWindow) {
+    await registerTelegramHandlers(mainWindow);
+  }
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow().catch((error) => {
-        const message = 'Failed to create renderer window on activate';
-        console.error(`${message}:`, error);
-        errorBus.error(message, { message: error?.message, stack: error?.stack });
-      });
+      createMainWindow()
+        .then((window) => registerTelegramHandlers(window))
+        .catch((error) => {
+          const message = 'Failed to create renderer window on activate';
+          console.error(`${message}:`, error);
+          errorBus.error(message, { message: error?.message, stack: error?.stack });
+        });
     }
   });
 });
