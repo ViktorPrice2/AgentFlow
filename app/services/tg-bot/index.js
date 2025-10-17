@@ -2,7 +2,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import keytar from 'keytar';
-import Database from 'better-sqlite3';
+import { openDatabase as openBetterSqliteDatabase } from '../../db/sqlite.js';
 import { createBriefSurvey, summarizeAnswers, buildExecutionPlan } from './survey.js';
 import {
   resolveDataPath,
@@ -51,7 +51,7 @@ async function appendJsonLine(filePath, payload, options) {
 
 function openDatabase(dbPath) {
   const safePath = assertAllowedPath(dbPath);
-  const db = new Database(safePath);
+  const db = openBetterSqliteDatabase(safePath);
   db.pragma('journal_mode = WAL');
   return db;
 }

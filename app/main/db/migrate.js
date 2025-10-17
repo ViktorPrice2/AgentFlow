@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import Database from 'better-sqlite3';
 import { resolveDataPath, assertAllowedPath } from '../../core/utils/security.js';
+import { createDatabaseInstance } from '../../db/sqlite.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -113,7 +113,7 @@ export const runMigrations = async () => {
   const migrations = await loadMigrations();
   const safeDbPath = assertAllowedPath(dbPath);
   ensureDatabaseFile(safeDbPath);
-  const db = new Database(safeDbPath);
+  const db = createDatabaseInstance(safeDbPath);
 
   try {
     db.pragma('journal_mode = WAL');
@@ -180,7 +180,7 @@ export const getMigrationStatus = async () => {
     };
   }
 
-  const db = new Database(safeDbPath, { readonly: true, fileMustExist: true });
+  const db = createDatabaseInstance(safeDbPath, { readonly: true, fileMustExist: true });
 
   try {
     const tableNames = getTableNames(db);

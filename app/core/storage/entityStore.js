@@ -1,11 +1,11 @@
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import Database from 'better-sqlite3';
+import { openDatabase as openBetterSqliteDatabase } from '../../db/sqlite.js';
 
 const DEFAULT_DB_PATH = path.join(process.cwd(), 'data', 'app.db');
 
 function openDatabase(dbPath = DEFAULT_DB_PATH) {
-  const db = new Database(dbPath);
+  const db = openBetterSqliteDatabase(dbPath);
   db.pragma('journal_mode = WAL');
   return db;
 }
