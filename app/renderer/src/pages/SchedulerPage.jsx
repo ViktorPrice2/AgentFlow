@@ -31,17 +31,17 @@ function pipelineNameById(pipelines, pipelineId) {
 }
 
 export function SchedulerPage({
-  project,
-  pipelines,
-  schedules,
-  status,
-  onRefresh,
+  project = null,
+  pipelines = [],
+  schedules = [],
+  status = null,
+  onRefresh = async () => {},
   onSubmit,
   onDelete,
   onToggle,
   onRunNow,
-  isLoading,
-  onNotify
+  isLoading = false,
+  onNotify = null
 }) {
   const { t, language } = useI18n();
   const locale = language === 'en' ? 'en-US' : 'ru-RU';
@@ -373,14 +373,4 @@ SchedulerPage.propTypes = {
   onRunNow: PropTypes.func.isRequired,
   isLoading: PropTypes.bool,
   onNotify: PropTypes.func
-};
-
-SchedulerPage.defaultProps = {
-  project: null,
-  pipelines: [],
-  schedules: [],
-  status: null,
-  onRefresh: async () => {},
-  isLoading: false,
-  onNotify: null
 };

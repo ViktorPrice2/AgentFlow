@@ -32,7 +32,7 @@ export function PipelinesPage({
   onRefresh,
   isAgentOnline = true,
   onNotify,
-  onShowHistory
+  onShowHistory = undefined
 }) {
   const { t } = useI18n();
   const [formState, setFormState] = useState(INITIAL_FORM_STATE);
@@ -292,12 +292,3 @@ PipelinesPage.propTypes = {
   onNotify: PropTypes.func.isRequired,
   onShowHistory: PropTypes.func
 };
-
-PipelinesPage.defaultProps = {
-  pipelines: [],
-  project: null,
-  brief: {},
-  isAgentOnline: true,
-  onShowHistory: undefined
-};
-

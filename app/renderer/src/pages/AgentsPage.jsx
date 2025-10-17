@@ -3,7 +3,7 @@ import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
 import { useI18n } from '../i18n/useI18n.jsx';
 
-function AgentTable({ items = [], emptyMessage, onShowHistory }) {
+function AgentTable({ items = [], emptyMessage, onShowHistory = undefined }) {
   const { t } = useI18n();
 
   if (!items || items.length === 0) {
@@ -68,16 +68,12 @@ AgentTable.propTypes = {
   onShowHistory: PropTypes.func
 };
 
-AgentTable.defaultProps = {
-  onShowHistory: undefined
-};
-
 export function AgentsPage({
   agentsData,
   providerStatus = [],
   onRefresh,
   lastUpdated = null,
-  onShowHistory
+  onShowHistory = undefined
 }) {
   const { t } = useI18n();
   return (
@@ -168,7 +164,3 @@ AgentsPage.propTypes = {
   onShowHistory: PropTypes.func
 };
 
-AgentsPage.defaultProps = {
-  lastUpdated: null,
-  onShowHistory: undefined
-};
