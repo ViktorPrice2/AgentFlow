@@ -63,6 +63,43 @@ async function appendJsonLine(filePath, payload, options) {
   return fsp.appendFile(safePath, `${JSON.stringify(entry)}\n`, { encoding: 'utf8' });
 }
 
+async function readJsonFileIfExists(filePath, options) {
+  const safePath = assertAllowedPath(filePath, options);
+
+  try {
+    const raw = await fsp.readFile(safePath, { encoding: 'utf8' });
+    return { data: JSON.parse(raw), error: null };
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return { data: null, error: null };
+    }
+
+    if (error instanceof SyntaxError) {
+      return { data: null, error };
+    }
+
+    throw error;
+  }
+}
+
+async function writeJsonFile(filePath, payload, options) {
+  const safePath = assertAllowedPath(filePath, options);
+  const serialized = `${JSON.stringify(payload, null, 2)}\n`;
+  await fsp.writeFile(safePath, serialized, { encoding: 'utf8' });
+}
+
+async function deleteFileIfExists(filePath, options) {
+  const safePath = assertAllowedPath(filePath, options);
+
+  try {
+    await fsp.unlink(safePath);
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw error;
+    }
+  }
+}
+
 function openDatabase(dbPath) {
   const safePath = assertAllowedPath(dbPath);
   const db = openBetterSqliteDatabase(safePath);
@@ -156,6 +193,9 @@ export class TelegramBotService extends EventEmitter {
       ? assertAllowedPath(path.resolve(logPath), { allowedRoots })
       : assertAllowedPath(path.join(resolvedDataDir, 'logs', 'telegram-bot.jsonl'), { allowedRoots });
     this.briefsDirectory = assertAllowedPath(path.join(resolvedDataDir, 'briefs'), { allowedRoots });
+    this.botMetadataPath = assertAllowedPath(path.join(resolvedDataDir, 'telegram-bot.json'), {
+      allowedRoots
+    });
     this.restartBaseDelay = restartBaseDelay;
     this.restartBackoffMultiplier = restartBackoffMultiplier;
     this.restartMaxDelay = restartMaxDelay;
@@ -180,6 +220,20 @@ export class TelegramBotService extends EventEmitter {
     await ensureDirectory(this.dataDirectory, { allowedRoots: this.allowedRoots });
     await ensureDirectory(path.dirname(this.logPath), { allowedRoots: this.allowedRoots });
     await ensureDirectory(this.briefsDirectory, { allowedRoots: this.allowedRoots });
+    const { data: cachedMetadata, error: metadataError } = await readJsonFileIfExists(
+      this.botMetadataPath,
+      { allowedRoots: this.allowedRoots }
+    );
+
+    if (metadataError) {
+      await this.log('warn', 'Failed to parse cached Telegram metadata', {
+        error: metadataError.message
+      });
+    }
+
+    if (cachedMetadata?.username && typeof cachedMetadata.username === 'string') {
+      this.botUsername = cachedMetadata.username;
+    }
     this.tokenCache = await keytar.getPassword(SERVICE_NAME, TOKEN_ACCOUNT);
 
     if (this.tokenCache) {
@@ -193,8 +247,8 @@ export class TelegramBotService extends EventEmitter {
         }
 
         this.botUsername = info?.username ?? null;
+        await this.syncBotMetadata();
       } catch (error) {
-        this.botUsername = null;
         await this.log('warn', 'Failed to resolve bot username during init', {
           error: error.message
         });
@@ -408,6 +462,7 @@ export class TelegramBotService extends EventEmitter {
       await keytar.setPassword(SERVICE_NAME, TOKEN_ACCOUNT, trimmed);
       this.tokenCache = trimmed;
       this.botUsername = botInfo?.username ?? this.botUsername;
+      await this.syncBotMetadata();
       await this.log('info', 'Telegram token updated via UI');
 
       const shouldRestart =
@@ -425,6 +480,7 @@ export class TelegramBotService extends EventEmitter {
     await keytar.deletePassword(SERVICE_NAME, TOKEN_ACCOUNT);
     this.tokenCache = null;
     this.botUsername = null;
+    await this.syncBotMetadata();
     await this.log('warn', 'Telegram token removed via UI');
 
     if (this.state !== BOT_STATES.STOPPED) {
@@ -492,6 +548,7 @@ export class TelegramBotService extends EventEmitter {
       this.startedAt = new Date();
       this.lastError = null;
       this.botUsername = info?.username ?? null;
+      await this.syncBotMetadata();
       this.startSessionCleanup();
 
       await this.transitionState(BOT_STATES.RUNNING, {
@@ -824,6 +881,27 @@ export class TelegramBotService extends EventEmitter {
       maxRestartAttempts: this.maxRestartAttempts,
       nextRestartAt: this.nextRestartAt ? this.nextRestartAt.toISOString() : null
     };
+  }
+
+  async syncBotMetadata() {
+    try {
+      if (this.botUsername) {
+        await writeJsonFile(
+          this.botMetadataPath,
+          {
+            username: this.botUsername,
+            updatedAt: new Date().toISOString()
+          },
+          { allowedRoots: this.allowedRoots }
+        );
+      } else {
+        await deleteFileIfExists(this.botMetadataPath, { allowedRoots: this.allowedRoots });
+      }
+    } catch (error) {
+      await this.log('warn', 'Failed to sync Telegram metadata', {
+        error: error.message
+      });
+    }
   }
 }
 
