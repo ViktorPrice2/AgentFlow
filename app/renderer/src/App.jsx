@@ -178,7 +178,6 @@ function App() {
   const [projects, setProjects] = usePersistentState('af.projects', []);
   const [selectedProjectId, setSelectedProjectId] = usePersistentState('af.selectedProject', null);
   const [brief, setBrief] = usePersistentState('af.brief', {});
-  const [projectTokens, setProjectTokens] = usePersistentState('af.telegramTokens', {});
   const [runs, setRuns] = usePersistentState('af.runs', []);
   const [botStatus, setBotStatus] = useState(null);
   const [botBusy, setBotBusy] = useState(false);
@@ -186,7 +185,6 @@ function App() {
   const lastErrorRef = useRef(null);
   const lastStatusRef = useRef(null);
   const statusChangeOriginRef = useRef('external');
-  const restoreTokenRef = useRef(false);
   const [botLogEntries, setBotLogEntries] = useState([]);
   const [botLogLoading, setBotLogLoading] = useState(false);
   const [proxyValue, setProxyValue] = useState('');
@@ -670,65 +668,27 @@ function App() {
   };
 
   const handleSaveBotToken = useCallback(
-    async (token, options = {}) => {
-      const { remember = true, silent = false } = options;
-      const trimmed = token?.trim() ?? '';
+    async (token) => {
       setBotBusyState(true);
 
       try {
-        const status = await setTelegramToken(trimmed);
+        const status = await setTelegramToken(token);
         statusChangeOriginRef.current = 'local';
         setBotStatus(status);
-
-        if (remember) {
-          setProjectTokens((previous) => {
-            const next = { ...previous };
-
-            if (selectedProjectId) {
-              if (trimmed) {
-                next[selectedProjectId] = trimmed;
-              } else {
-                delete next[selectedProjectId];
-              }
-            }
-
-            if (trimmed) {
-              next.__last = trimmed;
-            } else {
-              delete next.__last;
-            }
-
-            return next;
-          });
-        }
-
-        if (!silent) {
-          if (trimmed) {
-            showToast(t('app.toasts.telegramTokenSaved'), 'success');
-          } else {
-            showToast(t('app.toasts.telegramTokenRemoved'), 'info');
-          }
+        if (token?.trim()) {
+          showToast(t('app.toasts.telegramTokenSaved'), 'success');
+        } else {
+          showToast(t('app.toasts.telegramTokenRemoved'), 'info');
         }
       } catch (error) {
         console.error('Failed to store Telegram token', error);
-        if (!silent) {
-          showToast(resolveMessage(error.message) || t('app.toasts.telegramTokenError'), 'error');
-        }
+        showToast(resolveMessage(error.message) || t('app.toasts.telegramTokenError'), 'error');
         await refreshBotStatus('local');
       } finally {
         setBotBusyState(false);
       }
     },
-    [
-      selectedProjectId,
-      setBotBusyState,
-      setBotStatus,
-      setProjectTokens,
-      showToast,
-      t,
-      resolveMessage,
-      refreshBotStatus
-    ]
+    [setBotBusyState, setBotStatus, showToast, t, resolveMessage, refreshBotStatus]
   );
 
   const handleStartBot = async () => {
@@ -764,33 +724,6 @@ function App() {
       setBotBusyState(false);
     }
   };
-
-  useEffect(() => {
-    if (botStatus?.tokenStored) {
-      restoreTokenRef.current = false;
-      return;
-    }
-
-    const candidate = (
-      (selectedProjectId && projectTokens[selectedProjectId]) ||
-      projectTokens.__last ||
-      ''
-    ).trim();
-
-    if (!candidate || restoreTokenRef.current) {
-      return;
-    }
-
-    restoreTokenRef.current = true;
-
-    (async () => {
-      try {
-        await handleSaveBotToken(candidate, { remember: false, silent: true });
-      } finally {
-        restoreTokenRef.current = false;
-      }
-    })();
-  }, [botStatus?.tokenStored, projectTokens, selectedProjectId, handleSaveBotToken]);
 
   const handleRefreshBriefFromBot = async () => {
     if (!selectedProject) {
@@ -912,6 +845,11 @@ function App() {
             onCreateProject={handleCreateProject}
             onSelectProject={setSelectedProjectId}
             onNotify={showToast}
+            botStatus={botStatus}
+            botBusy={botBusy}
+            onStartBot={handleStartBot}
+            onStopBot={handleStopBot}
+            onRefreshBot={handleRefreshBotStatus}
           />
         );
       case 'brief':
@@ -984,8 +922,6 @@ function App() {
             onRefresh={refreshAgents}
             botStatus={botStatus}
             onSaveToken={handleSaveBotToken}
-            onStartBot={handleStartBot}
-            onStopBot={handleStopBot}
             onRefreshBot={handleRefreshBotStatus}
             onTailLog={handleTailBotLog}
             proxyValue={proxyValue}
@@ -996,12 +932,6 @@ function App() {
             botBusy={botBusy}
             theme={theme}
             onThemeChange={handleThemeChange}
-            currentProject={selectedProject}
-            storedToken={
-              selectedProjectId && projectTokens[selectedProjectId]
-                ? projectTokens[selectedProjectId]
-                : ''
-            }
           />
         );
     }
@@ -1014,9 +944,8 @@ function App() {
     providerStatus,
     providerUpdatedAt,
     runs,
-    selectedProject,
     selectedProjectId,
-    projectTokens,
+    selectedProject,
     botStatus,
     botBusy,
     latestBrief,

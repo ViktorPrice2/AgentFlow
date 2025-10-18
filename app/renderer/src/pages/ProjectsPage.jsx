@@ -35,7 +35,12 @@ export function ProjectsPage({
   selectedProjectId = null,
   onCreateProject,
   onSelectProject,
-  onNotify
+  onNotify,
+  botStatus = null,
+  botBusy = false,
+  onStartBot = () => {},
+  onStopBot = () => {},
+  onRefreshBot = () => {}
 }) {
   const { t, language } = useI18n();
   const locale = language === 'en' ? 'en-US' : 'ru-RU';
@@ -64,6 +69,19 @@ export function ProjectsPage({
     setFormState(INITIAL_FORM_STATE);
     onSelectProject(payload.id);
   };
+
+  const statusKey = (botStatus?.status || (botStatus?.running ? 'running' : 'stopped') || '').toLowerCase();
+  const botStatusLabels = {
+    running: t('settings.telegram.statusRunning'),
+    starting: t('settings.telegram.statusStarting'),
+    stopped: t('settings.telegram.statusStopped'),
+    error: t('settings.telegram.statusErrorShort'),
+    unknown: t('settings.telegram.statusUnknown')
+  };
+  const normalizedStatus = botStatusLabels[statusKey] || botStatusLabels.unknown;
+  const tokenStored = Boolean(botStatus?.tokenStored);
+  const canStart = !botBusy && tokenStored && statusKey !== 'running' && statusKey !== 'starting';
+  const canStop = !botBusy && statusKey === 'running';
 
   return (
     <div className="page-grid">
@@ -150,6 +168,43 @@ export function ProjectsPage({
           </label>
 
           <button type="submit" className="primary-button">{t('common.saveProject')}</button>
+          <div className="button-row">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onStartBot}
+              disabled={!canStart}
+            >
+              {botBusy && statusKey === 'starting'
+                ? t('settings.telegram.statusStarting')
+                : t('settings.telegram.start')}
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onStopBot}
+              disabled={!canStop}
+            >
+              {t('settings.telegram.stop')}
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onRefreshBot}
+              disabled={botBusy}
+            >
+              {t('settings.telegram.refresh')}
+            </button>
+          </div>
+          <p className="hint">
+            {tokenStored ? t('projects.form.botTokenStored') : t('projects.form.botTokenMissing')}
+          </p>
+          <p className="hint">
+            {t('projects.form.botStatus', {
+              status: normalizedStatus,
+              username: botStatus?.username ? `@${botStatus.username}` : ''
+            })}
+          </p>
         </form>
       </InfoCard>
 
@@ -209,5 +264,15 @@ ProjectsPage.propTypes = {
   selectedProjectId: PropTypes.string,
   onCreateProject: PropTypes.func.isRequired,
   onSelectProject: PropTypes.func.isRequired,
-  onNotify: PropTypes.func.isRequired
+  onNotify: PropTypes.func.isRequired,
+  botStatus: PropTypes.shape({
+    status: PropTypes.string,
+    running: PropTypes.bool,
+    tokenStored: PropTypes.bool,
+    username: PropTypes.string
+  }),
+  botBusy: PropTypes.bool,
+  onStartBot: PropTypes.func,
+  onStopBot: PropTypes.func,
+  onRefreshBot: PropTypes.func
 };

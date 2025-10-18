@@ -23,8 +23,6 @@ export function SettingsPage({
   onRefresh,
   botStatus,
   onSaveToken,
-  onStartBot,
-  onStopBot,
   onRefreshBot,
   onTailLog,
   proxyValue = '',
@@ -34,9 +32,7 @@ export function SettingsPage({
   botLogLoading = false,
   botBusy = false,
   theme = 'light',
-  onThemeChange,
-  currentProject = null,
-  storedToken = ''
+  onThemeChange
 }) {
   const { t, language, setLanguage } = useI18n();
   const locale = language === 'en' ? 'en-US' : 'ru-RU';
@@ -45,8 +41,6 @@ export function SettingsPage({
   const [tokenInput, setTokenInput] = useState('');
   const [proxyInput, setProxyInput] = useState(storedProxyValue);
   const [copied, setCopied] = useState(false);
-  const projectName = currentProject?.name ?? '';
-  const tokenStoredForProject = Boolean((storedToken ?? '').trim());
 
   useEffect(() => {
     setTokenInput('');
@@ -328,31 +322,15 @@ export function SettingsPage({
             <button
               type="button"
               className="secondary-button"
-              onClick={onStartBot}
-              disabled={botBusy || !hasTokenStored || isRunning || isStarting}
+              onClick={onRefreshBot}
+              disabled={botBusy}
             >
-              {t('settings.telegram.start')}
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={onStopBot}
-              disabled={botBusy || (!isRunning && !isStarting)}
-            >
-              {t('settings.telegram.stop')}
+              {t('settings.telegram.refresh')}
             </button>
           </div>
         </form>
-        {currentProject ? (
-          <p className="hint">
-            {tokenStoredForProject
-              ? t('settings.telegram.projectTokenStored', { project: projectName })
-              : t('settings.telegram.projectTokenMissing', { project: projectName })}
-          </p>
-        ) : (
-          <p className="hint">{t('settings.telegram.projectTokenNoProject')}</p>
-        )}
         <p className="hint">{t('settings.telegram.clearHint')}</p>
+        <p className="hint">{t('settings.telegram.controlsHint')}</p>
         <p className="hint" dangerouslySetInnerHTML={{ __html: t('settings.telegram.flowHint') }} />
         <form className="form" onSubmit={handleProxySubmit}>
           <label>
@@ -440,8 +418,6 @@ SettingsPage.propTypes = {
     tokenSource: PropTypes.string
   }),
   onSaveToken: PropTypes.func.isRequired,
-  onStartBot: PropTypes.func.isRequired,
-  onStopBot: PropTypes.func.isRequired,
   onRefreshBot: PropTypes.func.isRequired,
   onTailLog: PropTypes.func,
   proxyValue: PropTypes.string,
@@ -451,12 +427,7 @@ SettingsPage.propTypes = {
   botLogLoading: PropTypes.bool,
   botBusy: PropTypes.bool,
   theme: PropTypes.oneOf(['light', 'dark']),
-  onThemeChange: PropTypes.func,
-  currentProject: PropTypes.shape({
-    id: PropTypes.string.isRequired,
-    name: PropTypes.string.isRequired
-  }),
-  storedToken: PropTypes.string
+  onThemeChange: PropTypes.func
 };
 
 

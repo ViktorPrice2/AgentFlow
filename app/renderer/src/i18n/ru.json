@@ -132,7 +132,10 @@
       "channels": "Каналы продвижения",
       "channelsPlaceholder": "Социальные сети, email, блог, офлайн…",
       "deeplink": "Ссылка / URL",
-      "deeplinkPlaceholder": "https://example.com или ссылка на дашборд"
+      "deeplinkPlaceholder": "https://example.com или ссылка на дашборд",
+      "botTokenStored": "Токен Telegram сохранён. Можно запускать бота.",
+      "botTokenMissing": "Сохраните Telegram-токен на вкладке «Настройки», чтобы запустить бота.",
+      "botStatus": "Текущий статус: {status}{username}."
     },
     "details": {
       "title": "Сводка по проекту",
@@ -474,7 +477,8 @@
       "errorAuth": "Проверьте токен",
       "errorProxy": "Задайте переменную HTTPS_PROXY",
       "errorUnknown": "Смотрите лог Telegram-бота",
-      "flowHint": "Последовательность: <code>/start project=ID → /setup → /finish</code>"
+      "flowHint": "Последовательность: <code>/start project=ID → /setup → /finish</code>",
+      "controlsHint": "Управляйте запуском бота на вкладке «Проекты»."
     }
   }
 }

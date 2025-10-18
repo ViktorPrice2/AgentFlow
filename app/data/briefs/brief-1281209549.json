@@ -1,18 +1,18 @@
 {
-  "id": "brief_f6ea0f84-5062-42a1-a5b1-d625a7768cf6_1760827086835",
-  "projectId": "f6ea0f84-5062-42a1-a5b1-d625a7768cf6",
+  "id": "brief_c1057c3e-2472-4a28-a4bc-c1630e365321_1760829021523",
+  "projectId": "c1057c3e-2472-4a28-a4bc-c1630e365321",
   "chatId": 1281209549,
-  "summary": "Цели: 1\nАудитория: 2\nОффер: 3\nСообщения: 5\nCTA: 6",
+  "summary": "Цели: 3\nАудитория: 3\nОффер: 3\nСообщения: 3\nCTA: 3",
   "answers": {
-    "goals": "1",
-    "audience": "2",
+    "goals": "3",
+    "audience": "3",
     "offer": "3",
-    "tone": "4",
-    "keyMessages": "5",
-    "callToAction": "6",
-    "successMetrics": "7",
-    "references": "8"
+    "tone": "3",
+    "keyMessages": "3",
+    "callToAction": "3",
+    "successMetrics": "3",
+    "references": "3"
   },
-  "completedAt": "2025-10-18T22:38:06.835Z",
+  "completedAt": "2025-10-18T23:10:21.523Z",
   "source": "telegram"
 }

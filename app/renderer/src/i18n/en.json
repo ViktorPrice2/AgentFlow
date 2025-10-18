@@ -132,7 +132,10 @@
       "channels": "Channels",
       "channelsPlaceholder": "Telegram, VK, Email, Ads...",
       "deeplink": "Deeplink / URL",
-      "deeplinkPlaceholder": "https://..."
+      "deeplinkPlaceholder": "https://...",
+      "botTokenStored": "Telegram token is stored. You can start the bot.",
+      "botTokenMissing": "Save the Telegram token on the Settings tab to start the bot.",
+      "botStatus": "Current status: {status}{username}."
     },
     "details": {
       "title": "Selected project",
@@ -357,7 +360,8 @@
       "errorTokenRequired": "Check the stored token",
       "errorAuth": "Check the token",
       "errorProxy": "Set the HTTPS_PROXY environment variable",
-      "errorUnknown": "See the Telegram log for details"
+      "errorUnknown": "See the Telegram log for details",
+      "controlsHint": "Use the Projects tab to start or stop the bot."
     },
     "language": {
       "title": "Interface",
