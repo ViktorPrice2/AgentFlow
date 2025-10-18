@@ -1,0 +1,22 @@
+{
+  "chatId": 1281209549,
+  "projectId": "PROJECT_ID3",
+  "createdAt": "2025-10-18T19:17:52.784Z",
+  "updatedAt": "2025-10-18T19:18:13.112Z",
+  "stepIndex": 8,
+  "answersCount": 8,
+  "completedAt": "2025-10-18T19:18:13.083Z",
+  "briefPath": "D:\\AgentFlow\\app\\data\\briefs\\brief-1281209549.json",
+  "user": {
+    "id": 1281209549,
+    "username": "Nmvnmru",
+    "firstName": "Виктор",
+    "lastName": "Наумов",
+    "languageCode": "ru"
+  },
+  "chat": {
+    "id": 1281209549,
+    "type": "private",
+    "title": null
+  }
+}
