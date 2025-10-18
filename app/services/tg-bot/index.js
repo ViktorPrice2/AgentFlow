@@ -452,6 +452,9 @@ export class TelegramBotService extends EventEmitter {
         if (typeof validationBot.stop === 'function') {
           await validationBot.stop('token-validation');
         }
+      try {
+        const validationBot = new Telegraf(trimmed);
+        await validationBot.telegram.getMe();
       } catch (error) {
         await this.log('warn', 'Token validation failed', {
           error: error.message
@@ -512,10 +515,36 @@ export class TelegramBotService extends EventEmitter {
       this.restartAttempts = 0;
     }
 
+    }
+
+    if (!autoRestart) {
+      this.restartAttempts = 0;
+    }
+
     await this.transitionState(BOT_STATES.STARTING, { autoRestart });
 
     try {
       const { Telegraf } = await ensureTelegrafModule();
+
+      const bot = new Telegraf(token, { handlerTimeout: 90_000 });
+      this.registerHandlers(bot);
+
+      bot.catch(async (error, ctx) => {
+        await this.log('error', 'Error in Telegram handler', {
+          error: error?.message,
+          stack: error?.stack,
+          chatId: ctx?.chat?.id
+        });
+
+        this.lastError = error.message;
+
+        await this.stop('handler-error');
+
+        const canRetry = this.recordRestartFailure({
+          reason: 'handler-error',
+          error: error.message
+        });
+
 
       const bot = new Telegraf(token, { handlerTimeout: 90_000 });
       this.registerHandlers(bot);
