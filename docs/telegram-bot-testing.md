@@ -83,6 +83,11 @@ Perform the following manual checks to validate the refactor:
 ### 5. Status reporting
 - Call `service.getStatus()` at different points (before start, while running, after failure) and ensure it returns accurate metadata (state, restart counters, `nextRestartAt`, and username).
 
+### 6. Project linkage troubleshooting
+- If the desktop UI shows a toast such as “Telegram brief updated” but the “Last brief from Telegram” card remains empty, make sure the `projectId` you used in `/start project=...` matches the project currently open in the desktop app.
+- Copy the deep link shown on the Telegram bot settings card in the desktop UI; it already contains the correct identifier (for example, `/start project=2f8c1c92-...`). Use that value when restarting the survey.
+- Existing results created with a mismatched `projectId` can be replayed by editing the record inside the `app/data/app.db` `Briefs` table or the JSON file in `app/data/briefs/` so the `projectId` matches the desired project, then pressing **Refresh** in the UI.
+
 ## Full desktop flow
 To validate the integration with the Electron application:
 1. Launch the desktop shell:
