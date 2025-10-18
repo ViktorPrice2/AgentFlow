@@ -98,8 +98,17 @@ const BRIEF_FIELDS = [
 ];
 
 function mapBriefDetails(details = {}) {
+  const answers = details && typeof details.answers === 'object' ? details.answers : {};
+
   return BRIEF_FIELDS.reduce((acc, key) => {
-    acc[key] = details[key] ?? '';
+    const value =
+      details[key] !== undefined && details[key] !== null
+        ? details[key]
+        : answers[key] !== undefined && answers[key] !== null
+          ? answers[key]
+          : '';
+
+    acc[key] = value;
     return acc;
   }, {});
 }
