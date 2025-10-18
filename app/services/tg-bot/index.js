@@ -13,7 +13,21 @@ import {
 
 const SERVICE_NAME = 'AgentFlowDesktop';
 const TOKEN_ACCOUNT = 'telegram.bot.token';
-const DEFAULT_RESTART_DELAY = 10_000;
+const DEFAULT_RESTART_BASE_DELAY = 5_000;
+const DEFAULT_RESTART_BACKOFF_MULTIPLIER = 3;
+const DEFAULT_RESTART_MAX_DELAY = 180_000;
+const DEFAULT_MAX_RESTART_ATTEMPTS = 5;
+const DEFAULT_SESSION_INACTIVITY_MS = 30 * 60 * 1_000;
+const DEFAULT_SESSION_CLEANUP_INTERVAL_MS = 5 * 60 * 1_000;
+
+const BOT_STATES = {
+  STOPPED: 'STOPPED',
+  STARTING: 'STARTING',
+  RUNNING: 'RUNNING',
+  STOPPING: 'STOPPING',
+  RESTARTING: 'RESTARTING',
+  FAILED: 'FAILED'
+};
 
 async function ensureTelegrafModule() {
   try {
@@ -29,7 +43,7 @@ async function ensureTelegrafModule() {
     };
   } catch (error) {
     throw new Error(
-      `Не удалось загрузить telegraf. Установите зависимость командой "npm install telegraf". Детали: ${error.message}`
+      `Failed to load telegraf. Install the dependency with "npm install telegraf". Details: ${error.message}`
     );
   }
 }
@@ -114,7 +128,17 @@ function selectLatestBrief(dbPath, projectId) {
 }
 
 export class TelegramBotService extends EventEmitter {
-  constructor({ dataDirectory, dbPath, logPath, restartDelay = DEFAULT_RESTART_DELAY } = {}) {
+  constructor({
+    dataDirectory,
+    dbPath,
+    logPath,
+    restartBaseDelay = DEFAULT_RESTART_BASE_DELAY,
+    restartBackoffMultiplier = DEFAULT_RESTART_BACKOFF_MULTIPLIER,
+    restartMaxDelay = DEFAULT_RESTART_MAX_DELAY,
+    maxRestartAttempts = DEFAULT_MAX_RESTART_ATTEMPTS,
+    sessionInactivityMs = DEFAULT_SESSION_INACTIVITY_MS,
+    sessionCleanupIntervalMs = DEFAULT_SESSION_CLEANUP_INTERVAL_MS
+  } = {}) {
     super();
     const defaultDataDir = resolveDataPath();
     const allowedRoots = [defaultDataDir];
@@ -132,13 +156,21 @@ export class TelegramBotService extends EventEmitter {
       ? assertAllowedPath(path.resolve(logPath), { allowedRoots })
       : assertAllowedPath(path.join(resolvedDataDir, 'logs', 'telegram-bot.jsonl'), { allowedRoots });
     this.briefsDirectory = assertAllowedPath(path.join(resolvedDataDir, 'briefs'), { allowedRoots });
-    this.restartDelay = restartDelay;
+    this.restartBaseDelay = restartBaseDelay;
+    this.restartBackoffMultiplier = restartBackoffMultiplier;
+    this.restartMaxDelay = restartMaxDelay;
+    this.maxRestartAttempts = maxRestartAttempts;
+    this.sessionInactivityMs = sessionInactivityMs;
+    this.sessionCleanupIntervalMs = sessionCleanupIntervalMs;
     this.sessions = new Map();
-    this.running = false;
+    this.state = BOT_STATES.STOPPED;
+    this.restartAttempts = 0;
     this.startedAt = null;
     this.lastError = null;
     this.lastActivityAt = null;
     this.restartTimer = null;
+    this.sessionCleanupTimer = null;
+    this.nextRestartAt = null;
     this.bot = null;
     this.botUsername = null;
     this.tokenCache = null;
@@ -149,6 +181,25 @@ export class TelegramBotService extends EventEmitter {
     await ensureDirectory(path.dirname(this.logPath), { allowedRoots: this.allowedRoots });
     await ensureDirectory(this.briefsDirectory, { allowedRoots: this.allowedRoots });
     this.tokenCache = await keytar.getPassword(SERVICE_NAME, TOKEN_ACCOUNT);
+
+    if (this.tokenCache) {
+      try {
+        const { Telegraf } = await ensureTelegrafModule();
+        const validationBot = new Telegraf(this.tokenCache);
+        const info = await validationBot.telegram.getMe();
+
+        if (typeof validationBot.stop === 'function') {
+          await validationBot.stop('init-username-lookup');
+        }
+
+        this.botUsername = info?.username ?? null;
+      } catch (error) {
+        this.botUsername = null;
+        await this.log('warn', 'Failed to resolve bot username during init', {
+          error: error.message
+        });
+      }
+    }
 
     return this.getStatus();
   }
@@ -166,26 +217,99 @@ export class TelegramBotService extends EventEmitter {
     );
   }
 
-  scheduleRestart(reason) {
-    if (this.restartTimer) {
+  async transitionState(nextState, meta = {}) {
+    if (this.state === nextState) {
       return;
     }
+
+    const previousState = this.state;
+    this.state = nextState;
+    await this.log('info', 'Bot state changed', {
+      previousState,
+      nextState,
+      ...meta
+    });
+  }
+
+  isOperational() {
+    return this.state === BOT_STATES.RUNNING;
+  }
+
+  computeRestartDelay() {
+    const attempt = Math.max(this.restartAttempts, 1);
+    const delay =
+      this.restartBaseDelay * this.restartBackoffMultiplier ** (attempt - 1);
+    return Math.min(delay, this.restartMaxDelay);
+  }
+
+  recordRestartFailure(meta = {}) {
+    this.restartAttempts += 1;
+
+    if (this.restartAttempts >= this.maxRestartAttempts) {
+      this.nextRestartAt = null;
+      this.cancelScheduledRestart();
+      this.transitionState(BOT_STATES.FAILED, {
+        ...meta,
+        restartAttempts: this.restartAttempts,
+        maxRestartAttempts: this.maxRestartAttempts
+      }).catch(() => {});
+      this.log('error', 'Maximum restart attempts reached', {
+        ...meta,
+        restartAttempts: this.restartAttempts,
+        maxRestartAttempts: this.maxRestartAttempts
+      }).catch(() => {});
+      return false;
+    }
+
+    return true;
+  }
+
+  scheduleRestart(reason) {
+    if (this.restartTimer || this.restartAttempts >= this.maxRestartAttempts) {
+      return;
+    }
+
+    const delay = this.computeRestartDelay();
+    this.nextRestartAt = new Date(Date.now() + delay);
+    const attemptNumber = Math.max(this.restartAttempts, 1);
+
+    this.transitionState(BOT_STATES.RESTARTING, {
+      reason,
+      restartAttempts: this.restartAttempts,
+      nextRestartAt: this.nextRestartAt.toISOString(),
+      delay
+    }).catch(() => {});
 
     this.restartTimer = setTimeout(async () => {
       this.restartTimer = null;
 
       try {
-        await this.start();
-        await this.log('info', 'Бот перезапущен автоматически', { reason });
+        await this.start({ autoRestart: true });
+        this.nextRestartAt = null;
+        await this.log('info', 'Bot restarted automatically', {
+          reason,
+          restartAttempts: this.restartAttempts,
+          attemptNumber
+        });
       } catch (error) {
         this.lastError = error.message;
-        await this.log('error', 'Сбой при авто-перезапуске бота', {
-          reason,
+        const canRetry = this.recordRestartFailure({
+          reason: 'auto-restart-failed',
           error: error.message
         });
-        this.scheduleRestart('retry-after-error');
+
+        await this.log('error', 'Automatic restart attempt failed', {
+          reason,
+          restartAttempts: this.restartAttempts,
+          attemptNumber,
+          error: error.message
+        });
+
+        if (canRetry) {
+          this.scheduleRestart('retry-after-error');
+        }
       }
-    }, this.restartDelay);
+    }, delay);
   }
 
   cancelScheduledRestart() {
@@ -193,17 +317,105 @@ export class TelegramBotService extends EventEmitter {
       clearTimeout(this.restartTimer);
       this.restartTimer = null;
     }
+    this.nextRestartAt = null;
+  }
+
+  startSessionCleanup() {
+    if (this.sessionCleanupTimer) {
+      return;
+    }
+
+    this.sessionCleanupTimer = setInterval(() => {
+      this.cleanupInactiveSessions().catch(async (error) => {
+        await this.log('error', 'Failed to cleanup inactive sessions', {
+          error: error.message
+        });
+      });
+    }, this.sessionCleanupIntervalMs);
+  }
+
+  stopSessionCleanup() {
+    if (this.sessionCleanupTimer) {
+      clearInterval(this.sessionCleanupTimer);
+      this.sessionCleanupTimer = null;
+    }
+  }
+
+  async cleanupInactiveSessions() {
+    if (!this.sessions.size) {
+      return;
+    }
+
+    const now = Date.now();
+
+    for (const [chatId, session] of this.sessions.entries()) {
+      const lastActivity = session.lastActivityAt?.getTime();
+
+      if (!lastActivity) {
+        continue;
+      }
+
+      if (now - lastActivity < this.sessionInactivityMs) {
+        continue;
+      }
+
+      this.sessions.delete(chatId);
+      await this.log('warn', 'Session removed due to inactivity', {
+        chatId,
+        projectId: session.projectId,
+        lastActivityAt: session.lastActivityAt.toISOString(),
+        reason: 'inactive-timeout'
+      });
+
+      if (this.bot) {
+        try {
+          await this.bot.telegram.sendMessage(
+            chatId,
+            'The current survey session expired due to inactivity. Start again with /setup if you still need to continue.'
+          );
+        } catch (error) {
+          await this.log('warn', 'Failed to send inactivity notification', {
+            chatId,
+            error: error.message
+          });
+        }
+      }
+    }
   }
 
   async setToken(token) {
     const trimmed = token?.trim() ?? '';
 
     if (trimmed.length > 0) {
+      const { Telegraf } = await ensureTelegrafModule();
+
+      let botInfo;
+
+      try {
+        const validationBot = new Telegraf(trimmed);
+        botInfo = await validationBot.telegram.getMe();
+
+        if (typeof validationBot.stop === 'function') {
+          await validationBot.stop('token-validation');
+        }
+      } catch (error) {
+        await this.log('warn', 'Token validation failed', {
+          error: error.message
+        });
+        throw new Error('Telegram token could not be validated. Please check the value and try again.');
+      }
+
       await keytar.setPassword(SERVICE_NAME, TOKEN_ACCOUNT, trimmed);
       this.tokenCache = trimmed;
-      await this.log('info', 'Токен Telegram обновлён через UI');
+      this.botUsername = botInfo?.username ?? this.botUsername;
+      await this.log('info', 'Telegram token updated via UI');
 
-      if (this.running) {
+      const shouldRestart =
+        this.state !== BOT_STATES.STOPPED && this.state !== BOT_STATES.FAILED;
+
+      if (this.state === BOT_STATES.FAILED) {
+        await this.start();
+      } else if (shouldRestart) {
         await this.restart('token-updated');
       }
 
@@ -212,9 +424,10 @@ export class TelegramBotService extends EventEmitter {
 
     await keytar.deletePassword(SERVICE_NAME, TOKEN_ACCOUNT);
     this.tokenCache = null;
-    await this.log('warn', 'Токен Telegram очищен через UI');
+    this.botUsername = null;
+    await this.log('warn', 'Telegram token removed via UI');
 
-    if (this.running) {
+    if (this.state !== BOT_STATES.STOPPED) {
       await this.stop('token-cleared');
     }
 
@@ -226,8 +439,8 @@ export class TelegramBotService extends EventEmitter {
     return this.start();
   }
 
-  async start() {
-    if (this.running) {
+  async start({ autoRestart = false } = {}) {
+    if (this.state === BOT_STATES.STARTING || this.state === BOT_STATES.RUNNING) {
       return this.getStatus();
     }
 
@@ -236,54 +449,101 @@ export class TelegramBotService extends EventEmitter {
     const token = this.tokenCache || (await keytar.getPassword(SERVICE_NAME, TOKEN_ACCOUNT));
 
     if (!token) {
-      throw new Error('Токен Telegram не задан. Укажите его в настройках.');
+      throw new Error('Telegram token is not configured. Provide it in the settings.');
     }
 
-    const { Telegraf } = await ensureTelegrafModule();
+    if (!autoRestart) {
+      this.restartAttempts = 0;
+    }
 
-    const bot = new Telegraf(token, { handlerTimeout: 90_000 });
-    this.registerHandlers(bot);
+    await this.transitionState(BOT_STATES.STARTING, { autoRestart });
 
-    bot.catch(async (error, ctx) => {
-      await this.log('error', 'Ошибка в обработчике Telegram', {
-        error: error?.message,
-        stack: error?.stack,
-        chatId: ctx?.chat?.id
+    try {
+      const { Telegraf } = await ensureTelegrafModule();
+
+      const bot = new Telegraf(token, { handlerTimeout: 90_000 });
+      this.registerHandlers(bot);
+
+      bot.catch(async (error, ctx) => {
+        await this.log('error', 'Error in Telegram handler', {
+          error: error?.message,
+          stack: error?.stack,
+          chatId: ctx?.chat?.id
+        });
+
+        this.lastError = error.message;
+
+        await this.stop('handler-error');
+
+        const canRetry = this.recordRestartFailure({
+          reason: 'handler-error',
+          error: error.message
+        });
+
+        if (canRetry) {
+          this.scheduleRestart('handler-error');
+        }
+      });
+
+      await bot.launch({ dropPendingUpdates: true });
+      const info = await bot.telegram.getMe();
+
+      this.bot = bot;
+      this.startedAt = new Date();
+      this.lastError = null;
+      this.botUsername = info?.username ?? null;
+      this.startSessionCleanup();
+
+      await this.transitionState(BOT_STATES.RUNNING, {
+        autoRestart,
+        username: this.botUsername,
+        startedAt: this.startedAt.toISOString()
+      });
+
+      await this.log('info', 'Telegram bot started', {
+        autoRestart,
+        username: this.botUsername,
+        startedAt: this.startedAt.toISOString()
+      });
+
+      return this.getStatus();
+    } catch (error) {
+      this.bot = null;
+      await this.transitionState(BOT_STATES.FAILED, {
+        autoRestart,
+        error: error.message
       });
       this.lastError = error.message;
-      this.running = false;
-      this.scheduleRestart('handler-error');
-    });
-
-    await bot.launch({ dropPendingUpdates: true });
-    const info = await bot.telegram.getMe();
-
-    this.bot = bot;
-    this.running = true;
-    this.startedAt = new Date();
-    this.lastError = null;
-    this.botUsername = info?.username ?? null;
-
-    await this.log('info', 'Telegram-бот запущен', {
-      username: this.botUsername,
-      startedAt: this.startedAt.toISOString()
-    });
-
-    return this.getStatus();
+      if (!autoRestart) {
+        throw error;
+      }
+      throw error;
+    }
   }
 
   async stop(reason = 'manual-stop') {
     this.cancelScheduledRestart();
+    this.stopSessionCleanup();
 
     if (!this.bot) {
-      this.running = false;
+      await this.transitionState(BOT_STATES.STOPPED, { reason });
       return this.getStatus();
     }
 
-    await this.bot.stop(reason);
+    await this.transitionState(BOT_STATES.STOPPING, { reason });
+
+    try {
+      await this.bot.stop(reason);
+    } catch (error) {
+      await this.log('warn', 'Error while stopping Telegram bot', {
+        reason,
+        error: error.message
+      });
+    }
+
     this.bot = null;
-    this.running = false;
-    await this.log('info', 'Telegram-бот остановлен', { reason });
+    await this.transitionState(BOT_STATES.STOPPED, { reason });
+    await this.log('info', 'Telegram bot stopped', { reason });
 
     return this.getStatus();
   }
@@ -298,7 +558,7 @@ export class TelegramBotService extends EventEmitter {
 
       if (!projectId) {
         await ctx.reply(
-          'Привет! Укажите проект вот так: /start project=PRJ_123. После этого используйте /setup для запуска опроса.'
+          'Hello! Please provide the project in the following format: /start project=PRJ_123. After that, run /setup to begin the survey.'
         );
         return;
       }
@@ -308,12 +568,13 @@ export class TelegramBotService extends EventEmitter {
         projectId,
         answers: {},
         stepIndex: 0,
-        active: false
+        active: false,
+        lastActivityAt: new Date()
       });
 
-      await this.log('info', 'Получена команда /start', { chatId, projectId });
+      await this.log('info', '/start command received', { chatId, projectId });
       await ctx.reply(
-        `Готово! Проект ${projectId} закреплён. Запустите опрос командой /setup, чтобы собрать бриф.`
+        `Project ${projectId} linked. Run /setup to launch the brief survey.`
       );
     });
 
@@ -323,15 +584,18 @@ export class TelegramBotService extends EventEmitter {
       const session = this.sessions.get(chatId);
 
       if (!session) {
-        await ctx.reply('Сначала выполните /start project=ID, чтобы привязать чат к проекту.');
+        await ctx.reply('Run /start project=ID first to bind this chat to a project.');
         return;
       }
+
+      session.lastActivityAt = new Date();
 
       if (!session.active) {
         session.active = true;
         session.stepIndex = 0;
         session.survey = createBriefSurvey();
-        await ctx.reply('Начинаем бриф. Отвечайте на вопросы одним сообщением. Чтобы остановить — команда /finish.');
+        session.lastActivityAt = new Date();
+        await ctx.reply('Starting the brief. Answer each question with a single message. Use /finish to wrap up early.');
       }
 
       await this.askNextQuestion(ctx, session);
@@ -339,6 +603,13 @@ export class TelegramBotService extends EventEmitter {
 
     bot.command('finish', async (ctx) => {
       this.lastActivityAt = new Date();
+      const chatId = ctx.chat.id;
+      const session = this.sessions.get(chatId);
+
+      if (session) {
+        session.lastActivityAt = new Date();
+      }
+
       await this.completeSession(ctx.chat.id, { ctx, reason: 'manual-finish' });
     });
 
@@ -351,23 +622,34 @@ export class TelegramBotService extends EventEmitter {
         return;
       }
 
+      session.lastActivityAt = new Date();
+
       if (!session.survey || session.stepIndex >= session.survey.length) {
-        await ctx.reply('Опрос завершён. Используйте /finish для сохранения результатов.');
+        await ctx.reply('The survey is already complete. Use /finish to save the results.');
         return;
       }
 
       const question = session.survey[session.stepIndex];
-      session.answers[question.key] = ctx.message.text.trim();
+      const answer = ctx.message.text ?? '';
+      const validation = this.validateAnswer(question, answer);
+
+      if (!validation.valid) {
+        await ctx.reply(validation.message);
+        return;
+      }
+
+      session.answers[question.key] = validation.value;
       session.stepIndex += 1;
 
-      await this.log('info', 'Ответ на вопрос брифа получен', {
+      await this.log('info', 'Brief question answered', {
         chatId,
         projectId: session.projectId,
         key: question.key
       });
 
       if (session.stepIndex >= session.survey.length) {
-        await ctx.reply('Спасибо! Все ответы получены. Для завершения выполните /finish.');
+        await ctx.reply('Thanks! All questions have been answered. Saving your brief now.');
+        await this.completeSession(chatId, { ctx, reason: 'auto-finish' });
       } else {
         await this.askNextQuestion(ctx, session);
       }
@@ -376,12 +658,55 @@ export class TelegramBotService extends EventEmitter {
 
   async askNextQuestion(ctx, session) {
     if (!session.survey || session.stepIndex >= session.survey.length) {
+      await this.completeSession(session.chatId, { ctx, reason: 'auto-finish' });
       return;
     }
 
     const question = session.survey[session.stepIndex];
     const text = question.hint ? `${question.question}\n${question.hint}` : question.question;
+    session.lastActivityAt = new Date();
     await ctx.reply(text);
+  }
+
+  validateAnswer(question, text) {
+    const trimmed = text.trim();
+
+    if (!trimmed) {
+      return {
+        valid: false,
+        message: 'Please provide a response so we can continue.'
+      };
+    }
+
+    if (question.expectedType === 'number' && Number.isNaN(Number(trimmed))) {
+      return {
+        valid: false,
+        message: 'Please enter a valid number for this question.'
+      };
+    }
+
+    if (question.expectedType === 'boolean') {
+      const normalized = trimmed.toLowerCase();
+
+      if (!['yes', 'no', 'true', 'false'].includes(normalized)) {
+        return {
+          valid: false,
+          message: 'Please answer with yes or no.'
+        };
+      }
+    }
+
+    if (question.options && Array.isArray(question.options)) {
+      const normalizedOptions = question.options.map((option) => option.toLowerCase());
+      if (!normalizedOptions.includes(trimmed.toLowerCase())) {
+        return {
+          valid: false,
+          message: `Please select one of the available options: ${question.options.join(', ')}.`
+        };
+      }
+    }
+
+    return { valid: true, value: trimmed };
   }
 
   async completeSession(chatId, { ctx = null, reason = 'auto-finish' } = {}) {
@@ -389,7 +714,7 @@ export class TelegramBotService extends EventEmitter {
 
     if (!session) {
       if (ctx) {
-        await ctx.reply('Нет активного брифа. Запустите /start, чтобы создать новый.');
+        await ctx.reply('There is no active brief. Run /start to create a new one.');
       }
       return null;
     }
@@ -429,7 +754,7 @@ export class TelegramBotService extends EventEmitter {
 
     await fsp.writeFile(filePath, JSON.stringify(filePayload, null, 2), 'utf8');
 
-    await this.log('info', 'Бриф сохранён', {
+    await this.log('info', 'Brief saved', {
       chatId,
       projectId: session.projectId,
       briefId,
@@ -441,7 +766,7 @@ export class TelegramBotService extends EventEmitter {
     this.sessions.delete(chatId);
 
     if (ctx) {
-      await ctx.reply(`Бриф сохранён! ID: ${briefId}. Посмотрите его в AgentFlow Desktop.`);
+      await ctx.reply(`Brief saved! ID: ${briefId}. You can review it in AgentFlow Desktop.`);
     }
 
     return {
@@ -487,13 +812,17 @@ export class TelegramBotService extends EventEmitter {
 
   getStatus() {
     return {
-      running: this.running,
+      state: this.state,
+      running: this.isOperational(),
       startedAt: this.startedAt ? this.startedAt.toISOString() : null,
       lastError: this.lastError,
       lastActivityAt: this.lastActivityAt ? this.lastActivityAt.toISOString() : null,
       tokenStored: Boolean(this.tokenCache),
       username: this.botUsername,
-      deeplinkBase: this.botUsername ? `https://t.me/${this.botUsername}` : null
+      deeplinkBase: this.botUsername ? `https://t.me/${this.botUsername}` : null,
+      restartAttempts: this.restartAttempts,
+      maxRestartAttempts: this.maxRestartAttempts,
+      nextRestartAt: this.nextRestartAt ? this.nextRestartAt.toISOString() : null
     };
   }
 }
