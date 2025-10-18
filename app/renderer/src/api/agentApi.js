@@ -257,8 +257,16 @@ export function isAgentApiAvailable() {
 export function normalizeBotStatus(status) {
   const merged = { ...fallbackBotStatus, ...(status || {}) };
 
+  if (merged.status) {
+    merged.status = String(merged.status).toLowerCase();
+  }
+
   if (!merged.status) {
     merged.status = merged.running ? 'running' : merged.lastError ? 'error' : 'stopped';
+  }
+
+  if (!merged.deeplinkBase && merged.username) {
+    merged.deeplinkBase = `https://t.me/${merged.username}`;
   }
 
   if (merged.status === 'running') {

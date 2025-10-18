@@ -1,18 +1,18 @@
 {
-  "id": "brief_PROJECT_ID3_1760815093083",
-  "projectId": "PROJECT_ID3",
+  "id": "brief_f6ea0f84-5062-42a1-a5b1-d625a7768cf6_1760826318638",
+  "projectId": "f6ea0f84-5062-42a1-a5b1-d625a7768cf6",
   "chatId": 1281209549,
-  "summary": "Цели: 4\nАудитория: 4\nОффер: 4\nСообщения: 4\nCTA: 4",
+  "summary": "Цели: 9\nАудитория: 9\nОффер: 9\nСообщения: 9\nCTA: 9",
   "answers": {
-    "goals": "4",
-    "audience": "4",
-    "offer": "4",
-    "tone": "4",
-    "keyMessages": "4",
-    "callToAction": "4",
-    "successMetrics": "4",
-    "references": "4"
+    "goals": "9",
+    "audience": "9",
+    "offer": "9",
+    "tone": "9",
+    "keyMessages": "9",
+    "callToAction": "9",
+    "successMetrics": "9",
+    "references": "9"
   },
-  "completedAt": "2025-10-18T19:18:13.083Z",
+  "completedAt": "2025-10-18T22:25:18.638Z",
   "source": "telegram"
 }

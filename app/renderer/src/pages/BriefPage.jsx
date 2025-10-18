@@ -68,6 +68,26 @@ export function BriefPage({
     : t('brief.telegram.statusInactive');
   const deeplink = project && telegramStatus?.deeplinkBase ? `${telegramStatus.deeplinkBase}?start=project=${project.id}` : null;
 
+  const renderFieldValue = (value) => {
+    if (value === null || value === undefined || value === '') {
+      return t('common.notAvailable');
+    }
+
+    if (typeof value === 'object') {
+      try {
+        return (
+          <pre className="telegram-brief-preview__json">
+            {JSON.stringify(value, null, 2)}
+          </pre>
+        );
+      } catch (error) {
+        return t('common.notAvailable');
+      }
+    }
+
+    return value;
+  };
+
   return (
     <div className="page-grid brief-grid">
       <InfoCard
@@ -228,7 +248,7 @@ export function BriefPage({
             <ul>
               {Object.entries(latestBriefDetails).map(([key, value]) => (
                 <li key={key}>
-                  <strong>{key}:</strong> {value || t('common.notAvailable')}
+                  <strong>{key}:</strong> {renderFieldValue(value)}
                 </li>
               ))}
             </ul>

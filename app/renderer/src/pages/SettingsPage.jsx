@@ -34,7 +34,9 @@ export function SettingsPage({
   botLogLoading = false,
   botBusy = false,
   theme = 'light',
-  onThemeChange
+  onThemeChange,
+  currentProject = null,
+  storedToken = ''
 }) {
   const { t, language, setLanguage } = useI18n();
   const locale = language === 'en' ? 'en-US' : 'ru-RU';
@@ -43,6 +45,8 @@ export function SettingsPage({
   const [tokenInput, setTokenInput] = useState('');
   const [proxyInput, setProxyInput] = useState(storedProxyValue);
   const [copied, setCopied] = useState(false);
+  const projectName = currentProject?.name ?? '';
+  const tokenStoredForProject = Boolean((storedToken ?? '').trim());
 
   useEffect(() => {
     setTokenInput('');
@@ -339,6 +343,15 @@ export function SettingsPage({
             </button>
           </div>
         </form>
+        {currentProject ? (
+          <p className="hint">
+            {tokenStoredForProject
+              ? t('settings.telegram.projectTokenStored', { project: projectName })
+              : t('settings.telegram.projectTokenMissing', { project: projectName })}
+          </p>
+        ) : (
+          <p className="hint">{t('settings.telegram.projectTokenNoProject')}</p>
+        )}
         <p className="hint">{t('settings.telegram.clearHint')}</p>
         <p className="hint" dangerouslySetInnerHTML={{ __html: t('settings.telegram.flowHint') }} />
         <form className="form" onSubmit={handleProxySubmit}>
@@ -438,7 +451,12 @@ SettingsPage.propTypes = {
   botLogLoading: PropTypes.bool,
   botBusy: PropTypes.bool,
   theme: PropTypes.oneOf(['light', 'dark']),
-  onThemeChange: PropTypes.func
+  onThemeChange: PropTypes.func,
+  currentProject: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    name: PropTypes.string.isRequired
+  }),
+  storedToken: PropTypes.string
 };
 
 

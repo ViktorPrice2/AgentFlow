@@ -19,6 +19,8 @@ const CONFIG_FILE_NAME = 'telegram.json';
 const NETWORK_CONFIG_FILE_NAME = 'network.json';
 const TELEGRAM_TOKEN_ENV = 'TELEGRAM_BOT_TOKEN';
 const BOT_HANDLER_TIMEOUT = 30_000;
+const BOT_LAUNCH_TIMEOUT_MS = 10_000;
+const USERNAME_RESOLVE_TIMEOUT_MS = 8_000;
 
 const BOT_STATUS = {
   STOPPED: 'stopped',
@@ -422,6 +424,8 @@ async function saveNetworkConfig() {
 }
 
 function getStatus() {
+  const deeplinkBase = state.username ? `https://t.me/${state.username}` : null;
+
   return {
     status: state.status,
     running: state.status === BOT_STATUS.RUNNING,
@@ -431,7 +435,8 @@ function getStatus() {
     tokenSource: state.tokenSource,
     startedAt: state.startedAt,
     lastActivityAt: state.lastActivityAt,
-    username: state.username
+    username: state.username,
+    deeplinkBase
   };
 }
 
@@ -1118,6 +1123,52 @@ function mapBotLaunchError(error) {
   return { code: 'unknown', message: rawMessage };
 }
 
+async function resolveBotUsername(bot, timeoutMs = USERNAME_RESOLVE_TIMEOUT_MS) {
+  if (!bot?.telegram || typeof bot.telegram.getMe !== 'function') {
+    return { username: null, timedOut: false };
+  }
+
+  const timeoutToken = Symbol('username-timeout');
+
+  const result = await Promise.race([
+    bot.telegram
+      .getMe()
+      .then((info) => info?.username ?? null)
+      .catch(() => null),
+    new Promise((resolve) => {
+      setTimeout(() => resolve(timeoutToken), timeoutMs);
+    })
+  ]);
+
+  if (result === timeoutToken) {
+    return { username: null, timedOut: true };
+  }
+
+  return { username: result, timedOut: false };
+}
+
+async function launchBot(bot, timeoutMs = BOT_LAUNCH_TIMEOUT_MS) {
+  if (!bot || typeof bot.launch !== 'function') {
+    return { timedOut: false };
+  }
+
+  const timeoutToken = Symbol('launch-timeout');
+  const launchPromise = bot.launch();
+
+  const result = await Promise.race([
+    launchPromise.then(() => ({ timedOut: false, launchPromise })),
+    new Promise((resolve) => {
+      setTimeout(() => resolve(timeoutToken), timeoutMs);
+    })
+  ]);
+
+  if (result === timeoutToken) {
+    return { timedOut: true, launchPromise };
+  }
+
+  return result;
+}
+
 async function ensureBot() {
   if (botInstance) {
     return botInstance;
@@ -1158,8 +1209,18 @@ async function ensureBot() {
 
   botLaunchPromise = (async () => {
     try {
-      await bot.launch();
-      const me = await bot.telegram.getMe().catch(() => null);
+      const launchOutcome = await launchBot(bot);
+      if (launchOutcome.timedOut) {
+        await log('bot.launch.timeout', { timeoutMs: BOT_LAUNCH_TIMEOUT_MS });
+        launchOutcome.launchPromise
+          ?.then(() => {
+            log('bot.launch.timeout.resolved', { timeoutMs: BOT_LAUNCH_TIMEOUT_MS }).catch(() => {});
+          })
+          ?.catch((error) => {
+            log('bot.launch.timeout.error', { error: error.message }, 'error').catch(() => {});
+          });
+      }
+      const { username, timedOut } = await resolveBotUsername(bot);
       botInstance = bot;
       const startedAt = new Date().toISOString();
       const runningSnapshot = updateBotState(
@@ -1168,10 +1229,13 @@ async function ensureBot() {
           startedAt,
           lastActivityAt: startedAt,
           lastError: null,
-          username: me?.username ?? null
+          username
         },
         { reason: 'start:running' }
       );
+      if (timedOut) {
+        await log('bot.launch.username_timeout', { timeoutMs: USERNAME_RESOLVE_TIMEOUT_MS });
+      }
       await log('bot.launch.success', {
         username: runningSnapshot.username,
         source
