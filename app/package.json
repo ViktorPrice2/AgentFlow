@@ -20,8 +20,11 @@
     "test": "vitest run",
     "test:unit": "vitest run",
     "test:ci": "vitest run --coverage",
-    "test:e2e": "playwright test -c tests/e2e/playwright.config.ts",
-    "test:e2e:ui": "playwright test -c tests/e2e/playwright.config.ts --ui",
+    "e2e:install": "playwright install",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:all": "npm run test:ci && npm run test:e2e",
+    "verify": "node ../scripts/tasks/verify.mjs",
     "postinstall": "cd renderer && npm install"
   },
   "dependencies": {

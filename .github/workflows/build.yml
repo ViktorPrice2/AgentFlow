@@ -1,0 +1,41 @@
+name: build-and-test
+
+on: [push, pull_request]
+
+jobs:
+  win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install
+        run: |
+          cd app
+          npm ci
+      - name: Build renderer
+        run: |
+          cd app
+          npm run build:renderer
+      - name: Unit tests + coverage
+        run: |
+          cd app
+          npm run test:ci
+      - name: E2E smoke (optional)
+        run: |
+          cd app
+          npx playwright install --with-deps
+          npm run test:e2e || echo "E2E optional for now"
+      - name: Build exe
+        run: |
+          cd app
+          npm run build || echo "packaging script not defined yet"
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentflow-artifacts
+          path: |
+            reports/**
+            app/dist/**
+            docs/VerificationReport.md

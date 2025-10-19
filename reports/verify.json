@@ -1,0 +1,14 @@
+{
+  "scheduler": {
+    "status": "ok",
+    "reason": "Последний запуск 18 секунд назад"
+  },
+  "i18n": {
+    "status": "ok",
+    "reason": "Словари загружены (en.json, ru.json)"
+  },
+  "telegram": {
+    "status": "pending",
+    "reason": "Telegram токены отсутствуют (ожидаются ключи TG_TOKEN и TG_CHAT_ID)"
+  }
+}

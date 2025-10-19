@@ -23,6 +23,19 @@ const rendererDistPath = path.join(__dirname, '../renderer/dist/index.html');
 let mainWindowInstance;
 const rendererEventQueue = [];
 const RENDERER_EVENT_QUEUE_LIMIT = 100;
+const APP_START_LOG = resolveDataPath('logs', 'app-start.jsonl');
+
+async function logAppLifecycleEvent(event, data = {}) {
+  const entry = {
+    ts: new Date().toISOString(),
+    event,
+    data
+  };
+
+  const dir = path.dirname(APP_START_LOG);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.appendFile(APP_START_LOG, `${JSON.stringify(entry)}\n`, 'utf8');
+}
 
 const queueRendererEvent = (event) => {
   if (rendererEventQueue.length >= RENDERER_EVENT_QUEUE_LIMIT) {
@@ -322,6 +335,12 @@ app.on('browser-window-created', (_event, window) => {
 });
 
 app.whenReady().then(async () => {
+  await logAppLifecycleEvent('app:start', {
+    version: app.getVersion(),
+    mode: isDevelopment ? 'development' : 'production',
+    platform: process.platform
+  });
+
   try {
     await ensureMigrations();
   } catch (error) {

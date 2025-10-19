@@ -8,6 +8,7 @@ const DAG_PATH = path.join(ROOT, 'plans', 'dag.json');
 const WORKITEMS_DIR = path.join(ROOT, 'plans', 'workitems');
 const REPORTS_DIR = path.join(ROOT, 'reports');
 const SUMMARY_PATH = path.join(REPORTS_DIR, 'summary.json');
+const VERIFY_SUMMARY_PATH = path.join(REPORTS_DIR, 'verify.json');
 
 async function readJson(filePath) {
   const raw = await fs.readFile(filePath, 'utf8');
@@ -41,11 +42,26 @@ function runCommand(command) {
   execSync(command, { stdio: 'inherit' });
 }
 
+async function loadVerifySummary() {
+  try {
+    const raw = await fs.readFile(VERIFY_SUMMARY_PATH, 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 async function main() {
   const startTime = new Date().toISOString();
   const runId = randomUUID();
   const dag = await loadDag();
   const results = [];
+  const checks = {
+    scheduler: 'unknown',
+    i18n: 'unknown',
+    tg: 'pending',
+    e2e: 'pending'
+  };
 
   for (const node of dag.nodes || []) {
     const workItem = await loadWorkItem(node.id);
@@ -59,7 +75,18 @@ async function main() {
     console.log(`[Orchestrator] Starting ${node.id} (${node.type})`);
 
     try {
-      runCommand(`node ./scripts/run-agent.mjs ${node.id}`);
+      if (node.id === 'W-VRF-01') {
+        runCommand('node ./scripts/tasks/verify.mjs');
+        const verifySummary = await loadVerifySummary();
+        if (verifySummary) {
+          checks.scheduler = verifySummary.scheduler?.status ?? checks.scheduler;
+          checks.i18n = verifySummary.i18n?.status ?? checks.i18n;
+          checks.tg = verifySummary.telegram?.status ?? checks.tg;
+        }
+      } else {
+        runCommand(`node ./scripts/run-agent.mjs ${node.id}`);
+      }
+
       runCommand('node ./scripts/ci-checks.mjs');
       stepInfo.status = 'completed';
       console.log(`[Orchestrator] Completed ${node.id}`);
@@ -78,7 +105,8 @@ async function main() {
     runId,
     startedAt: startTime,
     finishedAt: new Date().toISOString(),
-    results
+    results,
+    checks
   };
 
   await ensureReportsDir();

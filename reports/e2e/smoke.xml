@@ -1,0 +1,14 @@
+<testsuites id="" name="" tests="2" failures="0" skipped="1" errors="0" time="5.341882">
+<testsuite name="smoke.pipeline.spec.mjs" timestamp="2025-10-19T02:44:56.342Z" hostname="" tests="2" failures="0" skipped="1" time="3.122" errors="0">
+<testcase name="Electron smoke › приложение стартует и пишет лог запуска" classname="smoke.pipeline.spec.mjs" time="3.122">
+</testcase>
+<testcase name="Electron smoke › переключение языка и smoke Scheduler" classname="smoke.pipeline.spec.mjs" time="0">
+<properties>
+<property name="skip" value="">
+</property>
+</properties>
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+</testsuites>
