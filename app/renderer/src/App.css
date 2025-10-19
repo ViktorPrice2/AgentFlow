@@ -479,6 +479,11 @@ th {
   letter-spacing: 0.03em;
 }
 
+.status-label--plain {
+  text-transform: none;
+  letter-spacing: normal;
+}
+
 .status-label.ok {
   background: rgba(34, 197, 94, 0.15);
   color: #166534;

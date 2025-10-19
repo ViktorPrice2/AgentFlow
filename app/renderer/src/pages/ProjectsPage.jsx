@@ -82,6 +82,14 @@ export function ProjectsPage({
   const tokenStored = Boolean(botStatus?.tokenStored);
   const canStart = !botBusy && tokenStored && statusKey !== 'running' && statusKey !== 'starting';
   const canStop = !botBusy && statusKey === 'running';
+  const statusClass =
+    statusKey === 'running'
+      ? 'success'
+      : statusKey === 'starting'
+        ? 'info'
+        : statusKey === 'error'
+          ? 'warn'
+          : 'info';
 
   return (
     <div className="page-grid">
@@ -197,13 +205,17 @@ export function ProjectsPage({
             </button>
           </div>
           <p className="hint">
-            {tokenStored ? t('projects.form.botTokenStored') : t('projects.form.botTokenMissing')}
+            <span className={`status-label ${tokenStored ? 'success' : 'warn'}`}>
+              {tokenStored ? t('projects.form.botTokenStored') : t('projects.form.botTokenMissing')}
+            </span>
           </p>
           <p className="hint">
-            {t('projects.form.botStatus', {
-              status: normalizedStatus,
-              username: botStatus?.username ? `@${botStatus.username}` : ''
-            })}
+            <span className={`status-label ${statusClass}`}>
+              {t('projects.form.botStatus', {
+                status: normalizedStatus,
+                username: botStatus?.username ? ` @${botStatus.username}` : ''
+              })}
+            </span>
           </p>
         </form>
       </InfoCard>

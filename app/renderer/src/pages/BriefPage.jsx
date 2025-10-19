@@ -63,10 +63,57 @@ export function BriefPage({
   }, [formState, t]);
 
   const latestBriefDetails = latestBrief?.details ?? {};
-  const statusLabel = telegramStatus?.running
-    ? t('brief.telegram.statusActive')
-    : t('brief.telegram.statusInactive');
-  const deeplink = project && telegramStatus?.deeplinkBase ? `${telegramStatus.deeplinkBase}?start=project=${project.id}` : null;
+  const statusKey = (telegramStatus?.status || (telegramStatus?.running ? 'running' : 'stopped') || '').toLowerCase();
+  const statusLabel =
+    statusKey === 'running'
+      ? t('brief.telegram.statusActive')
+      : statusKey === 'starting'
+        ? t('settings.telegram.statusStarting')
+        : t('brief.telegram.statusInactive');
+  const statusClass =
+    statusKey === 'running'
+      ? 'success'
+      : statusKey === 'starting'
+        ? 'info'
+        : statusKey === 'error'
+          ? 'warn'
+          : 'info';
+  const encodedProjectId = project ? encodeURIComponent(String(project.id).toLowerCase()) : null;
+  const deeplink =
+    project && telegramStatus?.deeplinkBase && encodedProjectId
+      ? `${(telegramStatus?.deeplinkBase || '').toLowerCase()}?start=project=${encodedProjectId}`
+      : null;
+  const planSourceDetails = useMemo(() => {
+    const base = { ...DEFAULT_BRIEF, ...formState };
+    if (latestBrief?.details) {
+      const answers =
+        latestBrief.details?.answers && typeof latestBrief.details.answers === 'object'
+          ? latestBrief.details.answers
+          : {};
+      return { ...base, ...latestBrief.details, ...answers };
+    }
+    return base;
+  }, [formState, latestBrief]);
+
+  const planFallback = useMemo(() => {
+    const fields = [
+      { label: t('brief.labels.goals'), value: planSourceDetails.goals },
+      { label: t('brief.labels.audience'), value: planSourceDetails.audience },
+      { label: t('brief.labels.offer'), value: planSourceDetails.offer },
+      { label: t('brief.labels.keyMessages'), value: planSourceDetails.keyMessages },
+      { label: t('brief.labels.callToAction'), value: planSourceDetails.callToAction },
+      { label: t('brief.labels.successMetrics'), value: planSourceDetails.successMetrics },
+      { label: t('brief.labels.references'), value: planSourceDetails.references }
+    ];
+
+    const items = fields
+      .filter((field) => field.value && field.value.trim().length > 0)
+      .map((field, index) => `${index + 1}. ${field.label}: ${field.value}`);
+
+    return items.join('\n');
+  }, [planSourceDetails, t]);
+
+  const planPreview = planText?.trim() ? planText : planFallback;
 
   const renderFieldValue = (value) => {
     if (value === null || value === undefined || value === '') {
@@ -229,12 +276,12 @@ export function BriefPage({
       >
         <div className="telegram-brief-status">
           <p>
-            <strong>{t('common.status')}:</strong> {statusLabel}
+            <strong>{t('common.status')}:</strong> <span className={`status-label ${statusClass}`}>{statusLabel}</span>
             {telegramStatus?.lastError ? <span className="status-label warn">{telegramStatus.lastError}</span> : null}
           </p>
           {deeplink ? (
             <p className="hint">
-              {t('common.deeplink')}: <code>{deeplink}</code>
+              {t('common.deeplink')}: <code className="status-label info status-label--plain">{deeplink}</code>
             </p>
           ) : (
             <p className="hint">{t('brief.telegram.deeplinkHint')}</p>
@@ -259,8 +306,8 @@ export function BriefPage({
       </InfoCard>
 
       <InfoCard title={t('brief.telegram.planTitle')} subtitle={t('brief.telegram.planSubtitle')}>
-        {planText ? (
-          <pre className="plan-preview">{planText}</pre>
+        {planPreview ? (
+          <pre className="plan-preview">{planPreview}</pre>
         ) : (
           <p className="hint">{t('brief.telegram.planEmpty')}</p>
         )}

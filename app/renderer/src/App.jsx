@@ -113,6 +113,26 @@ function mapBriefDetails(details = {}) {
   }, {});
 }
 
+function buildPlanFromDetails(details = {}, t) {
+  const normalized = mapBriefDetails(details);
+  const fields = [
+    { key: 'goals', label: t('brief.labels.goals') },
+    { key: 'audience', label: t('brief.labels.audience') },
+    { key: 'offer', label: t('brief.labels.offer') },
+    { key: 'keyMessages', label: t('brief.labels.keyMessages') },
+    { key: 'callToAction', label: t('brief.labels.callToAction') },
+    { key: 'successMetrics', label: t('brief.labels.successMetrics') },
+    { key: 'references', label: t('brief.labels.references') }
+  ];
+
+  const items = fields.map((field, index) => {
+    const value = normalized[field.key]?.trim();
+    return `${index + 1}. ${field.label}: ${value || t('common.notAvailable')}`;
+  });
+
+  return items.join('\n');
+}
+
 function useAgentResources(locale) {
   const [agentsData, setAgentsData] = useState({ plugins: [], configs: [] });
   const [providerStatus, setProviderStatus] = useState([]);
@@ -771,9 +791,21 @@ function App() {
 
     try {
       const result = await generateBriefPlan(selectedProject.id);
+      const sourceDetails =
+        result?.brief?.details ??
+        latestBrief?.details ??
+        {
+          ...brief,
+          answers: brief
+        };
+      const builtPlan = buildPlanFromDetails(sourceDetails, t);
+      const isTemplatePlan =
+        typeof result?.plan === 'string' && /цель кампании:\s*уточнить/i.test(result.plan);
+      const planTextValue =
+        result?.plan && !isTemplatePlan ? result.plan : builtPlan?.trim() ? builtPlan : '';
 
-      if (result?.plan) {
-        setPlanDraft({ text: result.plan, updatedAt: new Date().toISOString() });
+      if (planTextValue) {
+        setPlanDraft({ text: planTextValue, updatedAt: new Date().toISOString() });
 
         if (result.brief) {
           setLatestBrief(result.brief);
