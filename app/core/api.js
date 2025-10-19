@@ -128,16 +128,85 @@ function storeAgentConfig(agent) {
   return stored;
 }
 
+function computePipelineAgentUsage(pipelines = []) {
+  const usageMap = new Map();
+
+  const appendUsage = (agentId, pipeline, node, position) => {
+    if (!agentId) {
+      return;
+    }
+
+    const normalizedId = String(agentId);
+    const entry = usageMap.get(normalizedId) || [];
+
+    entry.push({
+      pipelineId: pipeline.id,
+      pipelineName: pipeline.name,
+      projectId: pipeline.projectId || null,
+      nodeId: node.id || `${pipeline.id}:node:${position}`,
+      nodeKind: node.kind || 'task',
+      position
+    });
+
+    usageMap.set(normalizedId, entry);
+  };
+
+  pipelines.forEach((pipeline) => {
+    const nodes = Array.isArray(pipeline.nodes) ? pipeline.nodes : [];
+
+    nodes.forEach((node, index) => {
+      const agentName = node?.agentName || node?.agentId || node?.id;
+      appendUsage(agentName, pipeline, node, index);
+    });
+  });
+
+  return usageMap;
+}
+
+function mapAgentRecordToResponse(agentRecord, usageMap) {
+  const usage = usageMap.get(agentRecord.id) || [];
+
+  return {
+    id: agentRecord.id,
+    name: agentRecord.name,
+    type: agentRecord.type ?? 'custom',
+    version: `v${agentRecord.version}`,
+    versionNumber: agentRecord.version,
+    description: agentRecord.description ?? '',
+    source: agentRecord.projectId ? `project:${agentRecord.projectId}` : 'local',
+    projectId: agentRecord.projectId,
+    createdAt: agentRecord.createdAt,
+    updatedAt: agentRecord.updatedAt,
+    usage,
+    payload: agentRecord.payload
+  };
+}
+
+function mapPluginAgentToResponse(pluginAgent, usageMap) {
+  const usage = usageMap.get(pluginAgent.id) || [];
+
+  return {
+    id: pluginAgent.id,
+    name: pluginAgent.name,
+    type: 'plugin',
+    version: pluginAgent.version,
+    versionNumber: null,
+    description: pluginAgent.description ?? '',
+    source: 'plugin',
+    usage
+  };
+}
+
 function buildAgentList(pluginRegistry) {
-  const staticAgents = pluginRegistry.listAgents();
-  const configuredAgents = entityStore.listAgentRecords().map((agent) => ({
-    id: agent.id,
-    name: agent.name,
-    type: agent.type ?? 'custom',
-    version: `v${agent.version}`,
-    description: agent.description ?? '',
-    source: agent.projectId ? `project:${agent.projectId}` : 'local'
-  }));
+  const pipelines = entityStore.listPipelines();
+  const usageMap = computePipelineAgentUsage(pipelines);
+  const staticAgents = pluginRegistry.listAgents().map((pluginAgent) =>
+    mapPluginAgentToResponse(pluginAgent, usageMap)
+  );
+
+  const configuredAgents = entityStore
+    .listAgentRecords()
+    .map((agentRecord) => mapAgentRecordToResponse(agentRecord, usageMap));
 
   return {
     plugins: staticAgents,
@@ -172,18 +241,29 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
 
   ipcMain.handle('AgentFlow:agents:upsert', async (_event, agentConfig) => {
     const stored = storeAgentConfig(agentConfig);
+    const pipelines = entityStore.listPipelines();
+    const usageMap = computePipelineAgentUsage(pipelines);
+    const agent = mapAgentRecordToResponse(stored, usageMap);
 
     return {
       ok: true,
-      agent: {
-        id: stored.id,
-        name: stored.name,
-        type: stored.type,
-        version: `v${stored.version}`,
-        description: stored.description,
-        source: stored.projectId ? `project:${stored.projectId}` : 'local'
-      }
+      agent
     };
+  });
+
+  ipcMain.handle('AgentFlow:agents:delete', async (_event, agentId) => {
+    if (!agentId) {
+      return { ok: false, error: 'Agent id is required' };
+    }
+
+    try {
+      entityStore.deleteAgent(agentId);
+      agentConfigs.delete(agentId);
+      ensureDefaultAgentConfigs();
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
   });
 
   ipcMain.handle('AgentFlow:providers:status', async () => {
@@ -226,6 +306,12 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
 
   ipcMain.handle('AgentFlow:pipeline:upsert', async (_event, pipelineDefinition) => {
     const stored = entityStore.savePipeline(pipelineDefinition);
+    const agentIds = new Set();
+    (stored.nodes || []).forEach((node) => {
+      if (node?.agentName) {
+        agentIds.add(node.agentName);
+      }
+    });
 
     return {
       ok: true,
@@ -239,13 +325,22 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
         override: stored.override,
         version: stored.version,
         createdAt: stored.createdAt,
-        updatedAt: stored.updatedAt
+        updatedAt: stored.updatedAt,
+        agents: Array.from(agentIds)
       }
     };
   });
 
   ipcMain.handle('AgentFlow:pipeline:list', async () => {
-    return entityStore.listPipelines().map((pipeline) => ({
+    return entityStore.listPipelines().map((pipeline) => {
+      const agentIds = new Set();
+      (pipeline.nodes || []).forEach((node) => {
+        if (node?.agentName) {
+          agentIds.add(node.agentName);
+        }
+      });
+
+      return {
       id: pipeline.id,
       name: pipeline.name,
       description: pipeline.description,
@@ -255,8 +350,23 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
       override: pipeline.override,
       version: pipeline.version,
       createdAt: pipeline.createdAt,
-      updatedAt: pipeline.updatedAt
-    }));
+      updatedAt: pipeline.updatedAt,
+      agents: Array.from(agentIds)
+    };
+    });
+  });
+
+  ipcMain.handle('AgentFlow:pipeline:delete', async (_event, pipelineId) => {
+    if (!pipelineId) {
+      return { ok: false, error: 'Pipeline id is required' };
+    }
+
+    try {
+      entityStore.deletePipeline(pipelineId);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
   });
 
   ipcMain.handle('AgentFlow:history:list', async (_event, params = {}) => {

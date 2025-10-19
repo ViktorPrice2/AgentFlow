@@ -7,6 +7,8 @@ import {
   getTelegramStatus,
   isAgentApiAvailable,
   listAgents,
+  upsertAgent,
+  deleteAgent,
   listPipelines,
   listProviderStatus,
   listSchedules,
@@ -21,6 +23,7 @@ import {
   subscribeToTelegramStatus,
   normalizeBotStatus,
   upsertPipeline,
+  deletePipeline,
   deleteSchedule,
   toggleSchedule,
   runScheduleNow,
@@ -329,6 +332,26 @@ function App() {
   const { agentsData, providerStatus, providerUpdatedAt, refreshAgents } = useAgentResources(locale);
   const { pipelines, refreshPipelines } = usePipelineResources();
 
+  const agentOptions = useMemo(() => {
+    const pluginOptions = Array.isArray(agentsData?.plugins)
+      ? agentsData.plugins.map((agent) => ({
+          id: agent.id,
+          label: agent.name || agent.id,
+          source: agent.source || 'plugin'
+        }))
+      : [];
+
+    const configOptions = Array.isArray(agentsData?.configs)
+      ? agentsData.configs.map((agent) => ({
+          id: agent.id,
+          label: agent.name || agent.id,
+          source: agent.source || 'local'
+        }))
+      : [];
+
+    return [...pluginOptions, ...configOptions];
+  }, [agentsData]);
+
   const selectedProject = useMemo(
     () => projects.find((item) => item.id === selectedProjectId) || null,
     [projects, selectedProjectId]
@@ -620,17 +643,101 @@ function App() {
     setBrief(nextBrief);
   };
 
-  const handleCreatePipeline = async (pipeline) => {
-    if (!pipeline) {
-      return;
+  const handleSaveAgent = async (agentDraft) => {
+    if (!agentDraft) {
+      return false;
     }
 
     try {
-      await upsertPipeline(pipeline);
-      await refreshPipelines();
+      const response = await upsertAgent(agentDraft);
+
+      if (response?.ok === false) {
+        throw new Error(response?.error || 'Agent save failed');
+      }
+
+      await refreshAgents();
+      showToast(t('app.toasts.agentSaved', { name: response?.agent?.name || agentDraft.name || agentDraft.id }), 'success');
+      return true;
     } catch (error) {
-      console.error('Failed to create pipeline', error);
+      console.error('Failed to save agent', error);
+      showToast(t('app.toasts.agentSaveError'), 'error');
+      return false;
+    }
+  };
+
+  const handleDeleteAgent = async (agentId) => {
+    if (!agentId) {
+      return false;
+    }
+
+    const agentRecord = agentsData.configs?.find((agent) => agent.id === agentId);
+    const agentName = agentRecord?.name || agentId;
+
+    try {
+      const response = await deleteAgent(agentId);
+
+      if (response?.ok === false) {
+        throw new Error(response?.error || 'Agent delete failed');
+      }
+
+      await refreshAgents();
+      showToast(t('app.toasts.agentDeleted', { name: agentName }), 'info');
+      return true;
+    } catch (error) {
+      console.error('Failed to delete agent', error);
+      showToast(t('app.toasts.agentDeleteError'), 'error');
+      return false;
+    }
+  };
+
+  const handleSavePipeline = async (pipeline) => {
+    if (!pipeline) {
+      return false;
+    }
+
+    try {
+      const response = await upsertPipeline(pipeline);
+
+      if (response?.ok === false) {
+        throw new Error(response?.error || 'Pipeline save failed');
+      }
+
+      await refreshPipelines();
+      await refreshAgents();
+
+      const savedName = response?.pipeline?.name || pipeline.name || pipeline.id;
+      showToast(t('app.toasts.pipelineSaved', { name: savedName }), 'success');
+      return true;
+    } catch (error) {
+      console.error('Failed to save pipeline', error);
       showToast(t('app.toasts.pipelineSaveError'), 'error');
+      return false;
+    }
+  };
+
+  const handleDeletePipeline = async (pipelineId) => {
+    if (!pipelineId) {
+      return false;
+    }
+
+    const pipelineRecord = pipelines.find((item) => item.id === pipelineId);
+    const pipelineName = pipelineRecord?.name || pipelineId;
+
+    try {
+      const response = await deletePipeline(pipelineId);
+
+      if (response?.ok === false) {
+        throw new Error(response?.error || 'Pipeline delete failed');
+      }
+
+      await refreshPipelines();
+      await refreshAgents();
+      showToast(t('app.toasts.pipelineDeleted', { name: pipelineName }), 'info');
+      return true;
+    } catch (error) {
+      console.error('Failed to delete pipeline', error);
+      showToast(t('app.toasts.pipelineDeleteError'), 'error');
+      return false;
     }
   };
 
@@ -909,6 +1016,9 @@ function App() {
             onRefresh={refreshAgents}
             lastUpdated={providerUpdatedAt}
             onShowHistory={handleShowAgentHistory}
+            onSaveAgent={handleSaveAgent}
+            onDeleteAgent={handleDeleteAgent}
+            onNotify={showToast}
           />
         );
       case 'pipelines':
@@ -917,9 +1027,11 @@ function App() {
             pipelines={pipelines}
             project={selectedProject}
             brief={brief}
-            onCreatePipeline={handleCreatePipeline}
+            onSavePipeline={handleSavePipeline}
+            onDeletePipeline={handleDeletePipeline}
             onRunPipeline={handleRunPipeline}
             onRefresh={refreshPipelines}
+            agentOptions={agentOptions}
             isAgentOnline={AGENT_ONLINE}
             onNotify={showToast}
             onShowHistory={handleShowPipelineHistory}
@@ -991,7 +1103,18 @@ function App() {
     handleThemeChange,
     botLogEntries,
     botLogLoading,
-    handleTailBotLog
+    handleTailBotLog,
+    agentOptions,
+    handleSaveAgent,
+    handleDeleteAgent,
+    handleSavePipeline,
+    handleDeletePipeline,
+    handleRunPipeline,
+    refreshAgents,
+    refreshPipelines,
+    handleShowAgentHistory,
+    handleShowPipelineHistory,
+    showToast
   ]);
 
   return (
@@ -1047,4 +1170,8 @@ function App() {
 }
 
 export default App;
+
+
+
+
 

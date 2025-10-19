@@ -8,18 +8,28 @@ const fallbackAgents = {
     {
       id: 'WriterAgent',
       name: 'WriterAgent',
-      version: '0.1.0',
-      description: 'Шаблонный генератор контента'
+      type: 'plugin',
+      version: 'v0.1.0',
+      versionNumber: null,
+      description: 'Mock writer agent (fallback)',
+      source: 'plugin',
+      usage: []
     },
     {
       id: 'UploaderAgent',
       name: 'UploaderAgent',
-      version: '0.1.0',
-      description: 'Сохранение артефактов в файловую систему'
+      type: 'plugin',
+      version: 'v0.1.0',
+      versionNumber: null,
+      description: 'Mock uploader agent (fallback)',
+      source: 'plugin',
+      usage: []
     }
   ],
   configs: []
 };
+
+const fallbackPipelines = [];
 
 const fallbackProviderStatus = [
   { id: 'openai', type: 'llm', hasKey: false, apiKeyRef: 'OPENAI_API_KEY', models: ['gpt-4o-mini'] },
@@ -40,6 +50,8 @@ const fallbackBotStatus = {
   deeplinkBase: null
 };
 
+const fallbackBotState = { ...fallbackBotStatus };
+const fallbackBotLog = [];
 const fallbackSchedulerStatus = {
   running: false,
   startedAt: null,
@@ -52,13 +64,107 @@ const fallbackProxyConfig = {
   httpProxy: ''
 };
 
+const recomputeFallbackUsage = () => {
+  const usageMap = new Map();
+
+  fallbackPipelines.forEach((pipeline) => {
+    const nodes = Array.isArray(pipeline.nodes) ? pipeline.nodes : [];
+
+    nodes.forEach((node, index) => {
+      const agentId = node?.agentName || node?.agentId || node?.id;
+
+      if (!agentId) {
+        return;
+      }
+
+      const normalized = String(agentId);
+      const entry = usageMap.get(normalized) || [];
+
+      entry.push({
+        pipelineId: pipeline.id,
+        pipelineName: pipeline.name,
+        projectId: pipeline.projectId || null,
+        nodeId: node.id || `${pipeline.id}:node:${index}`,
+        nodeKind: node.kind || 'task',
+        position: index
+      });
+
+      usageMap.set(normalized, entry);
+    });
+  });
+
+  const applyUsage = (list) => {
+    list.forEach((agent) => {
+      const usage = usageMap.get(agent.id) || [];
+      agent.usage = usage.map((item) => ({ ...item }));
+    });
+  };
+
+  applyUsage(fallbackAgents.plugins);
+  applyUsage(fallbackAgents.configs);
+};
+
+const setFallbackBotStatus = (patch = {}) => {
+  Object.assign(fallbackBotState, patch);
+  fallbackBotState.updatedAt = new Date().toISOString();
+  return normalizeBotStatus(fallbackBotState);
+};
+
 export async function listAgents() {
   if (hasWindowAPI && typeof agentApi.listAgents === 'function') {
     return agentApi.listAgents();
   }
 
   await fallbackDelay();
-  return fallbackAgents;
+  return JSON.parse(JSON.stringify(fallbackAgents));
+}
+
+export async function upsertAgent(agentConfig) {
+  if (hasWindowAPI && typeof agentApi.upsertAgent === 'function') {
+    return agentApi.upsertAgent(agentConfig);
+  }
+
+  await fallbackDelay();
+
+  const now = new Date().toISOString();
+  const input = agentConfig || {};
+  const id = input.id || input.name || `agent-${Date.now()}`;
+  const payload = { ...input, id };
+  const name = payload.name || id;
+  const type = payload.type || 'custom';
+
+  const existingIndex = fallbackAgents.configs.findIndex((item) => item.id === id);
+  const previous = existingIndex >= 0 ? fallbackAgents.configs[existingIndex] : null;
+  const versionNumber = (previous?.versionNumber || 0) + 1;
+  const createdAt = previous?.createdAt || now;
+
+  const record = {
+    id,
+    name,
+    type,
+    version: `v${versionNumber}`,
+    versionNumber,
+    description: payload.description || previous?.description || '',
+    source: payload.projectId ? `project:${payload.projectId}` : 'local',
+    projectId: payload.projectId || null,
+    createdAt,
+    updatedAt: now,
+    usage: previous?.usage ? [...previous.usage] : [],
+    payload
+  };
+
+  if (existingIndex >= 0) {
+    fallbackAgents.configs[existingIndex] = record;
+  } else {
+    fallbackAgents.configs.push(record);
+  }
+
+  recomputeFallbackUsage();
+
+  return {
+    ok: true,
+    agent: JSON.parse(JSON.stringify(record))
+  };
 }
 
 export async function listProviderStatus() {
@@ -70,13 +176,35 @@ export async function listProviderStatus() {
   return fallbackProviderStatus;
 }
 
+export async function deleteAgent(agentId) {
+  if (hasWindowAPI && typeof agentApi.deleteAgent === 'function') {
+    return agentApi.deleteAgent(agentId);
+  }
+
+  await fallbackDelay();
+
+  if (!agentId) {
+    return { ok: false, error: 'Agent id is required' };
+  }
+
+  const index = fallbackAgents.configs.findIndex((item) => item.id === agentId);
+
+  if (index >= 0) {
+    fallbackAgents.configs.splice(index, 1);
+  }
+
+  recomputeFallbackUsage();
+
+  return { ok: true };
+}
+
 export async function listPipelines() {
   if (hasWindowAPI && typeof agentApi.listPipelines === 'function') {
     return agentApi.listPipelines();
   }
 
   await fallbackDelay();
-  return [];
+  return JSON.parse(JSON.stringify(fallbackPipelines));
 }
 
 export async function fetchEntityHistory(entityType, entityId) {
@@ -90,7 +218,7 @@ export async function fetchEntityHistory(entityType, entityId) {
       return response.history ?? [];
     }
 
-    throw new Error(response?.error || 'Не удалось получить историю версий');
+    throw new Error(response?.error || 'Failed to load version history');
   }
 
   await fallbackDelay();
@@ -105,7 +233,7 @@ export async function diffEntityVersions(entityType, idA, idB) {
       return response.diff;
     }
 
-    throw new Error(response?.error || 'Не удалось вычислить различия версий');
+    throw new Error(response?.error || 'Failed to compute version diff');
   }
 
   await fallbackDelay();
@@ -124,7 +252,70 @@ export async function upsertPipeline(pipeline) {
   }
 
   await fallbackDelay();
-  return { ok: true, pipeline };
+
+  const now = new Date().toISOString();
+  const input = pipeline || {};
+  const id = input.id || `pipeline-${Date.now()}`;
+  const existingIndex = fallbackPipelines.findIndex((item) => item.id === id);
+  const previous = existingIndex >= 0 ? fallbackPipelines[existingIndex] : null;
+  const createdAt = previous?.createdAt || now;
+  const version = (previous?.version || 0) + 1;
+  const nodes = Array.isArray(input.nodes)
+    ? input.nodes.map((node, index) => ({ ...node, id: node.id || `${id}-node-${index}` }))
+    : [];
+  const edges = Array.isArray(input.edges)
+    ? input.edges.map((edge) => ({ ...edge }))
+    : [];
+  const agents = Array.from(new Set(nodes.map((node) => node?.agentName).filter(Boolean)));
+
+  const record = {
+    id,
+    name: input.name || id,
+    description: input.description || '',
+    projectId: input.projectId || null,
+    nodes,
+    edges,
+    override: input.override ?? null,
+    version,
+    createdAt,
+    updatedAt: now,
+    agents
+  };
+
+  if (existingIndex >= 0) {
+    fallbackPipelines[existingIndex] = record;
+  } else {
+    fallbackPipelines.push(record);
+  }
+
+  recomputeFallbackUsage();
+
+  return {
+    ok: true,
+    pipeline: JSON.parse(JSON.stringify(record))
+  };
+}
+
+export async function deletePipeline(pipelineId) {
+  if (hasWindowAPI && typeof agentApi.deletePipeline === 'function') {
+    return agentApi.deletePipeline(pipelineId);
+  }
+
+  await fallbackDelay();
+
+  if (!pipelineId) {
+    return { ok: false, error: 'Pipeline id is required' };
+  }
+
+  const index = fallbackPipelines.findIndex((item) => item.id === pipelineId);
+
+  if (index >= 0) {
+    fallbackPipelines.splice(index, 1);
+  }
+
+  recomputeFallbackUsage();
+
+  return { ok: true };
 }
 
 export async function runPipelineSimple(input) {
@@ -168,7 +359,7 @@ export async function listSchedules(projectId) {
       return response.schedules ?? [];
     }
 
-    throw new Error(response?.error || 'Не удалось получить расписания');
+    throw new Error(response?.error || 'Failed to load schedules');
   }
 
   await fallbackDelay();
@@ -183,7 +374,7 @@ export async function upsertSchedule(schedule) {
       return response.schedule;
     }
 
-    throw new Error(response?.error || 'Не удалось сохранить расписание');
+    throw new Error(response?.error || 'Failed to save schedule');
   }
 
   await fallbackDelay();
@@ -198,7 +389,7 @@ export async function deleteSchedule(scheduleId) {
       return true;
     }
 
-    throw new Error(response?.error || 'Не удалось удалить расписание');
+    throw new Error(response?.error || 'Failed to delete schedule');
   }
 
   await fallbackDelay();
@@ -213,7 +404,7 @@ export async function toggleSchedule(scheduleId, enabled) {
       return response.schedule;
     }
 
-    throw new Error(response?.error || 'Не удалось обновить расписание');
+    throw new Error(response?.error || 'Failed to update schedule');
   }
 
   await fallbackDelay();
@@ -228,7 +419,7 @@ export async function runScheduleNow(scheduleId) {
       return true;
     }
 
-    throw new Error(response?.error || 'Не удалось запустить расписание');
+    throw new Error(response?.error || 'Failed to trigger schedule');
   }
 
   await fallbackDelay();
@@ -243,7 +434,7 @@ export async function getSchedulerStatus() {
       return response.status ?? fallbackSchedulerStatus;
     }
 
-    throw new Error(response?.error || 'Не удалось получить статус планировщика');
+    throw new Error(response?.error || 'Failed to load scheduler status');
   }
 
   await fallbackDelay();
@@ -295,11 +486,16 @@ function unwrapStatusResponse(response) {
 export async function getTelegramStatus() {
   if (hasWindowAPI && typeof agentApi.getTelegramStatus === 'function') {
     const response = await agentApi.getTelegramStatus();
-    return unwrapStatusResponse(response);
+
+    if (response?.ok) {
+      return normalizeBotStatus(response.status);
+    }
+
+    throw new Error(response?.error || 'Failed to load Telegram status');
   }
 
   await fallbackDelay();
-  return normalizeBotStatus();
+  return normalizeBotStatus(fallbackBotState);
 }
 
 export async function setTelegramToken(token) {
@@ -308,8 +504,18 @@ export async function setTelegramToken(token) {
     return unwrapStatusResponse(response);
   }
 
+  const trimmed = typeof token === 'string' ? token.trim() : '';
+  const stored = trimmed.length > 0;
+  const status = stored ? 'stopped' : 'stopped';
+
   await fallbackDelay();
-  throw new Error('settings.telegram.errorUnavailable');
+  return setFallbackBotStatus({
+    tokenStored: stored,
+    tokenSource: stored ? 'fallback' : null,
+    status,
+    running: false,
+    lastError: null
+  });
 }
 
 export async function startTelegramBot() {
@@ -319,7 +525,12 @@ export async function startTelegramBot() {
   }
 
   await fallbackDelay();
-  throw new Error('settings.telegram.errorUnavailable');
+  return setFallbackBotStatus({
+    status: 'running',
+    running: true,
+    lastError: null,
+    startedAt: new Date().toISOString()
+  });
 }
 
 export async function stopTelegramBot() {
@@ -329,7 +540,25 @@ export async function stopTelegramBot() {
   }
 
   await fallbackDelay();
-  return normalizeBotStatus();
+  return setFallbackBotStatus({
+    status: 'stopped',
+    running: false
+  });
+}
+
+export async function tailTelegramLog(limit = 20) {
+  if (hasWindowAPI && typeof agentApi.tailTelegramLog === 'function') {
+    const response = await agentApi.tailTelegramLog(limit);
+
+    if (response?.ok) {
+      return Array.isArray(response.lines) ? response.lines : [];
+    }
+
+    throw new Error(response?.error || 'Failed to load Telegram bot log');
+  }
+
+  await fallbackDelay();
+  return fallbackBotLog.slice(-Math.max(1, limit));
 }
 
 export function subscribeToTelegramStatus(handler) {
@@ -340,22 +569,6 @@ export function subscribeToTelegramStatus(handler) {
   return () => {};
 }
 
-export async function tailTelegramLog(limit = 20) {
-  if (hasWindowAPI && typeof agentApi.tailTelegramLog === 'function') {
-    const response = await agentApi.tailTelegramLog(limit);
-
-    if (response?.ok) {
-      const lines = Array.isArray(response.lines) ? response.lines : [];
-      return lines;
-    }
-
-    throw new Error(response?.error || 'Не удалось получить содержимое лога Telegram-бота');
-  }
-
-  await fallbackDelay();
-  return [];
-}
-
 export async function getTelegramProxyConfig() {
   if (hasWindowAPI && typeof agentApi.getTelegramProxyConfig === "function") {
     const response = await agentApi.getTelegramProxyConfig();
@@ -364,7 +577,7 @@ export async function getTelegramProxyConfig() {
       return response.config ?? { ...fallbackProxyConfig };
     }
 
-    throw new Error(response?.error || "�� ������� �������� ��������� ������ Telegram");
+    throw new Error(response?.error || 'Failed to load Telegram proxy settings');
   }
 
   await fallbackDelay();
@@ -379,7 +592,7 @@ export async function setTelegramProxyConfig(config) {
       return response.config ?? { ...fallbackProxyConfig };
     }
 
-    throw new Error(response?.error || "�� ������� ��������� ��������� ������ Telegram");
+    throw new Error(response?.error || 'Failed to update Telegram proxy settings');
   }
 
   const httpsProxy = typeof config?.httpsProxy === "string" ? config.httpsProxy.trim() : "";
@@ -391,6 +604,7 @@ export async function setTelegramProxyConfig(config) {
   await fallbackDelay();
   return { ...fallbackProxyConfig };
 }
+
 export async function fetchLatestBrief(projectId) {
   if (hasWindowAPI && typeof agentApi.fetchLatestBrief === 'function') {
     const response = await agentApi.fetchLatestBrief(projectId);
@@ -399,7 +613,7 @@ export async function fetchLatestBrief(projectId) {
       return response.brief ?? null;
     }
 
-    throw new Error(response?.error || 'Не удалось получить бриф');
+    throw new Error(response?.error || 'Failed to load latest brief');
   }
 
   await fallbackDelay();
@@ -414,7 +628,7 @@ export async function generateBriefPlan(projectId) {
       return response;
     }
 
-    throw new Error(response?.error || 'Не удалось сформировать план кампании');
+    throw new Error(response?.error || 'Failed to generate campaign plan');
   }
 
   await fallbackDelay();
@@ -437,12 +651,12 @@ export async function runProviderDiagnostic(command) {
       return response.result;
     }
 
-    throw new Error(
-      response?.error || 'Не удалось выполнить диагностическую команду провайдеров'
-    );
+    throw new Error(response?.error || 'Failed to run provider diagnostic command');
   }
 
   await fallbackDelay();
   return { ok: false };
 }
+
+
 

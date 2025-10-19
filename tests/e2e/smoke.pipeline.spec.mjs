@@ -192,4 +192,84 @@ test.describe('Electron smoke', () => {
       await new Promise((resolve) => server.close(resolve));
     }
   });
+
+  test('Agent and pipeline CRUD via fallback UI', async ({ page }) => {
+    const { server, url } = await startStaticServer();
+
+    try {
+      await page.goto(url);
+      await page.waitForSelector('[data-testid="app-root"]');
+
+      // Create a project to unlock pipeline form
+      await page.getByLabel('Name').first().fill('QA Project');
+      await page.getByRole('button', { name: 'Save', exact: true }).first().click();
+      await expect(page.locator('.toast')).toContainText('Project saved');
+      await expect(
+        page.getByRole('heading', { level: 4, name: 'QA Project' })
+      ).toBeVisible();
+
+      // Manage agent JSON config via fallback API
+      await page.getByRole('button', { name: 'Agents' }).click();
+      await page.waitForSelector('.agent-editor');
+
+      const agentPayload = JSON.stringify(
+        {
+          id: 'QA-Agent',
+          name: 'QA Agent',
+          type: 'test',
+          instructions: 'Playwright agent fixture',
+          params: { mode: 'playwright' }
+        },
+        null,
+        2
+      );
+
+      const agentForm = page.locator('.agent-editor .form');
+      await agentForm.getByLabel('Agent payload (JSON)').fill(agentPayload);
+      await agentForm.getByRole('button', { name: 'Save', exact: true }).click();
+      await expect(page.locator('.toast')).toContainText('Agent QA Agent saved');
+
+      const agentRow = page.locator('tbody tr').filter({ hasText: 'QA Agent' });
+      await expect(agentRow).toHaveCount(1);
+
+      await page.once('dialog', (dialog) => dialog.accept());
+      await agentRow.getByRole('button', { name: 'Delete' }).click();
+      await expect(page.locator('.toast')).toContainText('Agent QA Agent removed');
+      await expect(agentRow).toHaveCount(0);
+
+      // Create and delete a pipeline using fallback storage
+      await page.getByRole('button', { name: 'Pipelines' }).click();
+      await page.waitForSelector('.pipeline-steps');
+
+      const pipelineForm = page.locator('form').filter({
+        has: page.locator('.pipeline-steps')
+      });
+
+      await pipelineForm.getByLabel('Identifier').fill('qa-pipeline');
+      await pipelineForm.getByLabel('Name').fill('QA Pipeline');
+      await pipelineForm
+        .getByLabel('Description')
+        .fill('Playwright generated pipeline');
+
+      await pipelineForm.getByRole('button', { name: 'Save pipeline' }).click();
+      await expect(page.locator('.toast')).toContainText(
+        'Pipeline "QA Pipeline" saved'
+      );
+
+      const pipelineCard = page
+        .locator('.pipeline-card')
+        .filter({ hasText: 'QA Pipeline' });
+      await expect(pipelineCard).toHaveCount(1);
+
+      await page.once('dialog', (dialog) => dialog.accept());
+      await pipelineCard.getByRole('button', { name: 'Delete' }).click();
+      await expect(page.locator('.toast')).toContainText(
+        'Pipeline "QA Pipeline" removed'
+      );
+      await expect(pipelineCard).toHaveCount(0);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
 });

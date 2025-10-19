@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
@@ -11,13 +11,8 @@ const DEFAULT_NODES = [
   { id: 'uploader', agentName: 'UploaderAgent', kind: 'task' }
 ];
 
-const DEFAULT_EDGES = [
-  { from: 'writer', to: 'guard' },
-  { from: 'guard', to: 'human' },
-  { from: 'human', to: 'uploader' }
-];
-
 const INITIAL_FORM_STATE = {
+  id: '',
   name: '',
   description: '',
   override: ''
@@ -27,18 +22,26 @@ export function PipelinesPage({
   pipelines = [],
   project = null,
   brief = {},
-  onCreatePipeline,
+  onSavePipeline,
+  onDeletePipeline,
   onRunPipeline,
   onRefresh,
   isAgentOnline = true,
   onNotify,
+  agentOptions = [],
   onShowHistory = undefined
 }) {
   const { t } = useI18n();
-  const [formState, setFormState] = useState(INITIAL_FORM_STATE);
+  const [formState, setFormState] = useState(() => ({ ...INITIAL_FORM_STATE }));
   const [formNodes, setFormNodes] = useState(() =>
     DEFAULT_NODES.map((node) => ({ ...node }))
   );
+  const [editingId, setEditingId] = useState(null);
+  const safeAgentOptions = useMemo(
+    () => (Array.isArray(agentOptions) ? agentOptions : []),
+    [agentOptions]
+  );
+  const isEditing = Boolean(editingId);
 
   const runContext = useMemo(() => {
     if (!project) {
@@ -77,6 +80,12 @@ export function PipelinesPage({
     setFormNodes(DEFAULT_NODES.map((node) => ({ ...node })));
   };
 
+  const handleResetForm = () => {
+    setFormState({ ...INITIAL_FORM_STATE });
+    handleResetNodes();
+    setEditingId(null);
+  };
+
   const handleChange = (event) => {
     const { name, value } = event.target;
     setFormState((prev) => ({ ...prev, [name]: value }));
@@ -101,7 +110,21 @@ export function PipelinesPage({
       }
     }
 
-    const orderedNodes = formNodes.map((node) => ({ ...node }));
+    const orderedNodes = formNodes.map((node, index) => ({
+      ...node,
+      id: node.id || `node-${index}`
+    }));
+
+    if (orderedNodes.length === 0) {
+      onNotify(t('pipelines.toast.stepsRequired'), 'error');
+      return;
+    }
+
+    if (orderedNodes.some((node) => !node.agentName)) {
+      onNotify(t('pipelines.toast.agentMissing'), 'error');
+      return;
+    }
+
     const edges =
       orderedNodes.length > 1
         ? orderedNodes.slice(0, -1).map((node, index) => ({
@@ -110,8 +133,13 @@ export function PipelinesPage({
           }))
         : [];
 
+    const pipelineId =
+      editingId ||
+      (formState.id && formState.id.trim()) ||
+      `${project?.id || 'pipeline'}-${Date.now()}`;
+
     const pipeline = {
-      id: `${project?.id || 'pipeline'}-${Date.now()}`,
+      id: pipelineId,
       name: formState.name.trim(),
       description: formState.description.trim(),
       projectId: project?.id || null,
@@ -120,10 +148,111 @@ export function PipelinesPage({
       override: overrideData
     };
 
-    onCreatePipeline(pipeline);
-    onNotify(t('pipelines.toast.saved'), 'success');
-    setFormState(INITIAL_FORM_STATE);
-    handleResetNodes();
+    const success = await onSavePipeline(pipeline);
+
+    if (success) {
+      handleResetForm();
+    }
+  };
+
+  const handleEditPipeline = (pipeline) => {
+    if (!pipeline) {
+      return;
+    }
+
+    setEditingId(pipeline.id || null);
+    setFormState({
+      id: pipeline.id || '',
+      name: pipeline.name || '',
+      description: pipeline.description || '',
+      override: pipeline.override ? JSON.stringify(pipeline.override, null, 2) : ''
+    });
+    setFormNodes(
+      Array.isArray(pipeline.nodes) && pipeline.nodes.length
+        ? pipeline.nodes.map((node, index) => ({
+            ...node,
+            id: node.id || `${pipeline.id}-node-${index}`,
+            agentName: node.agentName || node.id,
+            kind: node.kind || 'task'
+          }))
+        : DEFAULT_NODES.map((node) => ({ ...node }))
+    );
+  };
+
+  const handleDeletePipelineClick = async (pipeline) => {
+    if (!pipeline?.id) {
+      return;
+    }
+
+    const confirmed =
+      typeof window === 'undefined'
+        ? true
+        : window.confirm(t('pipelines.list.confirmDelete', { name: pipeline.name || pipeline.id }));
+
+    if (!confirmed) {
+      return;
+    }
+
+    const success = await onDeletePipeline(pipeline.id);
+
+    if (success) {
+      if (editingId === pipeline.id) {
+        handleResetForm();
+      }
+    }
+  };
+
+  const handleNodeAgentChange = (index, agentId) => {
+    setFormNodes((prev) => {
+      const updated = [...prev];
+      const nextId = agentId || `node-${index}`;
+
+      updated[index] = {
+        ...updated[index],
+        agentName: agentId,
+        id: updated[index]?.id || nextId
+      };
+
+      return updated;
+    });
+  };
+
+  const handleNodeKindChange = (index, kind) => {
+    setFormNodes((prev) => {
+      const updated = [...prev];
+
+      updated[index] = {
+        ...updated[index],
+        kind
+      };
+
+      return updated;
+    });
+  };
+
+  const handleAddNode = () => {
+    const fallbackAgent = safeAgentOptions[0]?.id || 'WriterAgent';
+
+    setFormNodes((prev) => [
+      ...prev,
+      {
+        id: `step-${Date.now()}-${prev.length + 1}`,
+        agentName: fallbackAgent,
+        kind: 'task'
+      }
+    ]);
+  };
+
+  const handleRemoveNode = (index) => {
+    setFormNodes((prev) => {
+      if (prev.length <= 1) {
+        return prev;
+      }
+
+      const updated = [...prev];
+      updated.splice(index, 1);
+      return updated;
+    });
   };
 
   const handleRun = (pipeline) => {
@@ -148,51 +277,74 @@ export function PipelinesPage({
           />
         ) : (
           <div className="pipeline-list">
-            {pipelines.map((pipeline) => (
-              <article key={pipeline.id} className="pipeline-card">
-                <header>
-                  <div className="pipeline-header-info">
-                    <h4>{pipeline.name}</h4>
-                    <span>
-                      {pipeline.projectId
-                        ? t('pipelines.list.project', { project: pipeline.projectId })
-                        : t('pipelines.list.noProject')}
-                    </span>
-                  </div>
-                  {pipeline.version ? (
-                    <span className="pipeline-version">v{pipeline.version}</span>
-                  ) : null}
-                </header>
-                <p>{pipeline.description || t('pipelines.list.descriptionMissing')}</p>
-                <ul className="pipeline-flow">
-                  {pipeline.nodes.map((node) => (
-                    <li key={node.id}>
-                      <span>{node.agentName}</span>
-                      <small>{t(`pipelines.form.kind.${node.kind}`, undefined, node.kind)}</small>
-                    </li>
-                  ))}
-                </ul>
-                <footer>
-                  <button
-                    type="button"
-                    className="primary-button"
-                    onClick={() => handleRun(pipeline)}
-                    disabled={!isAgentOnline}
-                  >
-                    {t('pipelines.list.run')}
-                  </button>
-                  {typeof onShowHistory === 'function' ? (
+            {pipelines.map((pipeline) => {
+              const nodes = Array.isArray(pipeline.nodes) ? pipeline.nodes : [];
+              const flowString = nodes.map((node) => node.agentName || node.id).join(' -> ');
+
+              return (
+                <article key={pipeline.id} className="pipeline-card">
+                  <header>
+                    <div className="pipeline-header-info">
+                      <h4>{pipeline.name}</h4>
+                      <span>
+                        {pipeline.projectId
+                          ? t('pipelines.list.project', { project: pipeline.projectId })
+                          : t('pipelines.list.noProject')}
+                      </span>
+                    </div>
+                    {pipeline.version ? (
+                      <span className="pipeline-version">v{pipeline.version}</span>
+                    ) : null}
+                  </header>
+                  <p>{pipeline.description || t('pipelines.list.descriptionMissing')}</p>
+                  <p className="pipeline-flow-summary">
+                    <strong>{t('pipelines.list.flow')}</strong>{' '}
+                    {flowString || t('pipelines.list.noNodes')}
+                  </p>
+                  <ul className="pipeline-flow">
+                    {nodes.map((node) => (
+                      <li key={node.id}>
+                        <span>{node.agentName}</span>
+                        <small>{t(`pipelines.form.kind.${node.kind}`, undefined, node.kind)}</small>
+                      </li>
+                    ))}
+                  </ul>
+                  <footer className="pipeline-card__footer">
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={() => handleRun(pipeline)}
+                      disabled={!isAgentOnline}
+                    >
+                      {t('pipelines.list.run')}
+                    </button>
+                    {typeof onShowHistory === 'function' ? (
+                      <button
+                        type="button"
+                        className="link-button"
+                        onClick={() => onShowHistory(pipeline)}
+                      >
+                        {t('pipelines.list.history')}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="link-button"
-                      onClick={() => onShowHistory(pipeline)}
+                      onClick={() => handleEditPipeline(pipeline)}
                     >
-                      {t('pipelines.list.history')}
+                      {t('pipelines.list.edit')}
                     </button>
-                  ) : null}
-                </footer>
-              </article>
-            ))}
+                    <button
+                      type="button"
+                      className="link-button warning"
+                      onClick={() => handleDeletePipelineClick(pipeline)}
+                    >
+                      {t('pipelines.list.delete')}
+                    </button>
+                  </footer>
+                </article>
+              );
+            })}
           </div>
         )}
       </InfoCard>
@@ -201,7 +353,25 @@ export function PipelinesPage({
         title={t('pipelines.form.title')}
         subtitle={t('pipelines.form.subtitle')}
       >
+        {isEditing ? (
+          <div className="form-banner">
+            <span>{t('pipelines.form.editing', { name: formState.name || editingId })}</span>
+            <button type="button" className="link-button" onClick={handleResetForm}>
+              {t('common.cancel')}
+            </button>
+          </div>
+        ) : null}
         <form className="form" onSubmit={handleSubmit}>
+          <label>
+            {t('pipelines.form.identifier')}
+            <input
+              name="id"
+              value={formState.id}
+              onChange={handleChange}
+              placeholder={t('pipelines.form.idPlaceholder')}
+              disabled={isEditing}
+            />
+          </label>
           <label>
             {t('pipelines.form.name')}
             <input
@@ -221,33 +391,80 @@ export function PipelinesPage({
               placeholder={t('pipelines.form.descriptionPlaceholder')}
             />
           </label>
-          <div className="pipeline-steps">
+                    <div className="pipeline-steps">
             <div className="pipeline-steps__header">
               <span className="pipeline-steps__label">{t('pipelines.form.steps')}</span>
-              <button type="button" className="link-button" onClick={handleResetNodes}>
-                {t('pipelines.form.stepsReset')}
-              </button>
+              <div className="pipeline-steps__controls">
+                <button type="button" className="link-button" onClick={handleAddNode}>
+                  {t('pipelines.form.addStep')}
+                </button>
+                <button type="button" className="link-button" onClick={handleResetNodes}>
+                  {t('pipelines.form.stepsReset')}
+                </button>
+              </div>
             </div>
             <p className="hint">{t('pipelines.form.stepsHint')}</p>
             <ul className="pipeline-steps__list">
-              {formNodes.map((node, index) => (
-                <li
-                  key={node.id}
-                  className="pipeline-steps__item"
-                  draggable
-                  onDragStart={(event) => handleDragStart(event, index)}
-                  onDragOver={handleDragOver}
-                  onDrop={(event) => handleDrop(event, index)}
-                >
-                  <span className="pipeline-steps__handle" aria-hidden="true">
-                    в‹®в‹®
-                  </span>
-                  <div className="pipeline-steps__meta">
-                    <strong>{node.agentName}</strong>
-                    <small>{t(`pipelines.form.kind.${node.kind}`, undefined, node.kind)}</small>
-                  </div>
-                </li>
-              ))}
+              {formNodes.map((node, index) => {
+                const selectedAgent = node.agentName || '';
+                const hasExistingOption = safeAgentOptions.some((option) => option.id === selectedAgent);
+                const agentChoices = hasExistingOption
+                  ? safeAgentOptions
+                  : selectedAgent
+                    ? [{ id: selectedAgent, label: selectedAgent }, ...safeAgentOptions]
+                    : safeAgentOptions;
+
+                return (
+                  <li
+                    key={node.id || `node-${index}`}
+                    className="pipeline-steps__item"
+                    draggable
+                    onDragStart={(event) => handleDragStart(event, index)}
+                    onDragOver={handleDragOver}
+                    onDrop={(event) => handleDrop(event, index)}
+                  >
+                    <span className="pipeline-steps__handle" aria-hidden="true">
+                      ::
+                    </span>
+                    <div className="pipeline-steps__meta">
+                      <label>
+                        {t('pipelines.form.stepAgent', { index: index + 1 })}
+                        <select
+                          value={selectedAgent}
+                          onChange={(event) => handleNodeAgentChange(index, event.target.value)}
+                        >
+                          <option value="">{t('pipelines.form.agentPlaceholder')}</option>
+                          {agentChoices.map((option) => (
+                            <option key={`${option.id}-${index}`} value={option.id}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        {t('pipelines.form.stepKind')}
+                        <select
+                          value={node.kind || 'task'}
+                          onChange={(event) => handleNodeKindChange(index, event.target.value)}
+                        >
+                          <option value="task">{t('pipelines.form.kind.task')}</option>
+                          <option value="guard">{t('pipelines.form.kind.guard')}</option>
+                          <option value="humanGate">{t('pipelines.form.kind.humanGate')}</option>
+                          <option value="router">{t('pipelines.form.kind.router')}</option>
+                        </select>
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      className="link-button warning"
+                      onClick={() => handleRemoveNode(index)}
+                      disabled={formNodes.length <= 1}
+                    >
+                      {t('pipelines.form.removeStep')}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </div>
           <label>
@@ -285,10 +502,26 @@ PipelinesPage.propTypes = {
     name: PropTypes.string
   }),
   brief: PropTypes.object,
-  onCreatePipeline: PropTypes.func.isRequired,
+  onSavePipeline: PropTypes.func.isRequired,
+  onDeletePipeline: PropTypes.func.isRequired,
   onRunPipeline: PropTypes.func.isRequired,
   onRefresh: PropTypes.func.isRequired,
   isAgentOnline: PropTypes.bool,
   onNotify: PropTypes.func.isRequired,
+  agentOptions: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.string.isRequired,
+      label: PropTypes.string.isRequired,
+      source: PropTypes.string
+    })
+  ),
   onShowHistory: PropTypes.func
 };
+
+
+
+
+
+
+
+

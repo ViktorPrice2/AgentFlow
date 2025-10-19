@@ -50,7 +50,14 @@
       "telegramProxySaved": "Прокси сохранён",
       "telegramProxyCleared": "Прокси очищен",
       "telegramProxyError": "Не удалось обновить настройки прокси",
-      "telegramProxyLoadError": "Не удалось загрузить настройки прокси"
+      "telegramProxyLoadError": "Не удалось загрузить настройки прокси",
+      "pipelineSaved": "Пайплайн \"{name}\" сохранён",
+      "pipelineDeleted": "Пайплайн \"{name}\" удалён",
+      "pipelineDeleteError": "Не удалось удалить пайплайн",
+      "agentSaved": "Агент {name} сохранён",
+      "agentSaveError": "Не удалось сохранить агента",
+      "agentDeleted": "Агент {name} удалён",
+      "agentDeleteError": "Не удалось удалить агента"
     },
     "actions": {
       "openLogs": "Открыть журнал",
@@ -225,7 +232,7 @@
     "apiKeyNotRequired": "ключ не требуется",
     "updatedAt": "Обновлено",
     "agentsTitle": "Агенты по умолчанию",
-    "agentsSubtitle": "Готовые роли, которые идут вместе с платформой.",
+    "agentsSubtitle": "Плагины и локальные конфигурации. Настраивайте параметры здесь.",
     "plugins": "Встроенные агенты",
     "pluginsEmpty": "Встроенных агентов пока нет.",
     "configs": "Настроенные вручную агенты",
@@ -237,14 +244,30 @@
       "source": "Источник",
       "description": "Описание",
       "history": "История версий",
-      "changes": "Изменения"
+      "changes": "Изменения",
+      "project": "Проект",
+      "connections": "Пайплайны",
+      "actions": "Действия",
+      "noUsage": "Не используется",
+      "morePipelines": "+{count} ещё"
+    },
+    "form": {
+      "createTitle": "Создать конфигурацию агента",
+      "editTitle": "Редактирование {name}",
+      "resetButton": "Сбросить форму",
+      "hint": "Измените JSON, чтобы настроить инструкции, шаблоны и параметры агента.",
+      "jsonLabel": "JSON агента",
+      "jsonError": "Некорректный JSON: {message}",
+      "confirmDelete": "Удалить агента \"{name}\"?"
     }
   },
   "pipelines": {
     "toast": {
       "nameRequired": "Введите название цепочки.",
       "overrideError": "Не удалось прочитать JSON в поле «Переопределения».",
-      "saved": "Цепочка сохранена."
+      "saved": "Цепочка сохранена.",
+      "stepsRequired": "Добавьте хотя бы один шаг в пайплайн",
+      "agentMissing": "Назначьте агента каждому шагу перед сохранением"
     },
     "list": {
       "title": "Цепочки агентов",
@@ -256,7 +279,12 @@
       "noProject": "Проект не выбран",
       "descriptionMissing": "Описание не добавлено",
       "run": "Запустить",
-      "history": "История версий"
+      "history": "История версий",
+      "flow": "Последовательность:",
+      "noNodes": "Шаги не заданы",
+      "edit": "Редактировать",
+      "delete": "Удалить",
+      "confirmDelete": "Удалить пайплайн \"{name}\"?"
     },
     "form": {
       "title": "Создать цепочку",
@@ -275,8 +303,17 @@
       "kind": {
         "task": "Задача",
         "guard": "Проверка",
-        "humanGate": "Пауза на согласование"
-      }
+        "humanGate": "Пауза на согласование",
+        "router": "Маршрутизатор"
+      },
+      "identifier": "Идентификатор",
+      "idPlaceholder": "Сгенерируется автоматически, если не заполнено",
+      "editing": "Редактирование {name}",
+      "stepAgent": "Агент шага {index}",
+      "stepKind": "Тип",
+      "agentPlaceholder": "Выберите агента",
+      "addStep": "Добавить шаг",
+      "removeStep": "Удалить шаг"
     }
   },
   "runs": {

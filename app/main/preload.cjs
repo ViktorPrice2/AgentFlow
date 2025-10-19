@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('AgentAPI', {
   version: () => 'Phase 3 stub',
   listAgents: () => ipcRenderer.invoke('AgentFlow:agents:list'),
   upsertAgent: (agent) => ipcRenderer.invoke('AgentFlow:agents:upsert', agent),
+  deleteAgent: (agentId) => ipcRenderer.invoke('AgentFlow:agents:delete', agentId),
   listProviderStatus: () => ipcRenderer.invoke('AgentFlow:providers:status'),
   runPipelineSimple: (input) => ipcRenderer.invoke('AgentFlow:pipeline:runSimple', input),
   runPipeline: (pipelineDefinition, payload) =>
@@ -14,6 +15,7 @@ contextBridge.exposeInMainWorld('AgentAPI', {
   listPipelines: () => ipcRenderer.invoke('AgentFlow:pipeline:list'),
   upsertPipeline: (pipelineDefinition) =>
     ipcRenderer.invoke('AgentFlow:pipeline:upsert', pipelineDefinition),
+  deletePipeline: (pipelineId) => ipcRenderer.invoke('AgentFlow:pipeline:delete', pipelineId),
   getTelegramStatus: () => ipcRenderer.invoke('bot:status'),
   setTelegramToken: (token) => ipcRenderer.invoke('bot:setToken', token),
   startTelegramBot: () => ipcRenderer.invoke('bot:start'),

@@ -1,12 +1,12 @@
 {
   "chatId": 1281209549,
   "projectId": "d9347986-5883-4572-bcdb-926bb87c93a7",
-  "createdAt": "2025-10-19T07:28:26.730Z",
-  "updatedAt": "2025-10-19T07:28:56.863Z",
-  "stepIndex": 8,
-  "answersCount": 8,
-  "completedAt": "2025-10-19T07:28:56.846Z",
-  "briefPath": "D:\\AgentFlow\\app\\data\\briefs\\brief-1281209549.json",
+  "createdAt": "2025-10-19T12:07:54.490Z",
+  "updatedAt": "2025-10-19T12:08:08.532Z",
+  "stepIndex": 0,
+  "answersCount": 0,
+  "completedAt": null,
+  "briefPath": null,
   "user": {
     "id": 1281209549,
     "username": "Nmvnmru",

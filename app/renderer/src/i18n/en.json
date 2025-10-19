@@ -35,11 +35,11 @@
       "telegramBriefUpdated": "Telegram brief updated",
       "telegramNoBrief": "No new briefs for this project yet",
       "telegramBriefError": "Failed to fetch Telegram brief",
-      "telegramApplyEmpty": "Nothing to apply вЂ” refresh the Telegram brief",
+      "telegramApplyEmpty": "Nothing to apply - refresh the Telegram brief",
       "telegramApplied": "Brief form updated with Telegram data",
       "planProjectRequired": "Select a project to generate a plan",
       "planReady": "Campaign plan is ready",
-      "planMissingData": "Not enough data for the plan вЂ” fill in the brief",
+      "planMissingData": "Not enough data for the plan - fill in the brief",
       "planError": "Failed to generate campaign plan",
       "themeChanged": "Theme switched to {theme}",
       "genericError": "Unexpected error captured",
@@ -50,7 +50,14 @@
       "telegramProxySaved": "Proxy saved",
       "telegramProxyCleared": "Proxy cleared",
       "telegramProxyError": "Failed to update proxy settings",
-      "telegramProxyLoadError": "Failed to load proxy settings"
+      "telegramProxyLoadError": "Failed to load proxy settings",
+      "pipelineSaved": "Pipeline \"{name}\" saved",
+      "pipelineDeleted": "Pipeline \"{name}\" removed",
+      "agentSaved": "Agent {name} saved",
+      "agentSaveError": "Failed to save agent",
+      "agentDeleted": "Agent {name} removed",
+      "agentDeleteError": "Failed to delete agent",
+      "pipelineDeleteError": "Failed to delete pipeline"
     },
     "actions": {
       "openLogs": "Open log panel",
@@ -91,7 +98,7 @@
     "stop": "Stop bot",
     "status": "Status",
     "deeplink": "Deeplink",
-    "notAvailable": "вЂ”",
+    "notAvailable": "N/A",
     "selectProject": "Select a project to link the scenario.",
     "cancel": "Cancel",
     "delete": "Delete",
@@ -177,7 +184,7 @@
     },
     "summary": {
       "title": "Agent summary",
-      "subtitle": "Filled automatically вЂ” helps gauge brief completeness.",
+      "subtitle": "Filled automatically and helps gauge brief completeness.",
       "empty": "Fill the form on the left to see the summary."
     },
     "labels": {
@@ -222,7 +229,7 @@
     "apiKeyNotRequired": "not required",
     "updatedAt": "Updated",
     "agentsTitle": "Agents",
-    "agentsSubtitle": "Plugins and custom configs. UI management is coming later.",
+    "agentsSubtitle": "Plugins and custom configs. Manage overrides here.",
     "plugins": "Loaded plugins",
     "pluginsEmpty": "No plugins found",
     "configs": "Project configs",
@@ -234,18 +241,35 @@
       "source": "Source",
       "description": "Description",
       "history": "History",
-      "changes": "Changes"
+      "changes": "Changes",
+      "project": "Project",
+      "connections": "Pipelines",
+      "actions": "Actions",
+      "noUsage": "Not used",
+      "morePipelines": "+{count} more"
+    },
+    "form": {
+      "createTitle": "Create agent config",
+      "editTitle": "Editing {name}",
+      "resetButton": "Reset form",
+      "hint": "Edit the JSON payload to configure agent instructions, templates and params.",
+      "jsonLabel": "Agent payload (JSON)",
+      "jsonError": "Invalid JSON: {message}",
+      "confirmDelete": "Remove agent \"{name}\"?"
     }
   },
   "pipelines": {
     "toast": {
       "nameRequired": "Pipeline name is required",
       "overrideError": "Invalid JSON in Override",
-      "saved": "Pipeline saved"
+      "saved": "Pipeline saved",
+      "deleted": "Pipeline deleted",
+      "agentMissing": "Assign an agent to each step before saving",
+      "stepsRequired": "Add at least one step to the pipeline"
     },
     "list": {
       "title": "Pipelines",
-      "subtitle": "Linear flow: Writer в†’ StyleGuard в†’ HumanGate в†’ Uploader. Visual editor coming soon.",
+      "subtitle": "Linear flow: Writer -> StyleGuard -> HumanGate -> Uploader. Visual editor coming soon.",
       "refresh": "Refresh list",
       "emptyTitle": "No pipelines yet",
       "emptyDescription": "Use the form on the right to store the first scenario.",
@@ -253,7 +277,12 @@
       "noProject": "No project",
       "descriptionMissing": "No description",
       "run": "Run",
-      "history": "Version changes"
+      "history": "Version changes",
+      "edit": "Edit",
+      "delete": "Delete",
+      "confirmDelete": "Delete pipeline \"{name}\"?",
+      "flow": "Flow:",
+      "noNodes": "No nodes defined"
     },
     "form": {
       "title": "Create pipeline",
@@ -272,8 +301,18 @@
       "kind": {
         "task": "Task",
         "guard": "Guard",
-        "humanGate": "Human gate"
-      }
+        "humanGate": "Human gate",
+        "router": "Router"
+      },
+      "identifier": "Identifier",
+      "idPlaceholder": "Auto-generated if empty",
+      "editing": "Editing {name}",
+      "stepAgent": "Step {index} agent",
+      "stepKind": "Kind",
+      "agentPlaceholder": "Select agent",
+      "addStep": "Add step",
+      "removeStep": "Remove step",
+      "kind.router": "Router"
     }
   },
   "runs": {
@@ -351,7 +390,7 @@
       "statusStarting": "Starting...",
       "statusErrorShort": "Error",
       "statusUnknown": "Unknown",
-      "flowHint": "Flow: <code>/start project=ID → /setup → /finish</code>",
+      "flowHint": "Flow: <code>/start project=ID -> /setup -> /finish</code>",
       "proxyLabel": "HTTPS proxy (optional)",
       "proxyPlaceholder": "https://user:pass@host:port",
       "proxySave": "Save proxy",
@@ -404,7 +443,7 @@
       "cancel": "Cancel",
       "refresh": "Refresh list",
       "hint": "Use cron format <code>minute hour day-of-month month day-of-week</code>.",
-      "hintExample": "For example, <code>*/30 * * * *</code> вЂ” every 30 minutes."
+      "hintExample": "For example, <code>*/30 * * * *</code> runs every 30 minutes."
     },
     "status": {
       "title": "Scheduler status",
@@ -435,7 +474,7 @@
   },
   "versionHistory": {
     "title": "Version changes",
-    "entity": "{name} В· {type}",
+    "entity": "{name} vs {type}",
     "agent": "Agent",
     "pipeline": "Pipeline",
     "loading": "Loading history...",
@@ -458,9 +497,10 @@
     "diffLoading": "Calculating diff...",
     "diffHint": "Select versions and click \"Show changes\" to inspect the diff.",
     "close": "Close",
-    "comparison": "Comparing v{left} в†” v{right}"
+    "comparison": "Comparing v{left} vs v{right}"
   },
   "toast": {
     "close": "Close"
   }
 }
+

@@ -232,6 +232,28 @@ export function createEntityStore(options = {}) {
     }
   }
 
+  function getAgentById(id) {
+    if (!id) {
+      throw new Error('Agent id is required');
+    }
+
+    const db = openDatabase(dbPath);
+
+    try {
+      const row = db
+        .prepare(
+          `SELECT id, projectId, name, type, config, version, createdAt, updatedAt
+             FROM Agents
+            WHERE id = ?`
+        )
+        .get(id);
+
+      return row ? buildAgentRecord(row) : null;
+    } finally {
+      db.close();
+    }
+  }
+
   function saveAgent(agent) {
     if (!agent || (!agent.id && !agent.name)) {
       throw new Error('Agent config must include id or name');
@@ -290,6 +312,20 @@ export function createEntityStore(options = {}) {
         createdAt,
         updatedAt: now
       });
+    } finally {
+      db.close();
+    }
+  }
+
+  function deleteAgent(id) {
+    if (!id) {
+      throw new Error('Agent id is required');
+    }
+
+    const db = openDatabase(dbPath);
+
+    try {
+      db.prepare('DELETE FROM Agents WHERE id = ?').run(id);
     } finally {
       db.close();
     }
@@ -390,6 +426,20 @@ export function createEntityStore(options = {}) {
         createdAt,
         updatedAt: now
       });
+    } finally {
+      db.close();
+    }
+  }
+
+  function deletePipeline(id) {
+    if (!id) {
+      throw new Error('Pipeline id is required');
+    }
+
+    const db = openDatabase(dbPath);
+
+    try {
+      db.prepare('DELETE FROM Pipelines WHERE id = ?').run(id);
     } finally {
       db.close();
     }
@@ -633,10 +683,13 @@ export function createEntityStore(options = {}) {
 
   return {
     listAgentRecords,
+    getAgentById,
     saveAgent,
+    deleteAgent,
     listPipelines,
     getPipelineById,
     savePipeline,
+    deletePipeline,
     listHistory,
     diffEntityVersions,
     buildAgentConfigMap,
