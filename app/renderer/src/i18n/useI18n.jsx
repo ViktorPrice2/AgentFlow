@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo } from 'react';
+import { createContext, useContext, useEffect, useMemo } from 'react';
 import en from './en.json';
 import ru from './ru.json';
 import { usePersistentState } from '../hooks/usePersistentState.js';
@@ -34,6 +34,18 @@ function formatTemplate(template, values = {}) {
 
 export function I18nProvider({ children }) {
   const [language, setLanguage] = usePersistentState('af.language', 'ru');
+
+  useEffect(() => {
+    const handler = (event) => {
+      if (event?.data?.__e2e__ && event.data.type === 'SET_LANG') {
+        const next = event.data.lang === 'en' ? 'en' : 'ru';
+        setLanguage(next);
+      }
+    };
+
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [setLanguage]);
 
   const value = useMemo(() => {
     const dictionary = dictionaries[language] || dictionaries.ru;

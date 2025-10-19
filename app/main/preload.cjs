@@ -107,3 +107,18 @@ contextBridge.exposeInMainWorld('ErrorAPI', {
     ipcRenderer.send(ERROR_REPORT_CHANNEL, { level: 'error', message, details });
   }
 });
+
+// Тестовые хуки для локальных e2e сценариев (не доступны вне Electron)
+try {
+  contextBridge.exposeInMainWorld('e2e', {
+    setLang(lang) {
+      if (!lang) {
+        return;
+      }
+
+      window.postMessage({ __e2e__: true, type: 'SET_LANG', lang }, '*');
+    }
+  });
+} catch (error) {
+  // noop: вне Electron (например, Vitest) мост не нужен
+}

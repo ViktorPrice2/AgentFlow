@@ -1,14 +1,19 @@
-<testsuites id="" name="" tests="2" failures="0" skipped="1" errors="0" time="5.341882">
-<testsuite name="smoke.pipeline.spec.mjs" timestamp="2025-10-19T02:44:56.342Z" hostname="" tests="2" failures="0" skipped="1" time="3.122" errors="0">
-<testcase name="Electron smoke › приложение стартует и пишет лог запуска" classname="smoke.pipeline.spec.mjs" time="3.122">
+<testsuites id="" name="" tests="2" failures="0" skipped="0" errors="0" time="7.275806999999999">
+<testsuite name="smoke.pipeline.spec.mjs" timestamp="2025-10-19T07:42:49.156Z" hostname="" tests="2" failures="0" skipped="0" time="4.174" errors="0">
+<testcase name="Electron smoke › приложение стартует и пишет лог запуска" classname="smoke.pipeline.spec.mjs" time="2.842">
 </testcase>
-<testcase name="Electron smoke › переключение языка и smoke Scheduler" classname="smoke.pipeline.spec.mjs" time="0">
-<properties>
-<property name="skip" value="">
-</property>
-</properties>
-<skipped>
-</skipped>
+<testcase name="Electron smoke › переключение языка и smoke Scheduler" classname="smoke.pipeline.spec.mjs" time="1.332">
+<system-out>
+<![CDATA[[verify] Проверка выполнена {
+  scheduler: { status: [32m'ok'[39m, reason: [32m'Последний запуск 0 секунд назад'[39m },
+  i18n: { status: [32m'ok'[39m, reason: [32m'Словари загружены (en.json, ru.json)'[39m },
+  telegram: {
+    status: [32m'ok'[39m,
+    reason: [32m'Telegram IPC зарегистрирован, токены заданы'[39m
+  }
+}
+]]>
+</system-out>
 </testcase>
 </testsuite>
 </testsuites>

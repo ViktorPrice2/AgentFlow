@@ -8,7 +8,7 @@
     "reason": "Словари загружены (en.json, ru.json)"
   },
   "telegram": {
-    "status": "pending",
-    "reason": "Telegram токены отсутствуют (ожидаются ключи TG_TOKEN и TG_CHAT_ID)"
+    "status": "ok",
+    "reason": "Telegram IPC зарегистрирован, токены заданы"
   }
 }

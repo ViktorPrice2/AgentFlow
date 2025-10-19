@@ -995,7 +995,7 @@ function App() {
   ]);
 
   return (
-    <div className="app-container">
+    <div className="app-container" data-testid="app-root">
       <header className="app-header">
         <div className="app-header__info">
           <h1>{t('app.title')}</h1>

@@ -1,7 +1,7 @@
 {
-  "runId": "d7608ce5-19b8-46d0-9f87-96694ed6e64a",
-  "startedAt": "2025-10-19T02:45:17.628Z",
-  "finishedAt": "2025-10-19T02:46:15.777Z",
+  "runId": "1c3fd87c-e435-4dc6-9646-3b51840fc83a",
+  "startedAt": "2025-10-19T07:47:58.285Z",
+  "finishedAt": "2025-10-19T07:48:58.626Z",
   "results": [
     {
       "id": "W-VRF-01",
@@ -90,7 +90,7 @@
   "checks": {
     "scheduler": "ok",
     "i18n": "ok",
-    "tg": "pending",
+    "tg": "ok",
     "e2e": "pending"
   }
 }

@@ -1,9 +1,11 @@
 import { execSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-const ROOT = process.cwd();
+const CWD = process.cwd();
+const ROOT = existsSync(path.join(CWD, 'plans', 'dag.json')) ? CWD : path.resolve(CWD, '..');
 const DAG_PATH = path.join(ROOT, 'plans', 'dag.json');
 const WORKITEMS_DIR = path.join(ROOT, 'plans', 'workitems');
 const REPORTS_DIR = path.join(ROOT, 'reports');
@@ -39,7 +41,7 @@ async function ensureReportsDir() {
 }
 
 function runCommand(command) {
-  execSync(command, { stdio: 'inherit' });
+  execSync(command, { stdio: 'inherit', cwd: ROOT });
 }
 
 async function loadVerifySummary() {
