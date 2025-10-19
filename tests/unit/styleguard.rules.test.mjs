@@ -24,16 +24,21 @@ const baseConfig = {
   templates: {
     pass: 'Pass',
     fail: 'Fail'
+  },
+  engine: {
+    provider: 'mock',
+    model: 'rule-based'
   }
 };
 
-function createCtx(config = baseConfig) {
+function createCtx(config = baseConfig, overrides = {}) {
   return {
     runId: 'styleguard-test',
     getAgentConfig: vi.fn().mockImplementation((agentName) => {
       return agentName === 'StyleGuard' ? config : null;
     }),
-    log: vi.fn()
+    log: vi.fn(),
+    ...overrides
   };
 }
 
@@ -145,5 +150,45 @@ describe('StyleGuard rules', () => {
 
     expect(result.guard.pass).toBe(true);
     expect(result.guard.results[0].pass).toBe(true);
+  });
+
+  it('merges LLM review when available', async () => {
+    const config = {
+      ...baseConfig,
+      engine: {
+        provider: 'openai',
+        model: 'gpt-4o-mini'
+      }
+    };
+
+    const callLLM = vi.fn().mockResolvedValue({
+      providerId: 'openai',
+      model: 'gpt-4o-mini',
+      content: JSON.stringify({
+        verdict: 'fail',
+        summary: 'Detected stylistic issues.',
+        suggestions: ['Avoid banned phrases.']
+      })
+    });
+
+    const payload = { content: 'Compliant copy' };
+    const ctx = createCtx(config, {
+      providers: {
+        callLLM
+      }
+    });
+
+    const result = await runStyleGuard(payload, ctx);
+
+    expect(result.guard.rulePass).toBe(true);
+    expect(result.guard.pass).toBe(false);
+    expect(result.guard.llm).toMatchObject({
+      verdict: 'fail',
+      summary: 'Detected stylistic issues.',
+      suggestions: ['Avoid banned phrases.'],
+      providerId: 'openai'
+    });
+    expect(result.summary).toBe('Detected stylistic issues.');
+    expect(ctx.log.mock.calls.find(([event]) => event === 'agent:styleGuard:llm:used')).toBeDefined();
   });
 });

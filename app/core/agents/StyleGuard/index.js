@@ -1,5 +1,39 @@
 import { getValueByPath, renderTemplate, renderTemplateWithFallback } from '../../utils/template.js';
 
+const DEFAULT_LLM_REVIEW_PROMPT =
+  'You are a marketing compliance reviewer. Evaluate the provided copy quality report.';
+
+function sanitizeJsonBlock(rawContent = '') {
+  if (typeof rawContent !== 'string') {
+    return null;
+  }
+
+  const fencedMatch = rawContent.match(/```json\s*([\s\S]*?)```/i);
+  const candidate = fencedMatch ? fencedMatch[1] : rawContent;
+  const trimmed = candidate.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const firstBrace = trimmed.indexOf('{');
+    const lastBrace = trimmed.lastIndexOf('}');
+
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      try {
+        return JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  }
+}
+
 function mergeInputs(payload, config) {
   const override = payload?.override && typeof payload.override === 'object' ? payload.override : {};
   const overrideParams =
@@ -140,6 +174,48 @@ function evaluateRule(rule, data, templates) {
   };
 }
 
+function shouldUseLlm(agentConfig, ctx) {
+  if (!ctx?.providers?.callLLM) {
+    return false;
+  }
+
+  const engine = agentConfig?.engine;
+  if (!engine || engine.provider === 'mock') {
+    return false;
+  }
+
+  if (agentConfig?.params?.llmReview === false) {
+    return false;
+  }
+
+  return true;
+}
+
+function buildReviewPrompt({ merged, evaluations, agentConfig }) {
+  const explicitPrompt =
+    (typeof agentConfig?.templates?.llmPrompt === 'string' && agentConfig.templates.llmPrompt) ||
+    (typeof agentConfig?.params?.llmPrompt === 'string' && agentConfig.params.llmPrompt);
+
+  if (explicitPrompt) {
+    return renderTemplate(explicitPrompt, { ...merged, evaluations });
+  }
+
+  return [
+    agentConfig?.instructions || DEFAULT_LLM_REVIEW_PROMPT,
+    '',
+    'Assess the supplied evaluation results for marketing copy. Respond in JSON with fields:',
+    '- verdict: "pass" or "fail"',
+    '- summary: short natural language explanation (1-2 sentences)',
+    '- suggestions: optional array with improvement tips (strings)',
+    '',
+    'Evaluation results JSON:',
+    JSON.stringify(evaluations, null, 2),
+    '',
+    'Context JSON:',
+    JSON.stringify(merged, null, 2)
+  ].join('\n');
+}
+
 export async function execute(payload, ctx) {
   const agentConfig = ctx.getAgentConfig?.('StyleGuard');
 
@@ -155,32 +231,101 @@ export async function execute(payload, ctx) {
 
   const evaluations = rules.map((rule) => evaluateRule(rule, merged, templates));
   const failed = evaluations.filter((result) => !result.pass);
-  const guardPassed = failed.length === 0;
+  const rulePass = failed.length === 0;
+  let guardPassed = rulePass;
+  let llmReview = null;
+
+  if (shouldUseLlm(agentConfig, ctx)) {
+    try {
+      const prompt = buildReviewPrompt({ merged, evaluations, agentConfig });
+      const response = await ctx.providers.callLLM('StyleGuard', {
+        messages: [
+          {
+            role: 'system',
+            content: agentConfig.instructions || DEFAULT_LLM_REVIEW_PROMPT
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        override: payload?.override?.engine
+      });
+
+      const parsed = sanitizeJsonBlock(response?.content);
+
+      if (parsed && typeof parsed === 'object') {
+        const verdict = typeof parsed.verdict === 'string' ? parsed.verdict.toLowerCase() : null;
+        const summaryText = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
+        const suggestions = Array.isArray(parsed.suggestions)
+          ? parsed.suggestions.filter((item) => typeof item === 'string' && item.trim().length > 0)
+          : [];
+
+        llmReview = {
+          verdict: verdict === 'fail' ? 'fail' : 'pass',
+          summary: summaryText || null,
+          suggestions,
+          providerId: response?.providerId ?? null,
+          model: response?.model ?? agentConfig.engine?.model ?? null,
+          mode: response?.mode ?? null
+        };
+
+        if (llmReview.verdict === 'fail') {
+          guardPassed = false;
+        }
+
+        await ctx.log?.('agent:styleGuard:llm:used', {
+          runId: ctx.runId,
+          verdict: llmReview.verdict,
+          provider: llmReview.providerId,
+          model: llmReview.model
+        });
+      } else {
+        await ctx.log?.('agent:styleGuard:llm:parse_error', {
+          runId: ctx.runId,
+          provider: response?.providerId ?? null,
+          model: response?.model ?? null,
+          content: response?.content ?? null
+        });
+      }
+    } catch (error) {
+      await ctx.log?.('agent:styleGuard:llm:error', {
+        runId: ctx.runId,
+        message: error?.message,
+        code: error?.code
+      });
+    }
+  }
 
   const summaryTemplateKey = guardPassed ? 'pass' : 'fail';
-  const summary = renderTemplateWithFallback(
-    templates[summaryTemplateKey],
-    agentConfig.params?.[`${summaryTemplateKey}Template`],
-    { ...merged, evaluations }
-  );
-
-  await ctx.log?.('agent:styleGuard:completed', {
-    runId: ctx.runId,
-    passed: guardPassed,
-    failed: failed.map((entry) => entry.id)
-  });
+  const summary =
+    llmReview?.summary ||
+    renderTemplateWithFallback(
+      templates[summaryTemplateKey],
+      agentConfig.params?.[`${summaryTemplateKey}Template`],
+      { ...merged, evaluations }
+    );
 
   const guardPayload = {
     ...payload,
     guard: {
       pass: guardPassed,
-      results: evaluations
+      rulePass,
+      results: evaluations,
+      llm: llmReview
     }
   };
 
   if (summary) {
     guardPayload.summary = summary;
   }
+
+  await ctx.log?.('agent:styleGuard:completed', {
+    runId: ctx.runId,
+    passed: guardPassed,
+    failed: failed.map((entry) => entry.id),
+    mode: llmReview ? 'rule+llm' : 'rule-only'
+  });
 
   return guardPayload;
 }

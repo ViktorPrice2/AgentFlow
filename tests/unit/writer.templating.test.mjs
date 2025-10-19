@@ -14,17 +14,21 @@ const baseConfig = {
   templates: {
     brief: 'Brand: {{brand}} | Topic: {{topic}} | Tone: {{tone}} | CTA: {{callToAction}}',
     summary: ''
+  },
+  engine: {
+    provider: 'mock',
+    model: 'template'
   }
 };
 
-function createCtx(config = baseConfig) {
+function createCtx(config = baseConfig, overrides = {}) {
   return {
     runId: 'writer-test',
     getAgentConfig: vi.fn().mockImplementation((agentName) => {
       return agentName === 'WriterAgent' ? config : null;
     }),
     log: vi.fn(),
-    invokeLLM: vi.fn()
+    ...overrides
   };
 }
 
@@ -45,10 +49,13 @@ describe('WriterAgent templating', () => {
     expect(output).toContain('Automation launch');
     expect(output).toContain('Bold');
     expect(output).toContain('Join now');
-    expect(ctx.log).toHaveBeenCalledWith(
-      'agent:writer:completed',
-      expect.objectContaining({ runId: 'writer-test', outputs: ['brief'] })
-    );
+    const lastLogCall = ctx.log.mock.calls.at(-1);
+    expect(lastLogCall?.[0]).toBe('agent:writer:completed');
+    expect(lastLogCall?.[1]).toMatchObject({
+      runId: 'writer-test',
+      outputs: ['brief'],
+      mode: 'template'
+    });
   });
 
   it('falls back to config defaults when topic or brand are missing', async () => {
@@ -67,7 +74,7 @@ describe('WriterAgent templating', () => {
     expect(output).toContain('Learn more');
   });
 
-  it('does not rely on external LLM integrations', async () => {
+  it('ignores LLM when provider manager is not available', async () => {
     const payload = {
       brand: 'AgentFlow',
       topic: 'Automation launch'
@@ -76,6 +83,64 @@ describe('WriterAgent templating', () => {
     const ctx = createCtx();
     await runWriterAgent(payload, ctx);
 
-    expect(ctx.invokeLLM).not.toHaveBeenCalled();
+    expect(ctx.log.mock.calls.find(([event]) => event === 'agent:writer:llm:used')).toBeUndefined();
+  });
+
+  it('uses LLM outputs when provider manager succeeds', async () => {
+    const payload = {
+      brand: 'AgentFlow',
+      topic: 'Launch',
+      tone: 'Bold',
+      callToAction: 'Buy now'
+    };
+
+    const engineConfig = {
+      ...baseConfig,
+      engine: {
+        provider: 'openai',
+        model: 'gpt-4o-mini'
+      }
+    };
+
+    const callLLM = vi.fn().mockResolvedValue({
+      mode: 'live',
+      providerId: 'openai',
+      model: 'gpt-4o-mini',
+      content: JSON.stringify({
+        brief: 'LLM generated brief',
+        summary: 'LLM summary'
+      })
+    });
+
+    const ctx = createCtx(engineConfig, {
+      providers: {
+        callLLM
+      }
+    });
+
+    const result = await runWriterAgent(payload, ctx);
+
+    expect(callLLM).toHaveBeenCalledWith(
+      'WriterAgent',
+      expect.objectContaining({
+        messages: expect.any(Array)
+      })
+    );
+
+    expect(result.writer.outputs.brief).toBe('LLM generated brief');
+    expect(result.summary).toBe('LLM summary');
+    expect(result.writer.mode).toBe('llm');
+    expect(result.writer.llm).toMatchObject({
+      providerId: 'openai',
+      model: 'gpt-4o-mini'
+    });
+
+    expect(ctx.log.mock.calls.find(([event]) => event === 'agent:writer:llm:used')).toBeDefined();
+    const lastLogCall = ctx.log.mock.calls.at(-1);
+    expect(lastLogCall?.[0]).toBe('agent:writer:completed');
+    expect(lastLogCall?.[1]).toMatchObject({
+      mode: 'llm',
+      provider: 'openai'
+    });
   });
 });
