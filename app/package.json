@@ -14,15 +14,18 @@
     "dev:renderer": "cd renderer && npm run dev",
     "dev:main": "cross-env NODE_ENV=development ELECTRON_RENDERER_URL=http://localhost:5173 node scripts/run-electron.cjs",
     "build:ui": "cd renderer && npm run build",
+    "build:renderer": "cd renderer && vite build",
     "build": "npm run build:ui && electron-builder",
+    "lint": "eslint . --ext .js,.jsx --max-warnings=0",
     "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:ci": "vitest run --coverage",
     "test:e2e": "playwright test -c tests/e2e/playwright.config.ts",
     "test:e2e:ui": "playwright test -c tests/e2e/playwright.config.ts --ui",
     "postinstall": "cd renderer && npm install"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1",
-    "cross-env": "^7.0.3",
     "dotenv": "^16.4.5",
     "electron": "31.7.7",
     "electron-builder": "^24.13.3",
@@ -33,15 +36,20 @@
     "telegraf": "^4.16.3"
   },
   "devDependencies": {
+    "@eslint/js": "^8.57.0",
     "@playwright/test": "^1.48.2",
     "@vitejs/plugin-react": "^4.0.1",
+    "@vitest/coverage-v8": "^1.6.1",
     "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
     "electron-rebuild": "^3.2.9",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.2",
     "playwright": "^1.48.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "vite": "^5.3.3",
-    "vitest": "^1.6.0"
+    "vitest": "^1.6.1"
   },
   "build": {
     "appId": "com.agentflow.desktop",

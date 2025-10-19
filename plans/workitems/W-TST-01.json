@@ -1,0 +1,11 @@
+{
+  "id": "W-TST-01",
+  "goal": "Юнит-тесты генератора Writer: тон, CTA, дефолты",
+  "inputs": ["app/server/agents/writer/index.js"],
+  "outputs": ["tests/unit/writer.templating.test.mjs"],
+  "acceptance": [
+    "Покрыть brand/topic/tone/cta",
+    "Нет внешних API",
+    "Coverage ≥ 80% для writer"
+  ]
+}

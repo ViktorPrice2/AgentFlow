@@ -7,8 +7,8 @@ function mergeInputs(payload, config) {
   const configParams = config?.params && typeof config.params === 'object' ? config.params : {};
 
   const merged = {
-    ...(payload || {}),
     ...configParams,
+    ...(payload || {}),
     ...overrideParams
   };
 
@@ -93,6 +93,38 @@ function evaluateRule(rule, data, templates) {
         templates[rule.reasonKey],
         rule.reasonTemplate,
         { ...context, expected }
+      );
+
+      if (reason) {
+        reasons.push(reason);
+      }
+    }
+  }
+
+  if (passed && typeof rule.maxLength === 'number') {
+    const valueString = typeof value === 'string' ? value : '';
+    if (valueString.length > rule.maxLength) {
+      passed = false;
+      const reason = renderTemplateWithFallback(
+        templates[rule.reasonKey],
+        rule.reasonTemplate,
+        { ...context, maxLength: rule.maxLength, length: valueString.length }
+      );
+
+      if (reason) {
+        reasons.push(reason);
+      }
+    }
+  }
+
+  if (passed && typeof rule.minLength === 'number') {
+    const valueString = typeof value === 'string' ? value : '';
+    if (valueString.length < rule.minLength) {
+      passed = false;
+      const reason = renderTemplateWithFallback(
+        templates[rule.reasonKey],
+        rule.reasonTemplate,
+        { ...context, minLength: rule.minLength, length: valueString.length }
       );
 
       if (reason) {

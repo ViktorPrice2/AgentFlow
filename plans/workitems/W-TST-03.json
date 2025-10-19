@@ -1,0 +1,12 @@
+{
+  "id": "W-TST-03",
+  "goal": "Юнит-тесты security utils: санитайз путей/имён, маскирование секретов",
+  "inputs": ["app/core/utils/security.js"],
+  "outputs": ["tests/unit/security.sanitize.test.mjs"],
+  "acceptance": [
+    "Имена: только [a-zA-Z0-9_-], остальное → '_'",
+    "Запись только в data/ и config/",
+    "Маскирование ключей в логах проходит",
+    "Coverage ≥ 80% для security utils"
+  ]
+}

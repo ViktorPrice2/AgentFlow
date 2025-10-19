@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "orchestrate": "node ./scripts/orchestrator.mjs"
+  },
   "dependencies": {
     "better-sqlite3": "^12.4.1"
   }

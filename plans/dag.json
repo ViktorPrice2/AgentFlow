@@ -1,0 +1,8 @@
+{
+  "nodes": [
+    { "id": "W-VRF-01", "type": "verify", "out": ["W-TST-01", "W-TST-02", "W-TST-03"] },
+    { "id": "W-TST-01", "type": "test", "in": ["W-VRF-01"], "out": [] },
+    { "id": "W-TST-02", "type": "test", "in": ["W-VRF-01"], "out": [] },
+    { "id": "W-TST-03", "type": "test", "in": ["W-VRF-01"], "out": [] }
+  ]
+}

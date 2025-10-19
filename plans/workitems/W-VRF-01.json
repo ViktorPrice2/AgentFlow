@@ -1,0 +1,15 @@
+{
+  "id": "W-VRF-01",
+  "goal": "Подтвердить работу Scheduler, Telegram-бота, i18n; составить отчет",
+  "inputs": [
+    "app/core/scheduler.js",
+    "app/main/ipcBot.js",
+    "app/renderer/src/i18n/useI18n.jsx"
+  ],
+  "outputs": ["docs/VerificationReport.md"],
+  "acceptance": [
+    "Scheduler cron */1 * * * * запускает задачу, записи в data/logs/scheduler.jsonl",
+    "Telegram /setup → /finish сохраняет JSON в data/briefs и UPSERT в Briefs",
+    "i18n RU/EN переключается; ошибок в консоли нет"
+  ]
+}

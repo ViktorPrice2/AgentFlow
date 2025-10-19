@@ -52,8 +52,26 @@ export function sanitizeArtifactPath(input) {
 }
 
 export function sanitizeFileName(input, fallback = 'file') {
-  const name = String(input ?? '').replace(/[^a-zA-Z0-9_-]/g, '_');
-  return name.length > 0 ? name : fallback;
+  const value = String(input ?? '');
+
+  if (value.length === 0) {
+    return fallback;
+  }
+
+  const parts = value.split('.');
+  const baseName = parts.shift() ?? '';
+  const sanitizedBase = baseName.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const sanitizedExtension = parts
+    .map((segment) => segment.replace(/[^a-zA-Z0-9]/g, ''))
+    .filter((segment) => segment.length > 0);
+
+  const safeBase = sanitizedBase.length > 0 ? sanitizedBase : fallback;
+
+  if (sanitizedExtension.length === 0) {
+    return safeBase;
+  }
+
+  return `${safeBase}.${sanitizedExtension.join('.')}`;
 }
 
 export function redactSensitive(value) {
@@ -79,4 +97,28 @@ export function redactSensitive(value) {
   }
 
   return value;
+}
+
+export function sanitizePath(targetPath, options) {
+  return assertAllowedPath(targetPath, options);
+}
+
+export function isPathAllowed(targetPath, { allowedRoots = DEFAULT_ALLOWED_ROOTS } = {}) {
+  try {
+    assertAllowedPath(targetPath, { allowedRoots });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function maskSecrets(input) {
+  if (input === null || input === undefined) {
+    return input;
+  }
+
+  const matcher =
+    /\b(token|api_key|apikey|secret|password|key)\b\s*([:=])\s*([A-Za-z0-9+/=_-]{4,})/gi;
+
+  return String(input).replace(matcher, (_match, key, separator) => `${key}${separator}****`);
 }

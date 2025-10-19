@@ -1,0 +1,11 @@
+{
+  "id": "W-TST-02",
+  "goal": "Юнит-тесты StyleGuard: запрещённые слова/длина",
+  "inputs": ["app/server/agents/styleguard/index.js"],
+  "outputs": ["tests/unit/styleguard.rules.test.mjs"],
+  "acceptance": [
+    "Детект 2-3 запрещённых слов",
+    "Проверка ограничений длины",
+    "Coverage ≥ 80% для styleguard"
+  ]
+}

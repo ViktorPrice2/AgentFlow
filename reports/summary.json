@@ -1,0 +1,90 @@
+{
+  "runId": "4a750f66-44b7-42b4-9315-a1ed566a214f",
+  "startedAt": "2025-10-19T01:43:57.558Z",
+  "finishedAt": "2025-10-19T01:45:02.388Z",
+  "results": [
+    {
+      "id": "W-VRF-01",
+      "type": "verify",
+      "status": "completed",
+      "workItem": {
+        "id": "W-VRF-01",
+        "goal": "Подтвердить работу Scheduler, Telegram-бота, i18n; составить отчет",
+        "inputs": [
+          "app/core/scheduler.js",
+          "app/main/ipcBot.js",
+          "app/renderer/src/i18n/useI18n.jsx"
+        ],
+        "outputs": [
+          "docs/VerificationReport.md"
+        ],
+        "acceptance": [
+          "Scheduler cron */1 * * * * запускает задачу, записи в data/logs/scheduler.jsonl",
+          "Telegram /setup → /finish сохраняет JSON в data/briefs и UPSERT в Briefs",
+          "i18n RU/EN переключается; ошибок в консоли нет"
+        ]
+      }
+    },
+    {
+      "id": "W-TST-01",
+      "type": "test",
+      "status": "completed",
+      "workItem": {
+        "id": "W-TST-01",
+        "goal": "Юнит-тесты генератора Writer: тон, CTA, дефолты",
+        "inputs": [
+          "app/server/agents/writer/index.js"
+        ],
+        "outputs": [
+          "tests/unit/writer.templating.test.mjs"
+        ],
+        "acceptance": [
+          "Покрыть brand/topic/tone/cta",
+          "Нет внешних API",
+          "Coverage ≥ 80% для writer"
+        ]
+      }
+    },
+    {
+      "id": "W-TST-02",
+      "type": "test",
+      "status": "completed",
+      "workItem": {
+        "id": "W-TST-02",
+        "goal": "Юнит-тесты StyleGuard: запрещённые слова/длина",
+        "inputs": [
+          "app/server/agents/styleguard/index.js"
+        ],
+        "outputs": [
+          "tests/unit/styleguard.rules.test.mjs"
+        ],
+        "acceptance": [
+          "Детект 2-3 запрещённых слов",
+          "Проверка ограничений длины",
+          "Coverage ≥ 80% для styleguard"
+        ]
+      }
+    },
+    {
+      "id": "W-TST-03",
+      "type": "test",
+      "status": "completed",
+      "workItem": {
+        "id": "W-TST-03",
+        "goal": "Юнит-тесты security utils: санитайз путей/имён, маскирование секретов",
+        "inputs": [
+          "app/core/utils/security.js"
+        ],
+        "outputs": [
+          "tests/unit/security.sanitize.test.mjs"
+        ],
+        "acceptance": [
+          "Имена: только [a-zA-Z0-9_-], остальное → '_'",
+          "Запись только в data/ и config/",
+          "Маскирование ключей в логах проходит",
+          "Coverage ≥ 80% для security utils"
+        ]
+      }
+    }
+  ]
+}

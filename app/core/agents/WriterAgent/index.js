@@ -7,8 +7,8 @@ function mergeInputs(payload, config) {
   const configParams = config?.params && typeof config.params === 'object' ? config.params : {};
 
   const merged = {
-    ...(payload || {}),
     ...configParams,
+    ...(payload || {}),
     ...overrideParams
   };
 
