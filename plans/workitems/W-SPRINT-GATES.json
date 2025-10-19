@@ -1,0 +1,19 @@
+{
+  "id": "W-SPRINT-GATES",
+  "goal": "Sprint guardrails and execution order for AgentFlow regression hardening.",
+  "inputs": [
+    "app/package.json",
+    "package.json",
+    "scripts/ci-checks.mjs",
+    "reports/summary.json"
+  ],
+  "outputs": [
+    "updated CI configuration reflecting the gate order"
+  ],
+  "acceptance": [
+    "Hard gates run in order: npm run build:renderer --prefix app, npm run lint --prefix app, npm run test:ci --prefix app with thresholds 80/80/60/80 for WriterAgent, StyleGuard, security, template modules, cross-env E2E=1 npm run test:e2e --prefix app, npm run verify --prefix app, npm run orchestrate.",
+    "Soft gates log results: npm audit --omit=dev --audit-level=high (document moderate Electron advisory), grep -R \\\"window.e2e\\\\|__e2e__\\\" app/renderer/dist/assets, presence of reports/e2e/smoke.xml and reports/e2e/html/index.html.",
+    "Summary JSON includes e2e status and artifact pointers while orchestrator exits non-zero on hard gate failure.",
+    "Engineering roles (Test-Writer, Impl-Agent, Critic, Integrator, Security-Guard) are documented with responsibilities."
+  ]
+}

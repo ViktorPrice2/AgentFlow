@@ -1,6 +1,8 @@
 name: build-and-test
 
-on: [push, pull_request]
+on:
+  - push
+  - pull_request
 
 jobs:
   win:
@@ -10,27 +12,37 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install
+
+      - name: Install dependencies
         run: |
           cd app
           npm ci
+
       - name: Build renderer
         run: |
           cd app
           npm run build:renderer
+
       - name: Unit tests + coverage
         run: |
           cd app
           npm run test:ci
-      - name: E2E smoke (optional)
+
+      - name: E2E smoke
+        continue-on-error: true
+        env:
+          E2E: '1'
         run: |
           cd app
-          npx playwright install --with-deps
-          npm run test:e2e || echo "E2E optional for now"
-      - name: Build exe
+          npx playwright install
+          if (-not (Test-Path ..\reports\e2e)) { New-Item -ItemType Directory -Path ..\reports\e2e | Out-Null }
+          npm run test:e2e
+
+      - name: Build executable (best effort)
         run: |
           cd app
-          npm run build || echo "packaging script not defined yet"
+          npm run build || echo "Packaging is optional in CI"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:

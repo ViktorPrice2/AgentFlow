@@ -1,0 +1,26 @@
+{
+  "id": "W-LOC-FIX",
+  "goal": "Restore readable UTF-8 localization and telemetry text across core assets.",
+  "inputs": [
+    "app/renderer/src/i18n/ru.json",
+    "app/services/tg-bot/survey.js",
+    "app/services/tg-bot/index.js",
+    "tests/e2e/smoke.pipeline.spec.mjs",
+    "docs/VerificationReport.md",
+    "docs/CHANGELOG.md",
+    "plans/workitems/*.json",
+    "app/main/db/migrate.js",
+    "app/renderer/src/components/VersionHistoryModal.jsx"
+  ],
+  "outputs": [
+    "automated regression notes in docs/CHANGELOG.md",
+    "updated localization fixtures for unit or e2e tests"
+  ],
+  "acceptance": [
+    "All impacted files store human readable Russian strings in UTF-8 without mojibake.",
+    "Vitest and Playwright suites reference the refreshed strings where assertions exist.",
+    "Manual UI smoke shows correct Russian labels on main pages (Projects, Brief, Agents, Pipelines, Scheduler, Settings).",
+    "Verification report and changelog render without garbled characters in Markdown preview.",
+    "Workitem JSON files contain ASCII only to avoid future encoding regressions."
+  ]
+}

@@ -11,6 +11,8 @@ const WORKITEMS_DIR = path.join(ROOT, 'plans', 'workitems');
 const REPORTS_DIR = path.join(ROOT, 'reports');
 const SUMMARY_PATH = path.join(REPORTS_DIR, 'summary.json');
 const VERIFY_SUMMARY_PATH = path.join(REPORTS_DIR, 'verify.json');
+const E2E_XML = path.join(REPORTS_DIR, 'e2e', 'smoke.xml');
+const E2E_HTML = path.join(REPORTS_DIR, 'e2e', 'html', 'index.html');
 
 async function readJson(filePath) {
   const raw = await fs.readFile(filePath, 'utf8');
@@ -51,6 +53,34 @@ async function loadVerifySummary() {
   } catch {
     return null;
   }
+}
+
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function collectE2EArtifacts() {
+  const artifacts = [];
+  const xmlExists = await fileExists(E2E_XML);
+  const htmlExists = await fileExists(E2E_HTML);
+
+  if (xmlExists) {
+    artifacts.push(path.relative(ROOT, E2E_XML));
+  }
+
+  if (htmlExists) {
+    artifacts.push(path.relative(ROOT, E2E_HTML));
+  }
+
+  return {
+    status: xmlExists ? 'ok' : 'missing',
+    artifacts
+  };
 }
 
 async function main() {
@@ -103,12 +133,20 @@ async function main() {
     results.push(stepInfo);
   }
 
+  const e2eArtifacts = await collectE2EArtifacts();
+  if (checks.e2e === 'pending') {
+    checks.e2e = e2eArtifacts.status;
+  }
+
   const summary = {
     runId,
     startedAt: startTime,
     finishedAt: new Date().toISOString(),
     results,
-    checks
+    checks,
+    artifacts: {
+      e2e: e2eArtifacts
+    }
   };
 
   await ensureReportsDir();

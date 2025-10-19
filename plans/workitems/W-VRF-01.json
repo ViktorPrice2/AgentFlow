@@ -1,6 +1,6 @@
 {
   "id": "W-VRF-01",
-  "goal": "Подтвердить работу Scheduler, Telegram-бота, i18n; составить отчет",
+  "goal": "Verify scheduler heartbeats, Telegram IPC wiring, and i18n loading.",
   "inputs": [
     "app/core/scheduler.js",
     "app/main/ipcBot.js",
@@ -8,8 +8,8 @@
   ],
   "outputs": ["docs/VerificationReport.md"],
   "acceptance": [
-    "Scheduler cron */1 * * * * запускает задачу, записи в data/logs/scheduler.jsonl",
-    "Telegram /setup → /finish сохраняет JSON в data/briefs и UPSERT в Briefs",
-    "i18n RU/EN переключается; ошибок в консоли нет"
+    "Scheduler cron */1 * * * * writes fresh entries to app/data/logs/scheduler.jsonl.",
+    "Telegram bot handlers respond to /setup and /finish, persisting JSON briefs under app/data/briefs.",
+    "Russian and English dictionaries load without errors in the renderer."
   ]
 }

@@ -1,0 +1,22 @@
+{
+  "id": "W-DOCS-SYNC",
+  "goal": "Align documentation and orchestrator tooling with the current codebase.",
+  "inputs": [
+    "docs/DeveloperGuide.md",
+    "docs/AutomationGuide.md",
+    "README.md",
+    "scripts/orchestrator.mjs",
+    "scripts/run-agent.mjs"
+  ],
+  "outputs": [
+    "docs/AutomationGuide.md",
+    "docs/DeveloperGuide.md",
+    "scripts/run-agent.mjs"
+  ],
+  "acceptance": [
+    "run-agent.mjs invokes real agent or pipeline logic (no stub logging).",
+    "Orchestrator documentation reflects actual command paths (tests/unit, scripts/orchestrator.mjs, reports/e2e).",
+    "README quick-start references correct scripts and directories.",
+    "All docs rendered in Markdown show accurate examples without outdated references."
+  ]
+}

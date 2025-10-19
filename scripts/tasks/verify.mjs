@@ -34,7 +34,7 @@ async function readLatestJsonLine(filePath) {
     .map((line) => line.trim())
     .filter(Boolean);
 
-  if (!lines.length) {
+  if (lines.length === 0) {
     return null;
   }
 
@@ -51,34 +51,45 @@ async function verifyScheduler() {
     if (!latestEntry?.ts) {
       return {
         status: 'fail',
-        reason: 'Нет валидной записи в журнале scheduler.jsonl'
+        reason: 'scheduler.jsonl is missing or empty',
+        meta: {}
       };
     }
 
-    const ts = Date.parse(latestEntry.ts);
-    if (Number.isNaN(ts)) {
+    const timestamp = Date.parse(latestEntry.ts);
+    if (Number.isNaN(timestamp)) {
       return {
         status: 'fail',
-        reason: 'Некорректная временная метка последнего запуска'
+        reason: 'Last scheduler entry contains an invalid timestamp',
+        meta: { lastEntry: latestEntry }
       };
     }
 
-    const deltaMs = Date.now() - ts;
-    const withinThreeMinutes = deltaMs <= 3 * 60 * 1000;
+    const deltaMs = Date.now() - timestamp;
+    const withinThreshold = deltaMs <= 3 * 60 * 1000;
 
-    return withinThreeMinutes
+    return withinThreshold
       ? {
           status: 'ok',
-          reason: `Последний запуск ${Math.round(deltaMs / 1000)} секунд назад`
+          reason: 'Scheduler heartbeat recorded within the 3 minute threshold',
+          meta: {
+            lastTimestamp: latestEntry.ts,
+            secondsSince: Math.floor(deltaMs / 1000)
+          }
         }
       : {
           status: 'fail',
-          reason: 'Планировщик не запускался в течение последних 3 минут'
+          reason: 'Scheduler heartbeat is older than 3 minutes',
+          meta: {
+            lastTimestamp: latestEntry.ts,
+            secondsSince: Math.floor(deltaMs / 1000)
+          }
         };
   } catch (error) {
     return {
       status: 'fail',
-      reason: `Не удалось прочитать журнал планировщика: ${error.message}`
+      reason: `Unable to read scheduler log: ${error.message}`,
+      meta: {}
     };
   }
 }
@@ -88,30 +99,29 @@ async function verifyI18n() {
     const datasets = await Promise.all(
       I18N_FILES.map(async (file) => {
         const raw = await fs.readFile(file, 'utf8');
-        const data = JSON.parse(raw);
-        return { file, data };
+        return { file, data: JSON.parse(raw) };
       })
     );
 
-    const emptyFiles = datasets.filter(({ data }) => !data || Object.keys(data).length === 0);
-
-    if (emptyFiles.length > 0) {
+    const empty = datasets.filter(({ data }) => !data || Object.keys(data).length === 0);
+    if (empty.length > 0) {
       return {
         status: 'fail',
-        reason: `Найдены пустые словари: ${emptyFiles
-          .map(({ file }) => path.basename(file))
-          .join(', ')}`
+        reason: `Empty localization files: ${empty.map(({ file }) => path.basename(file)).join(', ')}`,
+        meta: {}
       };
     }
 
     return {
       status: 'ok',
-      reason: `Словари загружены (${datasets.map(({ file }) => path.basename(file)).join(', ')})`
+      reason: `Localization files loaded (${datasets.map(({ file }) => path.basename(file)).join(', ')})`,
+      meta: {}
     };
   } catch (error) {
     return {
       status: 'fail',
-      reason: `Ошибка чтения словарей i18n: ${error.message}`
+      reason: `Unable to load localization files: ${error.message}`,
+      meta: {}
     };
   }
 }
@@ -143,7 +153,7 @@ async function readEnvTokens() {
         }
       });
   } catch {
-    // .env может отсутствовать — не критично
+    // .env is optional; rely on environment variables when file is absent.
   }
 
   return result;
@@ -156,16 +166,16 @@ async function verifyTelegram() {
   } catch (error) {
     return {
       status: 'fail',
-      reason: `Не удалось импортировать ipcBot.js: ${error.message}`
+      reason: `Unable to import ipcBot.js: ${error.message}`,
+      meta: {}
     };
   }
 
-  const hasHandler = typeof moduleNamespace.registerTelegramIpcHandlers === 'function';
-
-  if (!hasHandler) {
+  if (typeof moduleNamespace.registerTelegramIpcHandlers !== 'function') {
     return {
       status: 'fail',
-      reason: 'Не найден export registerTelegramIpcHandlers в ipcBot.js'
+      reason: 'ipcBot.js does not export registerTelegramIpcHandlers',
+      meta: {}
     };
   }
 
@@ -174,13 +184,15 @@ async function verifyTelegram() {
   if (!envTokens.token || !envTokens.chatId) {
     return {
       status: 'pending',
-      reason: 'Telegram токены отсутствуют (ожидаются ключи TG_TOKEN и TG_CHAT_ID)'
+      reason: 'Telegram tokens not provided (TG_TOKEN and TG_CHAT_ID)',
+      meta: {}
     };
   }
 
   return {
     status: 'ok',
-    reason: 'Telegram IPC зарегистрирован, токены заданы'
+    reason: 'Telegram IPC handlers available and credentials detected',
+    meta: {}
   };
 }
 
@@ -193,9 +205,9 @@ function formatLine(title, status, reason) {
 async function writeReport({ scheduler, i18n, telegram }) {
   const lines = [
     '# Verification Report',
-    formatLine('Scheduler: cron */1 * * * * запускается', scheduler.status, scheduler.reason),
-    formatLine('Telegram: IPC и токены', telegram.status, telegram.reason),
-    formatLine('i18n: RU/EN словари загружены', i18n.status, i18n.reason)
+    formatLine('Scheduler: cron */1 * * * *', scheduler.status, scheduler.reason),
+    formatLine('Telegram: IPC handlers', telegram.status, telegram.reason),
+    formatLine('i18n: RU/EN dictionaries', i18n.status, i18n.reason)
   ];
 
   await fs.writeFile(REPORT_MD, `${lines.join('\n')}\n`, 'utf8');
@@ -219,21 +231,35 @@ async function main() {
   await writeReport(summary);
   await writeJson(summary);
 
-  const failures = Object.entries(summary).filter(
-    ([, result]) => result.status === 'fail'
-  );
+  const failures = Object.entries(summary).filter(([, result]) => result.status === 'fail');
 
   if (failures.length > 0) {
-    console.error(
-      '[verify] Обнаружены проблемы:',
-      failures.map(([key, result]) => `${key}: ${result.reason}`).join('; ')
-    );
+    const message = failures
+      .map(([key, result]) => `${key}: ${result.reason}`)
+      .join('; ');
+    console.error('[verify] Checks failed:', message);
+    process.exitCode = 1;
   } else {
-    console.log('[verify] Проверка выполнена', summary);
+    console.log('[verify] All checks passed:', summary);
   }
 }
 
-main().catch((error) => {
-  console.error('[verify] Непредвиденная ошибка:', error);
-  process.exitCode = 1;
-});
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
+  main().catch((error) => {
+    console.error('[verify] Unexpected error:', error);
+    process.exitCode = 1;
+  });
+}
+
+export {
+  ensureDirectories,
+  readLatestJsonLine,
+  verifyScheduler,
+  verifyI18n,
+  readEnvTokens,
+  verifyTelegram,
+  writeReport,
+  writeJson,
+  REPORT_MD,
+  REPORT_JSON
+};

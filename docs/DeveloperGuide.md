@@ -54,6 +54,12 @@ Run `node app/main/db/migrate.js` to apply migrations and assert indexes. The mi
 - Secrets are pulled from environment variables referenced by `apiKeyRef`. Missing credentials cause mock engines to kick in, ensuring pipelines can operate in development without external calls.
 - `maskSecrets` and `redactSensitive` ensure logs, UI surfaces, and exported reports do not leak tokens. When extending providers, reuse these utilities and update tests under `tests/unit/security.*`.
 
+### Telegram bot credentials
+- Never hardcode bot tokens in source control. Use the OS keychain via `keytar` (default flow in the app) or export `TELEGRAM_BOT_TOKEN`/`TG_TOKEN` before launching integration scripts.
+- The helper script `app/test-bot.js` skips live traffic unless a token is present in the environment. It always stores placeholder values when running in CI.
+- `.env.example` intentionally keeps Telegram variables empty; copy the file to `.env` locally and populate the values out-of-band if you need persistent configuration.
+- Logs in `app/data/logs/telegram-bot.jsonl` redact sensitive fields automatically, but always review before sharing outside the team.
+
 ## Default Agent Roles
 - **WriterAgent** - templated content generator producing title, caption, description, and summary fields based on project context.
 - **UploaderAgent** - simulated uploader that assembles artifacts from writer outputs and records publish status.
@@ -67,6 +73,7 @@ Custom agents can be registered via the plugin registry or stored in SQLite usin
 - **End-to-end tests** reside in `tests/e2e/` (Playwright). Execute with `npm run test:e2e --prefix app`. Use `playwright.config.js` to target the Electron app and include smoke regressions.
 - **CI gate** (`scripts/ci-checks.mjs`) runs renderer build, lint, coverage suite, and npm audit (fails on high/critical vulnerabilities).
 - **Verification** (`scripts/tasks/verify.mjs`) checks scheduler heartbeat, i18n completeness, and Telegram IPC wiring; results are exported to `docs/VerificationReport.md` and `reports/verify.json`.
+- Для Playwright-тестов включайте e2e-мост (`window.e2e`) установкой `E2E=1` перед запуском. В production-сборке мост отсутствует; `scripts/check-e2e-bridge.mjs` гарантирует чистоту бандла.
 
 ## Logging & Observability
 - Scheduler logs: `app/data/logs/scheduler.jsonl`

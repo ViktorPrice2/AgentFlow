@@ -1,0 +1,19 @@
+{
+  "id": "W-VERIFY-STABLE",
+  "goal": "Make scripts/tasks/verify.mjs deterministic and verifiable.",
+  "inputs": [
+    "scripts/tasks/verify.mjs",
+    "tests/unit/**",
+    "docs/VerificationReport.md",
+    "reports/verify.json"
+  ],
+  "outputs": [
+    "tests/unit/verify.task.test.mjs"
+  ],
+  "acceptance": [
+    "Two consecutive runs of npm run verify --prefix app produce identical output except for allowed timestamp deltas.",
+    "Vitest unit test covers scheduler/i18n/telegram formatting and guards deterministic fields.",
+    "Markdown and JSON reports contain readable English/Russian text without mojibake.",
+    "Failure paths log actionable reasons to stderr while process exits with code 1 when any check fails."
+  ]
+}

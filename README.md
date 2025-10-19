@@ -47,6 +47,8 @@ AgentFlow Desktop is an Electron application that orchestrates multi-agent marke
 - Full gate: `npm run test:all --prefix app`
 - DAG orchestrator: `npm run orchestrate`
 - Verification tasks: `node scripts/tasks/verify.mjs`
+- Bundle hygiene: `node scripts/check-e2e-bridge.mjs`
+- Execute a specific workitem: `node scripts/run-agent.mjs <workitem-id>`
 
 Automation details, including DAG and workitem semantics plus verification outputs, are documented in `docs/AutomationGuide.md`. Testing strategy and CI hand-offs are described in `docs/DeveloperGuide.md`.
 

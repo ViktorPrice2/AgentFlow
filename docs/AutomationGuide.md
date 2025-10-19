@@ -28,9 +28,9 @@ This guide describes the orchestrated automation that drives AgentFlow Desktop: 
 - Workitems fuel documentation and reviewers; keep them in sync with reality when implementing new automation.
 
 ## Orchestrator (`scripts/orchestrator.mjs`)
-- Loads the DAG, iterates nodes sequentially, and invokes:
-  - `node ./scripts/tasks/verify.mjs` for `W-VRF-01`.
-  - `node ./scripts/run-agent.mjs <nodeId>` for other nodes (extend this script to call real agents).
+- Loads the DAG, iterates nodes sequentially, и вызывает:
+  - `node ./scripts/tasks/verify.mjs` для `W-VRF-01`.
+  - `node ./scripts/run-agent.mjs <nodeId>` для остальных узлов. Скрипт считывает `plans/workitems/<id>.json` и запускает команды на основе ожидаемых артефактов (витест для unit-тестов, `npm run verify` для проверок и т. п.). Расширяйте обработчик при добавлении новых типов выходов.
   - `node ./scripts/ci-checks.mjs` after each node to enforce build/lint/test/audit.
 - Captures results and writes `reports/summary.json` containing run id, timestamps, per-node status, and aggregated checks (scheduler, i18n, telegram, e2e).
 - Ensures `reports/` exists before writing outputs.
@@ -48,7 +48,8 @@ This guide describes the orchestrated automation that drives AgentFlow Desktop: 
 - Performs environment and integration checks:
   - **Scheduler heartbeat** - Reads the last JSON line from `app/data/logs/scheduler.jsonl`, validates timestamp freshness (<=3 minutes).
   - **i18n completeness** - Ensures `app/renderer/src/i18n/en.json` and `ru.json` exist with non-empty key sets.
-  - **Telegram IPC** - Imports `app/main/ipcBot.js` to verify `registerTelegramIpcHandlers` export and inspects `.env`/process variables for `TG_TOKEN` and `TG_CHAT_ID`. Missing tokens result in `pending`.
+- **Telegram IPC** - Imports `app/main/ipcBot.js` to verify `registerTelegramIpcHandlers` export and inspects `.env`/process variables for `TG_TOKEN` and `TG_CHAT_ID`. Missing tokens result in `pending`.
+- Telegram secrets are never stored in the repository. Provide temporary values via CI secrets or local environment variables when running Telegram-specific checks.
 - Generates:
   - Markdown report (`docs/VerificationReport.md`) with checkbox summaries.
   - Machine-readable JSON (`reports/verify.json`) used by orchestrator summaries.
@@ -58,6 +59,7 @@ This guide describes the orchestrated automation that drives AgentFlow Desktop: 
 - `reports/summary.json` - Overall orchestrator run summary (inputs, acceptance references, status per node, aggregated checks).
 - `reports/verify.json` - Raw verification outcomes (scheduler, i18n, telegram structures).
 - `docs/VerificationReport.md` - Human-readable verification status; keep committed to document the latest run.
+- `reports/e2e/` - Playwright outputs (`smoke.xml` + HTML в `reports/e2e/html/index.html`).
 
 ## Operational Tips
 - When adding new nodes, ensure corresponding workitems exist and update CI scripts if additional checks are required.

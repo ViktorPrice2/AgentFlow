@@ -1,0 +1,22 @@
+{
+  "id": "W-E2E-REPORTS",
+  "goal": "Publish rich Playwright artifacts for CI consumption.",
+  "inputs": [
+    "app/playwright.config.js",
+    "app/tests/e2e/playwright.config.ts",
+    "scripts/ci-checks.mjs",
+    ".github/workflows/*.yml",
+    "reports/summary.json"
+  ],
+  "outputs": [
+    "reports/e2e/smoke.xml",
+    "reports/e2e/html/index.html",
+    "CI artifact upload configuration"
+  ],
+  "acceptance": [
+    "Playwright always writes JUnit XML and static HTML to reports/e2e/ (even on failures).",
+    "CI pipeline uploads the HTML folder and XML to job artifacts or test report viewers.",
+    "Summary JSON references the location of the latest e2e artifacts.",
+    "Documentation lists how to open the HTML report locally after a run."
+  ]
+}

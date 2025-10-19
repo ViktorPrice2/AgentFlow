@@ -1,0 +1,20 @@
+{
+  "id": "W-SEC-TOKEN",
+  "goal": "Eliminate hardcoded Telegram secrets and document the secure bootstrap flow.",
+  "inputs": [
+    "app/test-bot.js",
+    "app/.env.example",
+    "docs/DeveloperGuide.md",
+    "docs/AutomationGuide.md"
+  ],
+  "outputs": [
+    "docs/ADR/ADR-telegram-token.md"
+  ],
+  "acceptance": [
+    "app/test-bot.js contains no real tokens; sample uses placeholders and environment variables.",
+    ".env.example documents TG_TOKEN and TG_CHAT_ID usage and defaults to empty values.",
+    "Developer guide explains how to supply tokens via keytar or env in development.",
+    "ADR describes the decision to remove hardcoded secrets and the expected operational process.",
+    "Repository search for the previous token substring returns no matches."
+  ]
+}

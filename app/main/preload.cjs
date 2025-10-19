@@ -1,4 +1,33 @@
 const { contextBridge, ipcRenderer } = require('electron');
+let registerE2EBridge = () => false;
+try {
+  ({ registerE2EBridge } = require('./e2e-bridge.js'));
+} catch (error) {
+  registerE2EBridge = (contextBridge, env = process.env) => {
+    if (!contextBridge || typeof contextBridge.exposeInMainWorld !== 'function') {
+      return false;
+    }
+
+    const normalizedEnv = env || {};
+    const nodeEnv = (normalizedEnv.NODE_ENV || '').toLowerCase();
+    const e2eFlag = String(normalizedEnv.E2E || '0');
+
+    if (nodeEnv !== 'test' && e2eFlag !== '1') {
+      return false;
+    }
+
+    contextBridge.exposeInMainWorld('e2e', {
+      setLang(lang) {
+        if (!lang) {
+          return;
+        }
+        window.postMessage({ __e2e__: true, type: 'SET_LANG', lang }, '*');
+      }
+    });
+
+    return true;
+  };
+}
 
 const ERROR_EVENT_CHANNEL = 'AgentFlow:error-bus:event';
 const ERROR_REPORT_CHANNEL = 'AgentFlow:error-bus:report';
@@ -110,17 +139,8 @@ contextBridge.exposeInMainWorld('ErrorAPI', {
   }
 });
 
-// Тестовые хуки для локальных e2e сценариев (не доступны вне Electron)
 try {
-  contextBridge.exposeInMainWorld('e2e', {
-    setLang(lang) {
-      if (!lang) {
-        return;
-      }
-
-      window.postMessage({ __e2e__: true, type: 'SET_LANG', lang }, '*');
-    }
-  });
+  registerE2EBridge(contextBridge, process.env);
 } catch (error) {
-  // noop: вне Electron (например, Vitest) мост не нужен
+  // noop: preload may execute outside Electron (unit tests, etc.)
 }

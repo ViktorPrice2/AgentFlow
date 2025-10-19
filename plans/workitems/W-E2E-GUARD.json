@@ -1,0 +1,21 @@
+{
+  "id": "W-E2E-GUARD",
+  "goal": "Ship the e2e bridge only in test mode and enforce bundle hygiene.",
+  "inputs": [
+    "app/main/preload.cjs",
+    "package.json",
+    "app/package.json",
+    "tests/e2e/smoke.pipeline.spec.mjs",
+    "scripts/ci-checks.mjs"
+  ],
+  "outputs": [
+    "playwright or vitest checks guarding the window.e2e export",
+    "CI grep step that fails when window.e2e leaks into production bundle"
+  ],
+  "acceptance": [
+    "preload exports window.e2e only when NODE_ENV=test or E2E=1; production bundle omits the object.",
+    "Automated test or lint step fails if window.e2e is missing in test runs or present in production.",
+    "CI script runs grep against app/renderer/dist/assets and fails on hits.",
+    "Docs/DeveloperGuide.md mentions how to enable the bridge during automated testing."
+  ]
+}

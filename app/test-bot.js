@@ -1,61 +1,65 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { createTelegramBotService } from './services/tg-bot/index.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Используем стандартную директорию data для тестирования
+/**
+ * Simple integration harness for manual Telegram bot testing.
+ *
+ * Usage:
+ *   - Ensure dependencies are installed (`npm install --prefix app`).
+ *   - Optionally export TELEGRAM_BOT_TOKEN (or TG_TOKEN) before running.
+ *   - Execute with `node test-bot.js` from the `app/` directory.
+ */
 const service = createTelegramBotService({
   sessionInactivityMs: 5 * 60 * 1000,
   sessionCleanupIntervalMs: 60 * 1000
 });
 
 await service.init();
-console.log('Сервис инициализирован. Статус:', service.getStatus());
+console.log('[test-bot] Service initialised:', service.getStatus());
 
-// Тестирование 1: Валидация токена - неправильный токен
+// Scenario 1 — invalid token is rejected.
 try {
   await service.setToken('invalid_token');
-  console.log('❌ Ошибка: неправильный токен не вызвал исключение');
+  console.log('[test-bot] Unexpected success: invalid token was accepted.');
 } catch (error) {
-  console.log('✅ Правильный токен: неправильный токен вызвал исключение:', error.message);
+  console.log('[test-bot] Expected rejection for invalid token:', error.message);
 }
 
-// Тестирование 2: Валидация токена - правильный токен
-const realToken = '7504569021:AAGtwU99xph9pt4K29D_XliW3r0g9UYSO0s';
-try {
-  const status = await service.setToken(realToken);
-  console.log('✅ Правильный токен: статус после установки:', status);
-} catch (error) {
-  console.log('❌ Ошибка при установке правильного токена:', error.message);
+// Scenario 2 — optional real token from environment variables.
+const liveToken = process.env.TELEGRAM_BOT_TOKEN ?? process.env.TG_TOKEN ?? '';
+if (!liveToken) {
+  console.log(
+    '[test-bot] Skipping live token test. Provide TELEGRAM_BOT_TOKEN (or TG_TOKEN) to exercise real traffic.'
+  );
+} else {
+  try {
+    const status = await service.setToken(liveToken);
+    console.log('[test-bot] Stored Telegram token:', status);
+  } catch (error) {
+    console.log('[test-bot] Failed to store provided token:', error.message);
+  }
 }
 
-// Тестирование 3: Запуск бота
+// Scenario 3 — start/stop lifecycle smoke test.
 try {
   const startStatus = await service.start();
-  console.log('✅ Бот запущен: статус:', startStatus);
+  console.log('[test-bot] Bot started:', startStatus);
 
-  // Ждём немного для инициализации
-  await new Promise(resolve => setTimeout(resolve, 2000));
+  await new Promise((resolve) => setTimeout(resolve, 2000));
 
-  // Проверяем статус снова
   const runningStatus = service.getStatus();
-  console.log('✅ Статус после запуска:', runningStatus);
+  console.log('[test-bot] Bot status after start:', runningStatus);
 
-  // Останавливаем бота для теста
   const stopStatus = await service.stop('test-stop');
-  console.log('✅ Бот остановлен: статус:', stopStatus);
-
+  console.log('[test-bot] Bot stopped:', stopStatus);
 } catch (error) {
-  console.log('❌ Ошибка при запуске бота:', error.message);
+  console.log('[test-bot] Bot lifecycle error:', error.message);
 }
 
-console.log('Тесты валидации токена и запуска завершены.');
+console.log('[test-bot] Demo complete. Inspect data/logs/telegram-bot.jsonl for runtime details.');
 
-// Для остановки:
+// Optional graceful shutdown helper for long-running experiments:
 // process.on('SIGINT', async () => {
 //   await service.stop('manual-test-stop');
-//   console.log('Остановлено.');
+//   console.log('[test-bot] Stopped by SIGINT.');
 //   process.exit(0);
 // });

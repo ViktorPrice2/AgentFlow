@@ -270,7 +270,7 @@ export const ensureMigrations = async ({ logger = console } = {}) => {
   }
 
   if (logger) {
-    logger.log(`✅ Database ready at ${status.dbPath}`);
+    logger.log(`[ok] Database ready at ${status.dbPath}`);
     logger.log(`Tables: ${REQUIRED_RUNTIME_TABLES.join(', ')}`);
   }
 

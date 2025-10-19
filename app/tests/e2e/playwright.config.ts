@@ -9,13 +9,15 @@ export default defineConfig({
   testDir: __dirname,
   timeout: 45_000,
   retries: 0,
-  reporter: [['list'], ['html', { outputFolder: '../../dist/playwright-report', open: 'never' }]],
+  reporter: [
+    ['list'],
+    ['junit', { outputFile: '../../reports/e2e/smoke.xml' }],
+    ['html', { outputFolder: '../../reports/e2e/html', open: 'never' }]
+  ],
   use: {
-    // Скриншоты/видео можно включить при падениях:
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
     trace: 'on-first-retry'
   },
-  // На Windows GUI-тесты стабильнее в headed в dev-режиме
   workers: 1
 });

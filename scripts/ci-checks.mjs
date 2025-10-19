@@ -10,6 +10,7 @@ function runAppCommand(command) {
 
 try {
   runAppScript('build:renderer');
+  execSync('node ./scripts/check-e2e-bridge.mjs', { stdio: 'inherit' });
   runAppScript('lint');
   runAppScript('test:ci');
   try {

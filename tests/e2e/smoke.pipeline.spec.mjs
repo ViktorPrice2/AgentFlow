@@ -1,10 +1,9 @@
 import http from 'node:http';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { promises as fs } from 'node:fs';
 import { createRequire } from 'node:module';
-import { spawnSync } from 'node:child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -45,7 +44,7 @@ async function waitForLogCreation(timeoutMs = 30000) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
 
-  throw new Error(`Лог запуска Electron не появился за ${timeoutMs} мс`);
+  throw new Error(`Startup log from Electron did not appear within ${timeoutMs} ms`);
 }
 
 async function appendSchedulerLogEntry() {
@@ -118,37 +117,26 @@ async function startStaticServer() {
 }
 
 test.describe('Electron smoke', () => {
-  test('приложение стартует и пишет лог запуска', async () => {
+  test('app starts and writes startup log', async () => {
     await resetStartupLog();
-
-    const rendererEntry = path.join(APP_ROOT, 'renderer', 'dist', 'index.html');
 
     const electronProcess = spawn(process.execPath, [path.join(APP_ROOT, 'scripts', 'run-electron.cjs')], {
       cwd: APP_ROOT,
       env: {
         ...process.env,
-        NODE_ENV: 'test',
-        ELECTRON_RENDERER_URL: `file://${rendererEntry.replace(/\\/g, '/')}`
+        ELECTRON_ENABLE_LOGGING: '1'
       },
-      stdio: 'ignore',
-      detached: false,
-      windowsHide: true
+      stdio: 'inherit'
     });
 
     let logEntry;
     try {
       logEntry = await waitForLogCreation();
     } finally {
-      if (electronProcess.exitCode === null) {
-        electronProcess.kill('SIGTERM');
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        if (electronProcess.exitCode === null) {
-          electronProcess.kill('SIGKILL');
-        }
-      }
+      electronProcess.kill('SIGINT');
+      await new Promise((resolve) => electronProcess.once('exit', resolve));
     }
 
-    expect(logEntry).toBeTruthy();
     expect(logEntry.event).toBe('app:start');
     expect(typeof logEntry.ts).toBe('string');
     expect(logEntry.data).toMatchObject({
@@ -156,7 +144,7 @@ test.describe('Electron smoke', () => {
     });
   });
 
-  test('переключение языка и smoke Scheduler', async ({ page }) => {
+  test('supports language switch and scheduler smoke verify', async ({ page }) => {
     const { server, url } = await startStaticServer();
 
     try {
@@ -193,14 +181,14 @@ test.describe('Electron smoke', () => {
     }
   });
 
-  test('Agent and pipeline CRUD via fallback UI', async ({ page }) => {
+  test('creates and removes fallback agents and pipelines', async ({ page }) => {
     const { server, url } = await startStaticServer();
 
     try {
       await page.goto(url);
       await page.waitForSelector('[data-testid="app-root"]');
 
-      // Create a project to unlock pipeline form
+      // Project creation unlocks dependent forms
       await page.getByLabel('Name').first().fill('QA Project');
       await page.getByRole('button', { name: 'Save', exact: true }).first().click();
       await expect(page.locator('.toast')).toContainText('Project saved');
@@ -271,5 +259,5 @@ test.describe('Electron smoke', () => {
       await new Promise((resolve) => server.close(resolve));
     }
   });
-
 });
+*** End Patch
