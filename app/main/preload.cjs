@@ -78,6 +78,7 @@ contextBridge.exposeInMainWorld('AgentAPI', {
   runPipelineSimple: (input) => ipcRenderer.invoke('AgentFlow:pipeline:runSimple', input),
   runPipeline: (pipelineDefinition, payload) =>
     ipcRenderer.invoke('AgentFlow:pipeline:run', pipelineDefinition, payload),
+  listRuns: (filter) => ipcRenderer.invoke('AgentFlow:runs:list', filter ?? {}),
   listPipelines: () => ipcRenderer.invoke('AgentFlow:pipeline:list'),
   upsertPipeline: (pipelineDefinition) =>
     ipcRenderer.invoke('AgentFlow:pipeline:upsert', pipelineDefinition),

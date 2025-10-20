@@ -176,6 +176,12 @@ export function createScheduler(options = {}) {
     const pipelineDefinition = pipelineRecord.payload || pipelineRecord;
     const agentConfigs = entityStore.buildAgentConfigMap();
     const runId = randomUUID();
+    const startedAt = new Date().toISOString();
+    const inputPayload = {
+      scheduleId,
+      projectId: schedule.projectId,
+      context
+    };
 
     await log('scheduler.run.start', {
       scheduleId,
@@ -190,15 +196,34 @@ export function createScheduler(options = {}) {
           ...pipelineDefinition,
           id: pipelineDefinition.id || pipelineRecord.id
         },
-        {
-          scheduleId,
-          projectId: schedule.projectId,
-          context
-        },
+        inputPayload,
         { pluginRegistry, providerManager, agentConfigs, runId }
       );
 
       lastRunAt = new Date().toISOString();
+
+      try {
+        entityStore.saveRun({
+          id: result.runId || runId,
+          projectId: schedule.projectId,
+          pipelineId: schedule.pipelineId,
+          status: result.status || null,
+          input: {
+            pipeline: pipelineDefinition,
+            payload: inputPayload
+          },
+          output: result,
+          createdAt: startedAt,
+          startedAt,
+          finishedAt: lastRunAt
+        });
+      } catch (persistError) {
+        await log('scheduler.run.persistFailed', {
+          scheduleId,
+          pipelineId: schedule.pipelineId,
+          message: persistError.message
+        });
+      }
 
       await log('scheduler.run.completed', {
         scheduleId,
@@ -208,6 +233,29 @@ export function createScheduler(options = {}) {
       });
     } catch (error) {
       lastRunAt = new Date().toISOString();
+
+      try {
+        entityStore.saveRun({
+          id: runId,
+          projectId: schedule.projectId,
+          pipelineId: schedule.pipelineId,
+          status: 'error',
+          input: {
+            pipeline: pipelineDefinition,
+            payload: inputPayload
+          },
+          output: { error: error.message },
+          createdAt: startedAt,
+          startedAt,
+          finishedAt: lastRunAt
+        });
+      } catch (persistError) {
+        await log('scheduler.run.persistFailed', {
+          scheduleId,
+          pipelineId: schedule.pipelineId,
+          message: persistError.message
+        });
+      }
 
       await log('scheduler.run.failed', {
         scheduleId,

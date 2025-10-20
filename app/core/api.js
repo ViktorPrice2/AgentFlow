@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { runPipeline, runDemoPipeline } from './orchestrator.js';
 import { createEntityStore } from './storage/entityStore.js';
 import { listPresets, loadPreset, diffPreset } from './presets/loader.js';
@@ -106,6 +107,16 @@ const defaultAgentConfigs = [
 
 function cloneConfig(config) {
   return JSON.parse(JSON.stringify(config));
+}
+
+function resolveRunProjectId(pipelineDefinition, inputPayload) {
+  return (
+    pipelineDefinition?.projectId ||
+    pipelineDefinition?.payload?.projectId ||
+    inputPayload?.project?.id ||
+    inputPayload?.projectId ||
+    null
+  );
 }
 
 function ensureDefaultAgentConfigs() {
@@ -566,16 +577,83 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
   });
 
   ipcMain.handle('AgentFlow:pipeline:run', async (_event, pipelineDefinition, inputPayload) => {
-    const result = await runPipeline(pipelineDefinition, inputPayload, {
-      pluginRegistry,
-      agentConfigs,
-      providerManager
-    });
-
-    return {
-      ok: true,
-      result
+    const store = getEntityStore();
+    const startedAt = new Date().toISOString();
+    const generatedRunId = randomUUID();
+    const pipelineId = pipelineDefinition?.id || null;
+    const projectId = resolveRunProjectId(pipelineDefinition, inputPayload);
+    const inputSnapshot = {
+      pipeline: pipelineDefinition || null,
+      payload: inputPayload || null
     };
+
+    try {
+      const result = await runPipeline(pipelineDefinition, inputPayload, {
+        pluginRegistry,
+        agentConfigs,
+        providerManager,
+        runId: generatedRunId
+      });
+
+      const finishedAt = new Date().toISOString();
+      let runRecord = null;
+
+      if (projectId) {
+        try {
+          runRecord = store.saveRun({
+            id: result.runId || generatedRunId,
+            projectId,
+            pipelineId,
+            status: result.status || null,
+            input: inputSnapshot,
+            output: result,
+            createdAt: startedAt,
+            startedAt,
+            finishedAt
+          });
+        } catch (persistError) {
+          console.error('Failed to persist pipeline run', persistError);
+        }
+      }
+
+      return {
+        ok: true,
+        result,
+        run: runRecord
+      };
+    } catch (error) {
+      const finishedAt = new Date().toISOString();
+
+      if (projectId) {
+        try {
+          store.saveRun({
+            id: generatedRunId,
+            projectId,
+            pipelineId,
+            status: 'error',
+            input: inputSnapshot,
+            output: { error: error.message },
+            createdAt: startedAt,
+            startedAt,
+            finishedAt
+          });
+        } catch (persistError) {
+          console.error('Failed to record failed pipeline run', persistError);
+        }
+      }
+
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('AgentFlow:runs:list', async (_event, filter = {}) => {
+    try {
+      const store = getEntityStore();
+      const runs = store.listRuns(filter);
+      return { ok: true, runs };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
   });
 
   ipcMain.handle('AgentFlow:pipeline:upsert', async (_event, pipelineDefinition) => {

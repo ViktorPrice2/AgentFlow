@@ -14,6 +14,7 @@ import {
   getProject,
   listProviderStatus,
   listSchedules,
+  listRuns,
   runPipeline,
   upsertSchedule,
   upsertProject,
@@ -61,19 +62,37 @@ const SECTION_CONFIG = [
 
 const AGENT_ONLINE = isAgentApiAvailable();
 
-function generateRunRecord(pipeline, result, project) {
-  const timestamp = new Date().toISOString();
-  const artifacts = Array.isArray(result.payload?._artifacts) ? result.payload._artifacts : [];
-  const summary =
-    result.nodes?.find((node) => node.status === 'completed' && node.outputSummary)?.outputSummary ||
-    result.payload?.summary ||
-    '';
+function formatRunSummary(run) {
+  if (!run) {
+    return null;
+  }
+
+  const pipeline = run.input?.pipeline || {};
+  const outputPayload = run.output?.payload || {};
+  const inputPayload = run.input?.payload || {};
+  const artifacts = Array.isArray(outputPayload._artifacts)
+    ? outputPayload._artifacts
+    : Array.isArray(run.output?._artifacts)
+      ? run.output._artifacts
+      : [];
+  const nodeSummary = Array.isArray(run.output?.nodes)
+    ? run.output.nodes.find((node) => node.status === 'completed' && node.outputSummary)?.outputSummary
+    : null;
+  const summary = nodeSummary || outputPayload.summary || run.output?.summary || '';
+  const status = run.status || run.output?.status || 'unknown';
+  const projectName =
+    pipeline.project?.name ||
+    inputPayload.project?.name ||
+    outputPayload.project?.name ||
+    null;
+  const pipelineName = pipeline.name || run.output?.pipeline?.name || pipeline.id || run.pipelineId || '';
+  const timestamp = run.finishedAt || run.startedAt || run.createdAt || new Date().toISOString();
 
   return {
-    id: result.runId || `${pipeline.id}-${timestamp}`,
-    pipelineName: pipeline.name,
-    projectName: project?.name || null,
-    status: result.status || 'unknown',
+    id: run.id,
+    pipelineName,
+    projectName,
+    status,
     artifacts,
     summary,
     timestamp
@@ -214,7 +233,7 @@ function App() {
   const [projects, setProjects] = usePersistentState('af.projects', []);
   const [selectedProjectId, setSelectedProjectId] = usePersistentState('af.selectedProject', null);
   const [brief, setBrief] = usePersistentState('af.brief', {});
-  const [runs, setRuns] = usePersistentState('af.runs', []);
+  const [runs, setRuns] = useState([]);
   const [botStatus, setBotStatus] = useState(null);
   const [botBusy, setBotBusy] = useState(false);
   const botBusyRef = useRef(false);
@@ -239,6 +258,18 @@ function App() {
     entityName: ''
   });
 
+  const refreshRuns = useCallback(async () => {
+    try {
+      const records = await listRuns();
+      const summaries = records
+        .map((run) => formatRunSummary(run))
+        .filter((item) => item !== null);
+      setRuns(summaries);
+    } catch (error) {
+      console.error('Failed to load run history', error);
+    }
+  }, []);
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
@@ -248,6 +279,10 @@ function App() {
       setUnreadLogs(0);
     }
   }, [isLogPanelOpen]);
+
+  useEffect(() => {
+    refreshRuns();
+  }, [refreshRuns]);
 
   useEffect(
     () => () => {
@@ -867,18 +902,13 @@ function App() {
         throw new Error('Pipeline run failed');
       }
 
-      const record = generateRunRecord(pipeline, response.result, context.project);
-      setRuns((prev) => [record, ...prev].slice(0, 20));
-      showToast(t('app.toasts.pipelineRun', { name: pipeline.name, status: record.status }), 'success');
+      const status = response.result?.status || 'unknown';
+      showToast(t('app.toasts.pipelineRun', { name: pipeline.name, status }), 'success');
+      await refreshRuns();
     } catch (error) {
       console.error('Pipeline execution error', error);
       showToast(t('app.toasts.pipelineRunError'), 'error');
     }
-  };
-
-  const handleClearRuns = () => {
-    setRuns([]);
-    showToast(t('app.toasts.runsCleared'), 'info');
   };
 
   const closeVersionModal = () => {
@@ -1155,7 +1185,7 @@ function App() {
           />
         );
       case 'runs':
-        return <RunsPage runs={runs} onClear={handleClearRuns} />;
+        return <RunsPage runs={runs} />;
       case 'reports':
         return <ReportsPage runs={runs} />;
       case 'scheduler':
