@@ -1,27 +1,64 @@
 const { contextBridge, ipcRenderer } = require('electron');
+
 let registerE2EBridge = () => false;
+let e2eBridgeChannel = 'af:e2e:bridge';
+let e2eStorageKey = 'af:e2e:mode';
+
 try {
-  ({ registerE2EBridge } = require('./e2e-bridge.js'));
+  const bridgeModule = require('./e2e-bridge.js');
+  registerE2EBridge = bridgeModule.registerE2EBridge || registerE2EBridge;
+  e2eBridgeChannel = bridgeModule.E2E_BRIDGE_CHANNEL || e2eBridgeChannel;
+  e2eStorageKey = bridgeModule.E2E_STORAGE_KEY || e2eStorageKey;
 } catch (error) {
+  const shouldExpose = (env = process.env) => {
+    if (!env) {
+      return false;
+    }
+
+    if ((env.NODE_ENV || '').toLowerCase() === 'test') {
+      return true;
+    }
+
+    return String(env.E2E || '0') === '1';
+  };
+
+  const markRendererAsE2E = () => {
+    try {
+      const target = globalThis;
+      if (target?.sessionStorage) {
+        target.sessionStorage.setItem(e2eStorageKey, '1');
+      }
+    } catch (storageError) {
+      // Ignore storage access issues (disabled storage, etc.)
+    }
+  };
+
   registerE2EBridge = (contextBridge, env = process.env) => {
     if (!contextBridge || typeof contextBridge.exposeInMainWorld !== 'function') {
       return false;
     }
 
-    const normalizedEnv = env || {};
-    const nodeEnv = (normalizedEnv.NODE_ENV || '').toLowerCase();
-    const e2eFlag = String(normalizedEnv.E2E || '0');
-
-    if (nodeEnv !== 'test' && e2eFlag !== '1') {
+    if (!shouldExpose(env)) {
       return false;
     }
+
+    markRendererAsE2E();
 
     contextBridge.exposeInMainWorld('e2e', {
       setLang(lang) {
         if (!lang) {
           return;
         }
-        window.postMessage({ __e2e__: true, type: 'SET_LANG', lang }, '*');
+
+        markRendererAsE2E();
+        globalThis.postMessage(
+          {
+            bridge: e2eBridgeChannel,
+            type: 'SET_LANG',
+            lang
+          },
+          '*'
+        );
       }
     });
 

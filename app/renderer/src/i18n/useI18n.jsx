@@ -4,6 +4,8 @@ import ru from './ru.json';
 import { usePersistentState } from '../hooks/usePersistentState.js';
 
 const dictionaries = { en, ru };
+const E2E_STORAGE_KEY = 'af:e2e:mode';
+const E2E_BRIDGE_CHANNEL = 'af:e2e:bridge';
 
 const I18nContext = createContext(null);
 
@@ -32,19 +34,40 @@ function formatTemplate(template, values = {}) {
   });
 }
 
+function isE2ETestMode() {
+  try {
+    return globalThis.sessionStorage?.getItem(E2E_STORAGE_KEY) === '1';
+  } catch (error) {
+    return false;
+  }
+}
+
 export function I18nProvider({ children }) {
   const [language, setLanguage] = usePersistentState('af.language', 'ru');
 
   useEffect(() => {
+    if (!isE2ETestMode()) {
+      return () => {};
+    }
+
     const handler = (event) => {
-      if (event?.data?.__e2e__ && event.data.type === 'SET_LANG') {
-        const next = event.data.lang === 'en' ? 'en' : 'ru';
+      if (!isE2ETestMode()) {
+        return;
+      }
+
+      const payload = event?.data;
+      if (!payload || payload.bridge !== E2E_BRIDGE_CHANNEL) {
+        return;
+      }
+
+      if (payload.type === 'SET_LANG') {
+        const next = payload.lang === 'en' ? 'en' : 'ru';
         setLanguage(next);
       }
     };
 
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
+    globalThis.addEventListener('message', handler);
+    return () => globalThis.removeEventListener('message', handler);
   }, [setLanguage]);
 
   const value = useMemo(() => {
