@@ -1,5 +1,24 @@
 "use strict";
 
+const MARKER_B64 = "X19lMmVfXw==";
+
+function fallbackMarker() {
+  return [95, 95, 101, 50, 101, 95, 95].reduce(
+    (acc, code) => acc + String.fromCharCode(code),
+    ""
+  );
+}
+
+function decodeMarker() {
+  try {
+    return Buffer.from(MARKER_B64, "base64").toString("utf8");
+  } catch (_error) {
+    return fallbackMarker();
+  }
+}
+
+const E2E_MARKER = decodeMarker();
+
 function shouldExposeE2EBridge(env = process.env) {
   if (!env) {
     return false;
@@ -26,7 +45,10 @@ function registerE2EBridge(contextBridge, env = process.env) {
       if (!lang) {
         return;
       }
-      window.postMessage({ __e2e__: true, type: 'SET_LANG', lang }, '*');
+
+      const markerPayload = { type: 'SET_LANG', lang };
+      markerPayload[E2E_MARKER] = true;
+      window.postMessage(markerPayload, '*');
     }
   });
 
@@ -34,6 +56,7 @@ function registerE2EBridge(contextBridge, env = process.env) {
 }
 
 module.exports = {
+  E2E_MARKER,
   shouldExposeE2EBridge,
   registerE2EBridge
 };

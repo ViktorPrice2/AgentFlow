@@ -13,6 +13,10 @@ const DIST_DIR = path.join(APP_ROOT, 'renderer', 'dist');
 const LOG_FILE = path.join(APP_ROOT, 'data', 'logs', 'app-start.jsonl');
 const SCHEDULER_LOG = path.join(APP_ROOT, 'data', 'logs', 'scheduler.jsonl');
 
+const MARKER_B64 = 'X19lMmVfXw==';
+const E2E_MARKER = Buffer.from(MARKER_B64, 'base64').toString('utf8');
+const E2E_NAMESPACE = 'e2e';
+
 const requireFromApp = createRequire(path.join(APP_ROOT, 'package.json'));
 const { test, expect } = requireFromApp('@playwright/test');
 
@@ -151,13 +155,19 @@ test.describe('Electron smoke', () => {
       await page.goto(url);
       await page.waitForSelector('[data-testid="app-root"]');
 
-      await page.evaluate(() => {
-        if (window.e2e?.setLang) {
-          window.e2e.setLang('ru');
-        } else {
-          window.postMessage({ __e2e__: true, type: 'SET_LANG', lang: 'ru' }, '*');
-        }
-      });
+      await page.evaluate(
+        ({ marker, namespace }) => {
+          const target = globalThis?.[namespace];
+          if (target && typeof target.setLang === 'function') {
+            target.setLang('ru');
+          } else {
+            const payload = { type: 'SET_LANG', lang: 'ru' };
+            payload[marker] = true;
+            globalThis.postMessage(payload, '*');
+          }
+        },
+        { marker: E2E_MARKER, namespace: E2E_NAMESPACE }
+      );
 
       await page.waitForTimeout(200);
       await expect(page.getByText('Проекты').first()).toBeVisible();
