@@ -166,13 +166,27 @@ function buildContext(runId, pipeline, options, logFn, artifactCollector) {
       : new Map(
           Object.entries(options.agentConfigs || {}).map(([key, value]) => [key, value])
         );
+  const projectContext = pipeline?.project || null;
+  const projectId = projectContext?.id || pipeline?.projectId || null;
 
   const context = {
     runId,
-    project: pipeline?.project || null,
+    project: projectContext,
     env: process.env,
     override: options.override,
     getAgentConfig(agentName) {
+      if (!agentName) {
+        return null;
+      }
+
+      if (projectId) {
+        const scopedKey = `${projectId}::${agentName}`;
+
+        if (agentConfigMap.has(scopedKey)) {
+          return agentConfigMap.get(scopedKey);
+        }
+      }
+
       return agentConfigMap.get(agentName) || null;
     },
     async log(event, data) {

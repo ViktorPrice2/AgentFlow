@@ -32,13 +32,17 @@ function buildAgentRecord(row) {
   const type = row.type || payload.type || null;
   const version = Number.isInteger(row.version) ? row.version : payload.version || 1;
   const description = payload.description || '';
+  const source = row.source || payload.source || 'custom';
+  const originPresetVersion = row.originPresetVersion || payload.originPresetVersion || null;
 
   const normalizedPayload = {
     ...payload,
     id: row.id,
     name,
     type,
-    version
+    version,
+    source,
+    originPresetVersion
   };
 
   return {
@@ -48,6 +52,8 @@ function buildAgentRecord(row) {
     type,
     version,
     description,
+    source,
+    originPresetVersion,
     createdAt: row.createdAt || null,
     updatedAt: row.updatedAt || null,
     payload: normalizedPayload
@@ -59,13 +65,17 @@ function buildPipelineRecord(row) {
   const name = row.name || payload.name || row.id;
   const version = Number.isInteger(row.version) ? row.version : payload.version || 1;
   const description = payload.description || '';
+  const source = row.source || payload.source || 'custom';
+  const originPresetVersion = row.originPresetVersion || payload.originPresetVersion || null;
 
   const normalizedPayload = {
     ...payload,
     id: row.id,
     name,
     projectId: row.projectId || payload.projectId || null,
-    version
+    version,
+    source,
+    originPresetVersion
   };
 
   if (!Array.isArray(normalizedPayload.nodes)) {
@@ -85,9 +95,188 @@ function buildPipelineRecord(row) {
     nodes: normalizedPayload.nodes,
     edges: normalizedPayload.edges,
     override: normalizedPayload.override || null,
+    source,
+    originPresetVersion,
     createdAt: row.createdAt || payload.createdAt || null,
     updatedAt: row.updatedAt || payload.updatedAt || null,
     payload: normalizedPayload
+  };
+}
+
+function normalizeChannelList(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === 'string') {
+          return item.trim();
+        }
+
+        if (item && typeof item === 'object' && typeof item.id === 'string') {
+          return item.id.trim();
+        }
+
+        return null;
+      })
+      .filter((item) => item && item.length > 0);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      return normalizeChannelList(parsed);
+    } catch {
+      return trimmed
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+    }
+  }
+
+  return [];
+}
+
+function normalizeJsonValue(value, fallback) {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+
+  if (Array.isArray(value) || isPlainObject(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return fallback;
+    }
+
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return fallback;
+    }
+  }
+
+  return fallback;
+}
+
+function clampProgress(value, fallback = 0) {
+  const numeric = typeof value === 'number' ? value : Number(value);
+
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+
+  if (numeric < 0) {
+    return 0;
+  }
+
+  if (numeric > 1) {
+    return 1;
+  }
+
+  return numeric;
+}
+
+function buildProjectRecord(row) {
+  if (!row) {
+    return null;
+  }
+
+  const status = row.status || 'draft';
+  const briefStatus = row.briefStatus || 'pending';
+  const briefProgress = clampProgress(row.briefProgress, 0);
+  const channels = normalizeChannelList(row.channels);
+  const needsAttention = normalizeJsonValue(row.needsAttention, {});
+  const presetDraft = normalizeJsonValue(row.presetDraft, {});
+
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description || null,
+    status,
+    briefStatus,
+    briefProgress,
+    briefVersion: row.briefVersion || null,
+    needsAttention,
+    tgLinkBase: row.tgLinkBase || null,
+    tgLastInvitation: row.tgLastInvitation || null,
+    tgContactStatus: row.tgContactStatus || null,
+    industry: row.industry || null,
+    channels,
+    presetId: row.presetId || null,
+    presetVersion: row.presetVersion || null,
+    presetDraft,
+    createdAt: row.createdAt || null,
+    updatedAt: row.updatedAt || null
+  };
+}
+
+function normalizeArtifacts(value) {
+  if (value === null || value === undefined) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function buildReportRecord(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    pipelineId: row.pipelineId || null,
+    status: row.status || row.state || 'pending',
+    title: row.title || null,
+    summary: row.summary || row.content || null,
+    content: row.content || null,
+    artifacts: normalizeArtifacts(row.artifacts),
+    createdAt: row.createdAt || null,
+    updatedAt: row.updatedAt || null
+  };
+}
+
+function buildTelegramContactRecord(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    chatId: row.chatId,
+    label: row.label || null,
+    status: row.status || 'unknown',
+    lastContactAt: row.lastContactAt || null,
+    projectId: row.projectId || null,
+    createdAt: row.createdAt || null,
+    updatedAt: row.updatedAt || null
   };
 }
 
@@ -214,17 +403,515 @@ function createHistorySummary(entityType, payload) {
 export function createEntityStore(options = {}) {
   const dbPath = options.dbPath || DEFAULT_DB_PATH;
 
-  function listAgentRecords() {
+  function listProjects() {
     const db = openDatabase(dbPath);
 
     try {
       const rows = db
         .prepare(
-          `SELECT id, projectId, name, type, config, version, createdAt, updatedAt
-           FROM Agents
-           ORDER BY datetime(COALESCE(updatedAt, createdAt)) DESC`
+          `SELECT id, name, description, status, briefStatus, briefProgress, briefVersion,
+                  needsAttention, tgLinkBase, tgLastInvitation, tgContactStatus, industry,
+                  channels, presetId, presetVersion, presetDraft, createdAt, updatedAt
+             FROM Projects
+            ORDER BY datetime(COALESCE(updatedAt, createdAt)) DESC`
         )
         .all();
+
+      return rows.map((row) => buildProjectRecord(row));
+    } finally {
+      db.close();
+    }
+  }
+
+  function getProjectById(id) {
+    if (!id) {
+      throw new Error('Project id is required');
+    }
+
+    const db = openDatabase(dbPath);
+
+    try {
+      const row = db
+        .prepare(
+          `SELECT id, name, description, status, briefStatus, briefProgress, briefVersion,
+                  needsAttention, tgLinkBase, tgLastInvitation, tgContactStatus, industry,
+                  channels, presetId, presetVersion, presetDraft, createdAt, updatedAt
+             FROM Projects
+            WHERE id = ?`
+        )
+        .get(id);
+
+      return buildProjectRecord(row);
+    } finally {
+      db.close();
+    }
+  }
+
+  function saveProject(project) {
+    if (!project) {
+      throw new Error('Project payload is required');
+    }
+
+    const db = openDatabase(dbPath);
+    const now = new Date().toISOString();
+
+    try {
+      const existingRaw = project.id
+        ? db
+            .prepare(
+              `SELECT id, name, description, status, briefStatus, briefProgress, briefVersion,
+                      needsAttention, tgLinkBase, tgLastInvitation, tgContactStatus, industry,
+                      channels, presetId, presetVersion, presetDraft, createdAt, updatedAt
+                 FROM Projects
+                WHERE id = ?`
+            )
+            .get(project.id)
+        : null;
+
+      const existing = existingRaw ? buildProjectRecord(existingRaw) : null;
+      const id = project.id || existing?.id || randomUUID();
+      const resolvedName = project.name ?? existing?.name;
+
+      if (!resolvedName || !String(resolvedName).trim()) {
+        throw new Error('Project name is required');
+      }
+
+      const name = String(resolvedName).trim();
+
+      const description =
+        project.description === undefined ? existing?.description ?? null : project.description;
+      const status = project.status ?? existing?.status ?? 'draft';
+      const briefStatus = project.briefStatus ?? existing?.briefStatus ?? 'pending';
+      const briefProgress = clampProgress(
+        project.briefProgress ?? existing?.briefProgress ?? 0,
+        existing?.briefProgress ?? 0
+      );
+      const briefVersion =
+        project.briefVersion === undefined
+          ? existing?.briefVersion ?? null
+          : project.briefVersion === null || project.briefVersion === ''
+          ? null
+          : String(project.briefVersion);
+
+      const channelsInput =
+        project.channels === undefined ? existing?.channels ?? [] : project.channels ?? [];
+      const channels = normalizeChannelList(channelsInput);
+
+      const needsAttentionInput =
+        project.needsAttention === undefined ? existing?.needsAttention ?? {} : project.needsAttention ?? {};
+      const needsAttention = normalizeJsonValue(needsAttentionInput, {});
+
+      const presetDraftInput =
+        project.presetDraft === undefined ? existing?.presetDraft ?? {} : project.presetDraft ?? {};
+      const presetDraft = normalizeJsonValue(presetDraftInput, {});
+
+      const tgLinkBase =
+        project.tgLinkBase === undefined
+          ? existing?.tgLinkBase ?? null
+          : project.tgLinkBase === null || project.tgLinkBase === ''
+          ? null
+          : String(project.tgLinkBase).trim();
+      const tgLastInvitation =
+        project.tgLastInvitation === undefined
+          ? existing?.tgLastInvitation ?? null
+          : project.tgLastInvitation === null || project.tgLastInvitation === ''
+          ? null
+          : String(project.tgLastInvitation).trim();
+      const tgContactStatus =
+        project.tgContactStatus === undefined
+          ? existing?.tgContactStatus ?? null
+          : project.tgContactStatus === null || project.tgContactStatus === ''
+          ? null
+          : String(project.tgContactStatus).trim();
+
+      const industry =
+        project.industry === undefined
+          ? existing?.industry ?? null
+          : project.industry === null || project.industry === ''
+          ? null
+          : String(project.industry).trim();
+      const presetId =
+        project.presetId === undefined
+          ? existing?.presetId ?? null
+          : project.presetId === null || project.presetId === ''
+          ? null
+          : String(project.presetId);
+      const presetVersion =
+        project.presetVersion === undefined
+          ? existing?.presetVersion ?? null
+          : project.presetVersion === null || project.presetVersion === ''
+          ? null
+          : String(project.presetVersion);
+
+      const createdAt = existing?.createdAt || now;
+      const updatedAt = now;
+
+      const serializedNeedsAttention = JSON.stringify(needsAttention ?? {});
+      const serializedChannels = JSON.stringify(channels);
+      const serializedPresetDraft = JSON.stringify(presetDraft ?? {});
+
+      if (existing) {
+        db.prepare(
+          `UPDATE Projects
+              SET name = ?, description = ?, status = ?, briefStatus = ?, briefProgress = ?, briefVersion = ?,
+                  needsAttention = ?, tgLinkBase = ?, tgLastInvitation = ?, tgContactStatus = ?, industry = ?,
+                  channels = ?, presetId = ?, presetVersion = ?, presetDraft = ?, updatedAt = ?
+            WHERE id = ?`
+        ).run(
+          name,
+          description,
+          status,
+          briefStatus,
+          briefProgress,
+          briefVersion,
+          serializedNeedsAttention,
+          tgLinkBase,
+          tgLastInvitation,
+          tgContactStatus,
+          industry,
+          serializedChannels,
+          presetId,
+          presetVersion,
+          serializedPresetDraft,
+          updatedAt,
+          id
+        );
+      } else {
+        db.prepare(
+          `INSERT INTO Projects (
+              id, name, description, status, briefStatus, briefProgress, briefVersion,
+              needsAttention, tgLinkBase, tgLastInvitation, tgContactStatus, industry,
+              channels, presetId, presetVersion, presetDraft, createdAt, updatedAt
+            )
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(
+          id,
+          name,
+          description,
+          status,
+          briefStatus,
+          briefProgress,
+          briefVersion,
+          serializedNeedsAttention,
+          tgLinkBase,
+          tgLastInvitation,
+          tgContactStatus,
+          industry,
+          serializedChannels,
+          presetId,
+          presetVersion,
+          serializedPresetDraft,
+          createdAt,
+          updatedAt
+        );
+      }
+
+      return getProjectById(id);
+    } finally {
+      db.close();
+    }
+  }
+
+  function deleteProject(id) {
+    if (!id) {
+      throw new Error('Project id is required');
+    }
+
+    const db = openDatabase(dbPath);
+
+    try {
+      db.prepare('DELETE FROM Projects WHERE id = ?').run(id);
+    } finally {
+      db.close();
+    }
+  }
+
+  function listReports(filter = {}) {
+    const db = openDatabase(dbPath);
+
+    try {
+      let query =
+        `SELECT id, projectId, pipelineId, status, title, summary, content, artifacts, createdAt, updatedAt
+           FROM Reports`;
+      const conditions = [];
+      const params = [];
+
+      if (filter.projectId) {
+        conditions.push('projectId = ?');
+        params.push(filter.projectId);
+      }
+
+      if (filter.status) {
+        conditions.push('status = ?');
+        params.push(filter.status);
+      }
+
+      if (conditions.length > 0) {
+        query += ` WHERE ${conditions.join(' AND ')}`;
+      }
+
+      query += ' ORDER BY datetime(COALESCE(updatedAt, createdAt)) DESC';
+
+      const rows = db.prepare(query).all(...params);
+      return rows.map((row) => buildReportRecord(row));
+    } finally {
+      db.close();
+    }
+  }
+
+  function getReportById(id) {
+    if (!id) {
+      throw new Error('Report id is required');
+    }
+
+    const db = openDatabase(dbPath);
+
+    try {
+      const row = db
+        .prepare(
+          `SELECT id, projectId, pipelineId, status, title, summary, content, artifacts, createdAt, updatedAt
+             FROM Reports
+            WHERE id = ?`
+        )
+        .get(id);
+
+      return buildReportRecord(row);
+    } finally {
+      db.close();
+    }
+  }
+
+  function saveReport(report) {
+    if (!report?.projectId) {
+      throw new Error('Report must include projectId');
+    }
+
+    const db = openDatabase(dbPath);
+    const now = new Date().toISOString();
+
+    try {
+      const existing = report.id
+        ? db
+            .prepare(
+              `SELECT id, projectId, pipelineId, status, title, summary, content, artifacts, createdAt, updatedAt
+                 FROM Reports
+                WHERE id = ?`
+            )
+            .get(report.id)
+        : null;
+
+      const id = existing?.id || report.id || randomUUID();
+      const projectId = report.projectId ?? existing?.projectId;
+
+      if (!projectId) {
+        throw new Error('Report projectId cannot be null');
+      }
+
+      const pipelineId = report.pipelineId ?? existing?.pipelineId ?? null;
+      const status = report.status ?? existing?.status ?? 'pending';
+      const title = report.title ?? existing?.title ?? null;
+      const summary = report.summary ?? existing?.summary ?? null;
+      const content = report.content ?? existing?.content ?? null;
+      const artifacts = normalizeArtifacts(report.artifacts ?? existing?.artifacts ?? []);
+      const artifactsJson = JSON.stringify(artifacts);
+      const createdAt = existing?.createdAt || now;
+      const updatedAt = now;
+
+      if (existing) {
+        db.prepare(
+          `UPDATE Reports
+              SET projectId = ?, pipelineId = ?, status = ?, title = ?, summary = ?, content = ?, artifacts = ?, updatedAt = ?
+            WHERE id = ?`
+        ).run(projectId, pipelineId, status, title, summary, content, artifactsJson, updatedAt, id);
+      } else {
+        db.prepare(
+          `INSERT INTO Reports (id, projectId, pipelineId, status, title, summary, content, artifacts, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(id, projectId, pipelineId, status, title, summary, content, artifactsJson, createdAt, updatedAt);
+      }
+
+      return getReportById(id);
+    } finally {
+      db.close();
+    }
+  }
+
+  function deleteReport(id) {
+    if (!id) {
+      throw new Error('Report id is required');
+    }
+
+    const db = openDatabase(dbPath);
+
+    try {
+      db.prepare('DELETE FROM Reports WHERE id = ?').run(id);
+    } finally {
+      db.close();
+    }
+  }
+
+  function listTelegramContacts(filter = {}) {
+    const db = openDatabase(dbPath);
+
+    try {
+      let query =
+        `SELECT id, chatId, label, status, lastContactAt, projectId, createdAt, updatedAt
+           FROM TelegramContacts`;
+      const params = [];
+      const conditions = [];
+
+      if (filter.projectId) {
+        conditions.push('(projectId = ? OR projectId IS NULL)');
+        params.push(filter.projectId);
+      }
+
+      if (conditions.length > 0) {
+        query += ` WHERE ${conditions.join(' AND ')}`;
+      }
+
+      query += ' ORDER BY datetime(COALESCE(updatedAt, createdAt)) DESC';
+
+      const rows = db.prepare(query).all(...params);
+      return rows.map((row) => buildTelegramContactRecord(row));
+    } finally {
+      db.close();
+    }
+  }
+
+  function getTelegramContactById(id) {
+    if (!id) {
+      throw new Error('Telegram contact id is required');
+    }
+
+    const db = openDatabase(dbPath);
+
+    try {
+      const row = db
+        .prepare(
+          `SELECT id, chatId, label, status, lastContactAt, projectId, createdAt, updatedAt
+             FROM TelegramContacts
+            WHERE id = ?`
+        )
+        .get(id);
+
+      return buildTelegramContactRecord(row);
+    } finally {
+      db.close();
+    }
+  }
+
+  function saveTelegramContact(contact) {
+    if (!contact?.chatId) {
+      throw new Error('Telegram contact must include chatId');
+    }
+
+    const db = openDatabase(dbPath);
+    const now = new Date().toISOString();
+
+    try {
+      const existing = contact.id
+        ? db
+            .prepare(
+              `SELECT id, chatId, label, status, lastContactAt, projectId, createdAt, updatedAt
+                 FROM TelegramContacts
+                WHERE id = ?`
+            )
+            .get(contact.id)
+        : db
+            .prepare(
+              `SELECT id, chatId, label, status, lastContactAt, projectId, createdAt, updatedAt
+                 FROM TelegramContacts
+                WHERE chatId = ?`
+            )
+            .get(contact.chatId);
+
+      const id = existing?.id || contact.id || randomUUID();
+      const chatId = contact.chatId || existing?.chatId;
+
+      if (!chatId) {
+        throw new Error('Telegram contact chatId cannot be null');
+      }
+
+      const projectId =
+        contact.projectId === undefined ? existing?.projectId ?? null : contact.projectId || null;
+      const label =
+        contact.label === undefined ? existing?.label ?? null : contact.label === null ? null : String(contact.label).trim();
+      const status =
+        contact.status === undefined
+          ? existing?.status ?? 'unknown'
+          : contact.status === null || contact.status === ''
+          ? 'unknown'
+          : String(contact.status).trim();
+      const lastContactAt =
+        contact.lastContactAt === undefined
+          ? existing?.lastContactAt ?? null
+          : contact.lastContactAt === null || contact.lastContactAt === ''
+          ? null
+          : String(contact.lastContactAt).trim();
+
+      const createdAt = existing?.createdAt || now;
+      const updatedAt = now;
+
+      if (existing) {
+        db.prepare(
+          `UPDATE TelegramContacts
+              SET chatId = ?, label = ?, status = ?, lastContactAt = ?, projectId = ?, updatedAt = ?
+            WHERE id = ?`
+        ).run(chatId, label, status, lastContactAt, projectId, updatedAt, id);
+      } else {
+        db.prepare(
+          `INSERT INTO TelegramContacts (id, chatId, label, status, lastContactAt, projectId, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(id, chatId, label, status, lastContactAt, projectId, createdAt, updatedAt);
+      }
+
+      return getTelegramContactById(id);
+    } finally {
+      db.close();
+    }
+  }
+
+  function deleteTelegramContact(id) {
+    if (!id) {
+      throw new Error('Telegram contact id is required');
+    }
+
+    const db = openDatabase(dbPath);
+
+    try {
+      db.prepare('DELETE FROM TelegramContacts WHERE id = ?').run(id);
+    } finally {
+      db.close();
+    }
+  }
+
+  function listAgentRecords(filter = {}) {
+    const db = openDatabase(dbPath);
+
+    try {
+      let query =
+        `SELECT id, projectId, name, type, config, version, source, originPresetVersion, createdAt, updatedAt
+           FROM Agents`;
+      const params = [];
+      const conditions = [];
+
+      if (filter.projectId) {
+        conditions.push('projectId = ?');
+        params.push(filter.projectId);
+      }
+
+      if (filter.source) {
+        conditions.push('source = ?');
+        params.push(filter.source);
+      }
+
+      if (conditions.length > 0) {
+        query += ` WHERE ${conditions.join(' AND ')}`;
+      }
+
+      query += ' ORDER BY datetime(COALESCE(updatedAt, createdAt)) DESC';
+
+      const rows = db.prepare(query).all(...params);
 
       return rows.map((row) => buildAgentRecord(row));
     } finally {
@@ -242,7 +929,7 @@ export function createEntityStore(options = {}) {
     try {
       const row = db
         .prepare(
-          `SELECT id, projectId, name, type, config, version, createdAt, updatedAt
+          `SELECT id, projectId, name, type, config, version, source, originPresetVersion, createdAt, updatedAt
              FROM Agents
             WHERE id = ?`
         )
@@ -265,7 +952,7 @@ export function createEntityStore(options = {}) {
 
     try {
       const existing = db
-        .prepare('SELECT id, projectId, version, createdAt FROM Agents WHERE id = ?')
+        .prepare('SELECT id, projectId, version, createdAt, source, originPresetVersion FROM Agents WHERE id = ?')
         .get(id);
 
       const projectId = agent.projectId ?? existing?.projectId ?? null;
@@ -274,27 +961,42 @@ export function createEntityStore(options = {}) {
       const previousVersion = existing?.version || 0;
       const nextVersion = previousVersion + 1;
       const createdAt = existing?.createdAt || now;
+      const source = agent.source ?? existing?.source ?? 'custom';
+      const originPresetVersion = agent.originPresetVersion ?? existing?.originPresetVersion ?? null;
       const payload = {
         ...agent,
         id,
         name,
         type,
         projectId,
-        version: nextVersion
+        version: nextVersion,
+        source,
+        originPresetVersion
       };
       const serializedConfig = stringifyPayload(payload);
 
       if (existing) {
         db.prepare(
           `UPDATE Agents
-             SET projectId = ?, name = ?, type = ?, config = ?, version = ?, updatedAt = ?
+             SET projectId = ?, name = ?, type = ?, config = ?, version = ?, source = ?, originPresetVersion = ?, updatedAt = ?
            WHERE id = ?`
-        ).run(projectId, name, type, serializedConfig, nextVersion, now, id);
+        ).run(projectId, name, type, serializedConfig, nextVersion, source, originPresetVersion, now, id);
       } else {
         db.prepare(
-          `INSERT INTO Agents (id, projectId, name, type, config, version, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-        ).run(id, projectId, name, type, serializedConfig, nextVersion, createdAt, now);
+          `INSERT INTO Agents (id, projectId, name, type, config, version, source, originPresetVersion, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(
+          id,
+          projectId,
+          name,
+          type,
+          serializedConfig,
+          nextVersion,
+          source,
+          originPresetVersion,
+          createdAt,
+          now
+        );
       }
 
       db.prepare(
@@ -309,6 +1011,8 @@ export function createEntityStore(options = {}) {
         type,
         config: serializedConfig,
         version: nextVersion,
+        source,
+        originPresetVersion,
         createdAt,
         updatedAt: now
       });
@@ -331,17 +1035,33 @@ export function createEntityStore(options = {}) {
     }
   }
 
-  function listPipelines() {
+  function listPipelines(filter = {}) {
     const db = openDatabase(dbPath);
 
     try {
-      const rows = db
-        .prepare(
-          `SELECT id, projectId, name, definition, version, createdAt, updatedAt
-           FROM Pipelines
-           ORDER BY datetime(COALESCE(updatedAt, createdAt)) DESC`
-        )
-        .all();
+      let query =
+        `SELECT id, projectId, name, definition, version, source, originPresetVersion, createdAt, updatedAt
+           FROM Pipelines`;
+      const params = [];
+      const conditions = [];
+
+      if (filter.projectId) {
+        conditions.push('projectId = ?');
+        params.push(filter.projectId);
+      }
+
+      if (filter.source) {
+        conditions.push('source = ?');
+        params.push(filter.source);
+      }
+
+      if (conditions.length > 0) {
+        query += ` WHERE ${conditions.join(' AND ')}`;
+      }
+
+      query += ' ORDER BY datetime(COALESCE(updatedAt, createdAt)) DESC';
+
+      const rows = db.prepare(query).all(...params);
 
       return rows.map((row) => buildPipelineRecord(row));
     } finally {
@@ -359,7 +1079,7 @@ export function createEntityStore(options = {}) {
     try {
       const row = db
         .prepare(
-          `SELECT id, projectId, name, definition, version, createdAt, updatedAt
+          `SELECT id, projectId, name, definition, version, source, originPresetVersion, createdAt, updatedAt
              FROM Pipelines
             WHERE id = ?`
         )
@@ -382,7 +1102,7 @@ export function createEntityStore(options = {}) {
 
     try {
       const existing = db
-        .prepare('SELECT id, projectId, version, createdAt FROM Pipelines WHERE id = ?')
+        .prepare('SELECT id, projectId, version, createdAt, source, originPresetVersion FROM Pipelines WHERE id = ?')
         .get(id);
 
       const projectId = pipeline.projectId ?? existing?.projectId ?? null;
@@ -390,26 +1110,40 @@ export function createEntityStore(options = {}) {
       const previousVersion = existing?.version || 0;
       const nextVersion = previousVersion + 1;
       const createdAt = existing?.createdAt || now;
+      const source = pipeline.source ?? existing?.source ?? 'custom';
+      const originPresetVersion = pipeline.originPresetVersion ?? existing?.originPresetVersion ?? null;
       const payload = {
         ...pipeline,
         id,
         name,
         projectId,
-        version: nextVersion
+        version: nextVersion,
+        source,
+        originPresetVersion
       };
       const serializedDefinition = stringifyPayload(payload);
 
       if (existing) {
         db.prepare(
           `UPDATE Pipelines
-             SET projectId = ?, name = ?, definition = ?, version = ?, updatedAt = ?
+             SET projectId = ?, name = ?, definition = ?, version = ?, source = ?, originPresetVersion = ?, updatedAt = ?
            WHERE id = ?`
-        ).run(projectId, name, serializedDefinition, nextVersion, now, id);
+        ).run(projectId, name, serializedDefinition, nextVersion, source, originPresetVersion, now, id);
       } else {
         db.prepare(
-          `INSERT INTO Pipelines (id, projectId, name, definition, version, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`
-        ).run(id, projectId, name, serializedDefinition, nextVersion, createdAt, now);
+          `INSERT INTO Pipelines (id, projectId, name, definition, version, source, originPresetVersion, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(
+          id,
+          projectId,
+          name,
+          serializedDefinition,
+          nextVersion,
+          source,
+          originPresetVersion,
+          createdAt,
+          now
+        );
       }
 
       db.prepare(
@@ -423,6 +1157,8 @@ export function createEntityStore(options = {}) {
         name,
         definition: serializedDefinition,
         version: nextVersion,
+        source,
+        originPresetVersion,
         createdAt,
         updatedAt: now
       });
@@ -682,6 +1418,18 @@ export function createEntityStore(options = {}) {
   }
 
   return {
+    listProjects,
+    getProjectById,
+    saveProject,
+    deleteProject,
+    listReports,
+    getReportById,
+    saveReport,
+    deleteReport,
+    listTelegramContacts,
+    getTelegramContactById,
+    saveTelegramContact,
+    deleteTelegramContact,
     listAgentRecords,
     getAgentById,
     saveAgent,

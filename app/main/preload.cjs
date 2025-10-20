@@ -45,6 +45,16 @@ contextBridge.exposeInMainWorld('AgentAPI', {
   upsertPipeline: (pipelineDefinition) =>
     ipcRenderer.invoke('AgentFlow:pipeline:upsert', pipelineDefinition),
   deletePipeline: (pipelineId) => ipcRenderer.invoke('AgentFlow:pipeline:delete', pipelineId),
+  listProjects: (filter) => ipcRenderer.invoke('AgentFlow:projects:list', filter ?? {}),
+  getProject: (projectId) => ipcRenderer.invoke('AgentFlow:projects:get', projectId),
+  upsertProject: (project) => ipcRenderer.invoke('AgentFlow:projects:upsert', { project }),
+  applyProjectPreset: (params) => ipcRenderer.invoke('AgentFlow:projects:applyPreset', params),
+  listPresets: () => ipcRenderer.invoke('AgentFlow:presets:list'),
+  getPreset: (presetId) => ipcRenderer.invoke('AgentFlow:presets:get', presetId),
+  diffPreset: (presetId, projectPresetVersion) =>
+    ipcRenderer.invoke('AgentFlow:presets:diff', { presetId, projectPresetVersion }),
+  listReports: (filter) => ipcRenderer.invoke('AgentFlow:reports:list', filter ?? {}),
+  getReport: (reportId) => ipcRenderer.invoke('AgentFlow:reports:get', reportId),
   getTelegramStatus: () => ipcRenderer.invoke('bot:status'),
   setTelegramToken: (token) => ipcRenderer.invoke('bot:setToken', token),
   startTelegramBot: () => ipcRenderer.invoke('bot:start'),
@@ -52,6 +62,12 @@ contextBridge.exposeInMainWorld('AgentAPI', {
   tailTelegramLog: (limit) => ipcRenderer.invoke('bot:tailLog', { limit }),
   getTelegramProxyConfig: () => ipcRenderer.invoke('bot:getProxy'),
   setTelegramProxyConfig: (config) => ipcRenderer.invoke('bot:setProxy', config),
+  listTelegramContacts: (projectId) =>
+    ipcRenderer.invoke('AgentFlow:telegram:contacts:list', { projectId }),
+  saveTelegramContact: (contact) =>
+    ipcRenderer.invoke('AgentFlow:telegram:contacts:save', { contact }),
+  sendTelegramInvite: (projectId, chatId) =>
+    ipcRenderer.invoke('AgentFlow:telegram:sendInvite', { projectId, chatId }),
   onTelegramStatusChanged(handler) {
     if (typeof handler !== 'function') {
       return () => {};

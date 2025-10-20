@@ -1,0 +1,107 @@
+{
+  "version": "1.0.0",
+  "meta": {
+    "id": "generic",
+    "name": "Generic Marketing Brief",
+    "industry": "generic",
+    "description": "Baseline preset that can be used when no industry-specific preset is available.",
+    "tags": ["default", "baseline"],
+    "updatedAt": "2025-10-01T00:00:00.000Z",
+    "maintainers": ["AgentFlow Core Team"],
+    "versionNotes": ["Initial generic preset"]
+  },
+  "survey": {
+    "version": "2025.10",
+    "introduction": "Help us understand your marketing goals so we can configure the right assistants.",
+    "completion": "Thanks! Our team will review and confirm your brief shortly.",
+    "sections": [
+      {
+        "id": "company",
+        "title": "Company Overview",
+        "description": "Tell us the basics about your business and positioning.",
+        "questions": [
+          {
+            "id": "company_name",
+            "type": "text",
+            "prompt": "What is the name of your company or product?",
+            "placeholder": "ACME Inc.",
+            "required": true
+          },
+          {
+            "id": "primary_channels",
+            "type": "channels",
+            "prompt": "Which marketing channels are you focused on?",
+            "description": "Select all that apply.",
+            "options": [
+              { "id": "email", "label": "Email Marketing" },
+              { "id": "social", "label": "Social Media" },
+              { "id": "paid", "label": "Paid Ads" },
+              { "id": "seo", "label": "SEO/Content" }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "agents": [
+    {
+      "id": "WriterAgent",
+      "name": "WriterAgent",
+      "type": "content",
+      "description": "Generates campaign assets from collected brief data.",
+      "config": {
+        "instructions": "Create actionable marketing copy using the brief context.",
+        "templates": {
+          "headline": "Launch the new {{company_name}} campaign across {{primary_channels | join(', ')}}.",
+          "summary": "Primary launch plan for {{company_name}}"
+        }
+      }
+    }
+  ],
+  "pipelines": [
+    {
+      "id": "default-campaign",
+      "name": "Default Campaign",
+      "description": "Creates core assets for the default marketing campaign.",
+      "nodes": [
+        { "id": "collect-brief", "type": "form" },
+        { "id": "writer-agent", "type": "agent", "config": { "agentId": "WriterAgent" } }
+      ],
+      "edges": [
+        {
+          "id": "collect-to-writer",
+          "source": "collect-brief",
+          "target": "writer-agent",
+          "from": "collect-brief",
+          "to": "writer-agent"
+        }
+      ]
+    }
+  ],
+  "postProcessing": {
+    "steps": [
+      {
+        "id": "summaries",
+        "type": "aggregate-summary",
+        "config": {
+          "fields": ["summary"]
+        }
+      }
+    ]
+  },
+  "llmAssist": {
+    "summary": "LLM fallback configuration used by BriefMaster and related agents.",
+    "providers": [
+      {
+        "providerId": "openai",
+        "model": "gpt-4o-mini",
+        "mode": "chat",
+        "temperature": 0.4
+      }
+    ],
+    "hints": [
+      "Use channels and industry from the project context.",
+      "Always confirm compliance requirements before sending assets."
+    ]
+  }
+}

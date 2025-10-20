@@ -6,11 +6,21 @@ import keytar from 'keytar';
 import { Telegraf } from 'telegraf';
 import { bootstrap as bootstrapGlobalAgent } from 'global-agent';
 import { createBriefSurvey, summarizeAnswers, buildExecutionPlan } from '../services/tg-bot/survey.js';
+import { createEntityStore } from '../core/storage/entityStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 void __dirname;
 const { ipcMain } = electron;
+let entityStore;
+
+function getEntityStore() {
+  if (!entityStore) {
+    entityStore = createEntityStore();
+  }
+
+  return entityStore;
+}
 
 const KEYTAR_SERVICE = 'AgentFlow Desktop';
 const KEYTAR_ACCOUNT = 'telegram.bot.token';
@@ -50,7 +60,14 @@ const LEGACY_TELEGRAM_CHANNELS = [
   'AgentFlow:bot:setProxy'
 ];
 const BRIEF_CHANNELS = ['AgentFlow:briefs:latest', 'AgentFlow:briefs:plan'];
-const ALL_CHANNELS = [...new Set([...TELEGRAM_CHANNELS, ...LEGACY_TELEGRAM_CHANNELS, ...BRIEF_CHANNELS])];
+const CONTACT_CHANNELS = [
+  'AgentFlow:telegram:contacts:list',
+  'AgentFlow:telegram:contacts:save',
+  'AgentFlow:telegram:sendInvite'
+];
+const ALL_CHANNELS = [
+  ...new Set([...TELEGRAM_CHANNELS, ...LEGACY_TELEGRAM_CHANNELS, ...BRIEF_CHANNELS, ...CONTACT_CHANNELS])
+];
 
 const SENSITIVE_KEYS = new Set(['token', 'apikey', 'api_key', 'secret', 'password', 'authorization']);
 
@@ -1515,6 +1532,84 @@ const handleSetProxy = async (_event, payload = {}) => {
   }
 };
 
+function formatContact(contact) {
+  if (!contact) {
+    return null;
+  }
+
+  return {
+    id: contact.id,
+    chatId: contact.chatId,
+    label: contact.label,
+    status: contact.status,
+    lastContactAt: contact.lastContactAt,
+    projectId: contact.projectId,
+    createdAt: contact.createdAt,
+    updatedAt: contact.updatedAt
+  };
+}
+
+async function sendProjectInvite(_projectId, _chatId, _options = {}) {
+  const error = new Error('Telegram project invites are not yet implemented');
+  error.code = 'TELEGRAM_INVITE_UNAVAILABLE';
+  throw error;
+}
+
+const handleContactsList = async (_event, payload = {}) => {
+  try {
+    const filter = {};
+
+    if (payload?.projectId) {
+      filter.projectId = payload.projectId;
+    }
+
+    const store = getEntityStore();
+    const contacts = store.listTelegramContacts(filter);
+    return respond(true, { contacts: contacts.map((contact) => formatContact(contact)) });
+  } catch (error) {
+    await log('telegram.contacts.list.error', { error: error.message }, 'error');
+    return respond(false, { error: error.message });
+  }
+};
+
+const handleContactSave = async (_event, payload = {}) => {
+  try {
+    const store = getEntityStore();
+    const contactPayload = payload?.contact ?? payload;
+    const saved = store.saveTelegramContact(contactPayload);
+    await log('telegram.contacts.save', {
+      contactId: saved.id,
+      projectId: saved.projectId,
+      chatId: saved.chatId
+    });
+    return respond(true, { contact: formatContact(saved) });
+  } catch (error) {
+    await log('telegram.contacts.save.error', { error: error.message }, 'error');
+    return respond(false, { error: error.message });
+  }
+};
+
+const handleSendInvite = async (_event, payload = {}) => {
+  try {
+    const projectId = sanitizeProjectId(payload?.projectId);
+    const chatId = sanitizeChatId(payload?.chatId);
+
+    if (!projectId) {
+      throw new Error('projectId is required');
+    }
+
+    if (!chatId) {
+      throw new Error('chatId is required');
+    }
+
+    const result = await sendProjectInvite(projectId, chatId, payload || {});
+    return respond(true, result || {});
+  } catch (error) {
+    await log('telegram.invite.error', { error: error.message, payload }, 'error');
+    return respond(false, { error: error.message, code: error.code || null });
+  }
+};
+
 function removeHandlers() {
   ALL_CHANNELS.forEach((channel) => {
     ipcMain.removeHandler(channel);
@@ -1540,6 +1635,9 @@ function registerHandlers() {
 
   ipcMain.handle('AgentFlow:briefs:latest', handleBriefLatest);
   ipcMain.handle('AgentFlow:briefs:plan', handleBriefPlan);
+  ipcMain.handle('AgentFlow:telegram:contacts:list', handleContactsList);
+  ipcMain.handle('AgentFlow:telegram:contacts:save', handleContactSave);
+  ipcMain.handle('AgentFlow:telegram:sendInvite', handleSendInvite);
 }
 
 function attachWindowLifecycle(window) {

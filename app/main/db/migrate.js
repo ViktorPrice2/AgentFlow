@@ -8,7 +8,7 @@ import { createDatabaseInstance } from '../../db/sqlite.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const dataDir = resolveDataPath();
-const dbPath = resolveDataPath('db.sqlite');
+const dbPath = resolveDataPath('app.db');
 const migrationsDir = path.join(__dirname, '../../db/migrations');
 const SCHEMA_TABLE_NAME = 'schema_migrations';
 const SCHEMA_TABLE_SQL = `CREATE TABLE IF NOT EXISTS ${SCHEMA_TABLE_NAME} (
@@ -26,6 +26,7 @@ const REQUIRED_TABLES = [
   'Schedules',
   'Metrics',
   'Reports',
+  'TelegramContacts',
   'EntityHistory',
   SCHEMA_TABLE_NAME
 ];
@@ -47,6 +48,8 @@ const REQUIRED_INDEXES = [
   { table: 'Metrics', name: 'idx_metrics_projectId' },
   { table: 'Reports', name: 'idx_reports_projectId' },
   { table: 'Reports', name: 'idx_reports_createdAt' },
+  { table: 'TelegramContacts', name: 'idx_telegram_contacts_chatId' },
+  { table: 'TelegramContacts', name: 'idx_telegram_contacts_projectId' },
   { table: 'EntityHistory', name: 'idx_history_entity' },
   { table: 'EntityHistory', name: 'idx_history_entity_version' },
   { table: 'EntityHistory', name: 'idx_history_createdAt' },
