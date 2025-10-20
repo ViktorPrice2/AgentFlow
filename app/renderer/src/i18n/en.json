@@ -24,6 +24,7 @@
       "pipelineRun": "Pipeline \"{name}\" finished ({status})",
       "pipelineRunError": "Pipeline launch failed",
       "runsCleared": "Run history cleared",
+      "reportsLoadError": "Failed to load reports",
       "telegramTokenSaved": "Telegram token saved",
       "telegramTokenRemoved": "Telegram token removed",
       "telegramTokenError": "Failed to store Telegram token",
@@ -345,13 +346,21 @@
   },
   "reports": {
     "title": "Reports",
-    "subtitle": "Aggregated metrics for pipeline runs. Detailed JSON reports are stored in data/logs.",
+    "subtitle": "Latest pipeline reports with statuses, summaries and collected artifacts.",
     "emptyTitle": "No report data",
-    "emptyDescription": "Run at least one scenario to collect statistics.",
-    "totalRuns": "Total runs",
-    "success": "Successful",
-    "errors": "Errors",
-    "lastRun": "Last run"
+    "emptyDescription": "Run at least one scenario to generate reports.",
+    "totalReports": "Total reports",
+    "completed": "Completed",
+    "pending": "In progress",
+    "failed": "Failed",
+    "other": "Other",
+    "lastUpdated": "Latest update",
+    "untitled": "Untitled report",
+    "project": "Project",
+    "pipeline": "Pipeline",
+    "summary": "Summary",
+    "artifacts": "Artifacts",
+    "noArtifacts": "No artifacts attached"
   },
   "settings": {
     "system": {

@@ -31,6 +31,33 @@ const fallbackAgents = {
 
 const fallbackProjects = [];
 const fallbackPipelines = [];
+const fallbackReports = [
+  {
+    id: 'offline-report-demo',
+    projectId: 'demo-project',
+    pipelineId: 'WriterPipeline',
+    status: 'completed',
+    title: 'Offline campaign summary',
+    summary: 'Sample performance overview generated while the IPC layer is unavailable.',
+    content:
+      'With the desktop API offline we return a bundled snapshot that illustrates how pipeline results are aggregated.',
+    artifacts: ['demo-outline.md', 'assets-placeholder.zip'],
+    createdAt: '2024-02-01T12:00:00.000Z',
+    updatedAt: '2024-02-01T12:15:00.000Z'
+  },
+  {
+    id: 'offline-report-retro',
+    projectId: 'demo-project',
+    pipelineId: 'ResearchPipeline',
+    status: 'failed',
+    title: 'Market research draft',
+    summary: 'An earlier research request failed because the provider credentials were missing.',
+    content: null,
+    artifacts: ['error-log.txt'],
+    createdAt: '2024-01-18T09:30:00.000Z',
+    updatedAt: '2024-01-18T09:32:00.000Z'
+  }
+];
 
 const fallbackProviderStatus = [
   { id: 'openai', type: 'llm', hasKey: false, apiKeyRef: 'OPENAI_API_KEY', models: ['gpt-4o-mini'] },
@@ -309,6 +336,81 @@ export async function listPipelines() {
 
   await fallbackDelay();
   return JSON.parse(JSON.stringify(fallbackPipelines));
+}
+
+function cloneReport(report) {
+  if (!report) {
+    return null;
+  }
+
+  return {
+    ...report,
+    artifacts: Array.isArray(report.artifacts)
+      ? report.artifacts.map((artifact, index) => {
+          if (typeof artifact === 'string') {
+            return artifact;
+          }
+
+          if (artifact && typeof artifact === 'object') {
+            return { ...artifact };
+          }
+
+          return String(artifact ?? `artifact-${index}`);
+        })
+      : []
+  };
+}
+
+function matchesReportFilter(report, filter = {}) {
+  if (!filter || typeof filter !== 'object') {
+    return true;
+  }
+
+  if (filter.projectId && report.projectId !== filter.projectId) {
+    return false;
+  }
+
+  if (filter.status) {
+    const expected = String(filter.status).toLowerCase();
+    const actual = String(report.status || '').toLowerCase();
+    if (expected && expected !== actual) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+export async function listReports(filter = {}) {
+  if (hasWindowAPI && typeof agentApi.listReports === 'function') {
+    try {
+      const reports = await agentApi.listReports(filter);
+      if (Array.isArray(reports)) {
+        return reports;
+      }
+    } catch (error) {
+      console.warn('Failed to load reports via AgentAPI, using fallback data', error);
+    }
+  }
+
+  await fallbackDelay();
+  return fallbackReports.filter((report) => matchesReportFilter(report, filter)).map(cloneReport);
+}
+
+export async function getReport(reportId) {
+  if (hasWindowAPI && typeof agentApi.getReport === 'function') {
+    try {
+      const report = await agentApi.getReport(reportId);
+      if (report) {
+        return report;
+      }
+    } catch (error) {
+      console.warn('Failed to fetch report via AgentAPI, using fallback data', error);
+    }
+  }
+
+  await fallbackDelay();
+  return cloneReport(fallbackReports.find((report) => report.id === reportId)) ?? null;
 }
 
 export async function fetchEntityHistory(entityType, entityId) {

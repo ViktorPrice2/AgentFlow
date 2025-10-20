@@ -31,7 +31,8 @@ import {
   deleteSchedule,
   toggleSchedule,
   runScheduleNow,
-  getSchedulerStatus
+  getSchedulerStatus,
+  listReports
 } from './api/agentApi.js';
 import { Navigation } from './components/Navigation.jsx';
 import { Toast } from './components/Toast.jsx';
@@ -233,7 +234,8 @@ function App() {
   const [projects, setProjects] = usePersistentState('af.projects', []);
   const [selectedProjectId, setSelectedProjectId] = usePersistentState('af.selectedProject', null);
   const [brief, setBrief] = usePersistentState('af.brief', {});
-  const [runs, setRuns] = useState([]);
+  const [runs, setRuns] = usePersistentState('af.runs', []);
+  const [reports, setReports] = useState([]);
   const [botStatus, setBotStatus] = useState(null);
   const [botBusy, setBotBusy] = useState(false);
   const botBusyRef = useRef(false);
@@ -739,6 +741,31 @@ function App() {
       }
     };
   }, [showToast, t, setLogPanelOpen]);
+
+  const loadReports = useCallback(
+    async (projectId = selectedProjectId) => {
+      const filter = projectId ? { projectId } : {};
+
+      try {
+        const reportList = await listReports(filter);
+        setReports(Array.isArray(reportList) ? reportList : []);
+        return reportList;
+      } catch (error) {
+        console.error('Failed to load reports', error);
+        showToast(t('app.toasts.reportsLoadError'), 'error', {
+          source: 'reports',
+          details: { projectId, message: error?.message }
+        });
+        setReports([]);
+        throw error;
+      }
+    },
+    [selectedProjectId, showToast, t]
+  );
+
+  useEffect(() => {
+    loadReports().catch(() => {});
+  }, [loadReports]);
   const loadSchedulerStatus = async () => {
     try {
       const status = await getSchedulerStatus();
@@ -902,9 +929,10 @@ function App() {
         throw new Error('Pipeline run failed');
       }
 
-      const status = response.result?.status || 'unknown';
-      showToast(t('app.toasts.pipelineRun', { name: pipeline.name, status }), 'success');
-      await refreshRuns();
+      const record = generateRunRecord(pipeline, response.result, context.project);
+      setRuns((prev) => [record, ...prev].slice(0, 20));
+      await loadReports(context?.project?.id ?? selectedProjectId).catch(() => {});
+      showToast(t('app.toasts.pipelineRun', { name: pipeline.name, status: record.status }), 'success');
     } catch (error) {
       console.error('Pipeline execution error', error);
       showToast(t('app.toasts.pipelineRunError'), 'error');
@@ -1116,6 +1144,7 @@ function App() {
     try {
       await runScheduleNow(scheduleId);
       await loadSchedulerStatus();
+      await loadReports(selectedProjectId).catch(() => {});
     } catch (error) {
       throw error;
     }
@@ -1187,7 +1216,7 @@ function App() {
       case 'runs':
         return <RunsPage runs={runs} />;
       case 'reports':
-        return <ReportsPage runs={runs} />;
+        return <ReportsPage reports={reports} />;
       case 'scheduler':
         return (
           <SchedulerPage
@@ -1235,6 +1264,7 @@ function App() {
     providerStatus,
     providerUpdatedAt,
     runs,
+    reports,
     selectedProjectId,
     selectedProject,
     botStatus,

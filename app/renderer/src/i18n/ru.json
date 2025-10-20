@@ -24,6 +24,7 @@
       "pipelineRun": "Пайплайн \"{name}\" завершён ({status})",
       "pipelineRunError": "Не удалось запустить пайплайн",
       "runsCleared": "История запусков очищена",
+      "reportsLoadError": "Не удалось загрузить отчёты",
       "telegramTokenSaved": "Токен Telegram сохранён",
       "telegramTokenRemoved": "Токен Telegram удалён",
       "telegramTokenError": "Не удалось сохранить токен Telegram",
@@ -351,13 +352,21 @@
   },
   "reports": {
     "title": "Отчёты",
-    "subtitle": "Сводные показатели по запускам пайплайнов. Подробные JSON-отчёты — в data/logs.",
+    "subtitle": "Актуальные отчёты по пайплайнам со статусами, краткими выводами и артефактами.",
     "emptyTitle": "Данные отчётов отсутствуют",
-    "emptyDescription": "Запустите хотя бы один сценарий, чтобы собрать статистику.",
-    "totalRuns": "Всего запусков",
-    "success": "Успешно",
-    "errors": "С ошибками",
-    "lastRun": "Последний запуск"
+    "emptyDescription": "Запустите сценарий, чтобы сформировать отчёт.",
+    "totalReports": "Всего отчётов",
+    "completed": "Завершено",
+    "pending": "В работе",
+    "failed": "С ошибками",
+    "other": "Другое",
+    "lastUpdated": "Последнее обновление",
+    "untitled": "Отчёт без названия",
+    "project": "Проект",
+    "pipeline": "Пайплайн",
+    "summary": "Краткое описание",
+    "artifacts": "Артефакты",
+    "noArtifacts": "Артефактов нет"
   },
   "settings": {
     "system": {
