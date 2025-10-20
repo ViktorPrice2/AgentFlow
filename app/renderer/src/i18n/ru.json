@@ -252,7 +252,8 @@
       "connections": "Пайплайны",
       "actions": "Действия",
       "noUsage": "Не используется",
-      "morePipelines": "+{count} ещё"
+      "morePipelines": "ещё {count}",
+      "pluginSource": "Плагин"
     },
     "form": {
       "createTitle": "Создать конфиг агента",
@@ -345,12 +346,19 @@
   },
   "settings": {
     "system": {
-      "title": "Системная информация",
-      "subtitle": "Сведения о среде AgentFlow Desktop.",
-      "refresh": "Проверить провайдеров",
-      "ipcAvailable": "активно",
+      "title": "Система",
+      "subtitle": "Проверьте сведения об окружении и доступность IPC.",
+      "refresh": "Обновить информацию",
+      "ipcLabel": "IPC API",
+      "ipcAvailable": "доступно",
       "ipcUnavailable": "недоступно",
-      "hint": "Файл окружения: <code>.env</code>. Конфиг провайдеров: <code>config/providers.json</code>."
+      "hint": "IPC соединяет интерфейс с фоновым процессом. Перезапустите приложение, если статус не меняется.",
+      "env": {
+        "node": "Node.js",
+        "chromium": "Chromium",
+        "electron": "Electron",
+        "os": "Пользовательский агент"
+      }
     },
     "providers": {
       "title": "Провайдеры",
@@ -362,7 +370,7 @@
       "models": "Модели",
       "key": "Ключ",
       "keyPresent": "есть",
-      "keyMissing": "{ref}",
+      "keyMissing": "нет ({ref})",
       "keyNotRequired": "не требуется"
     },
     "telegram": {
@@ -406,7 +414,8 @@
       "errorAuth": "Проверьте токен",
       "errorProxy": "Настройте переменную HTTPS_PROXY",
       "errorUnknown": "Подробности смотрите в логе Telegram",
-      "controlsHint": "Запуск и остановка бота доступны на вкладке \"Проекты\"."
+      "controlsHint": "Запуск и остановка бота доступны на вкладке \"Проекты\".",
+      "logUnserializable": "[невозможно сериализовать]"
     },
     "language": {
       "title": "Интерфейс",

@@ -62,7 +62,7 @@ function AgentTable({
                 <td>{agent.name}</td>
                 <td>{agent.type || t('common.notAvailable')}</td>
                 <td>{agent.version || t('common.notAvailable')}</td>
-                <td>{agent.source || 'plugin'}</td>
+                <td>{agent.source || t('agents.table.pluginSource')}</td>
                 <td>{agent.projectId || t('common.notAvailable')}</td>
                 <td>{agent.description || t('common.notAvailable')}</td>
                 <td>
@@ -71,12 +71,40 @@ function AgentTable({
                   ) : (
                     <div className="agent-usage">
                       <ul className="agent-usage__list">
-                        {visibleUsage.map((entry) => (
-                          <li key={`${entry.pipelineId}:${entry.nodeId}`}>
-                            <strong>{entry.pipelineName || entry.pipelineId}</strong>
-                            <small>{entry.nodeKind}</small>
-                          </li>
-                        ))}
+                        {visibleUsage.map((entry) => {
+                          const rawKind =
+                            typeof entry.nodeKind === 'string' ? entry.nodeKind.trim() : '';
+                          const tokens = rawKind.split(/[-_\s]+/).filter(Boolean);
+                          const hasCamelCase = rawKind.slice(1).split('').some((char) => char >= 'A' && char <= 'Z');
+                          let normalizedKind = '';
+
+                          if (tokens.length > 1) {
+                            normalizedKind = tokens
+                              .map((token, index) => {
+                                const lower = token.toLowerCase();
+                                return index === 0
+                                  ? lower
+                                  : lower.charAt(0).toUpperCase() + lower.slice(1);
+                              })
+                              .join('');
+                          } else if (rawKind) {
+                            normalizedKind = hasCamelCase
+                              ? rawKind.charAt(0).toLowerCase() + rawKind.slice(1)
+                              : rawKind.toLowerCase();
+                          }
+
+                          const fallbackKindLabel = rawKind || t('common.notAvailable');
+                          const kindLabel = normalizedKind
+                            ? t(`pipelines.form.kind.${normalizedKind}`, undefined, fallbackKindLabel)
+                            : fallbackKindLabel;
+
+                          return (
+                            <li key={`${entry.pipelineId}:${entry.nodeId}`}>
+                              <strong>{entry.pipelineName || entry.pipelineId}</strong>
+                              <small>{kindLabel}</small>
+                            </li>
+                          );
+                        })}
                       </ul>
                       {remaining > 0 ? (
                         <span className="agent-usage__more">
