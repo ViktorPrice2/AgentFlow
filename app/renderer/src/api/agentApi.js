@@ -94,6 +94,18 @@ const fallbackProxyConfig = {
 
 const fallbackRuns = [];
 
+function sortByUpdatedAtDesc(list = []) {
+  return list
+    .slice()
+    .sort((a, b) => {
+      const timeA = a?.updatedAt || a?.createdAt || 0;
+      const timeB = b?.updatedAt || b?.createdAt || 0;
+      const valueA = typeof timeA === 'string' ? new Date(timeA).getTime() : Number(timeA) || 0;
+      const valueB = typeof timeB === 'string' ? new Date(timeB).getTime() : Number(timeB) || 0;
+      return valueB - valueA;
+    });
+}
+
 const clampFallbackRuns = () => {
   const limit = 50;
 

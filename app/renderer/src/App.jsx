@@ -231,10 +231,10 @@ function App() {
   const [unreadLogs, setUnreadLogs] = useState(0);
   const toastTimerRef = useRef(null);
 
-  const [projects, setProjects] = usePersistentState('af.projects', []);
+  const [projects, setProjects] = useState([]);
   const [selectedProjectId, setSelectedProjectId] = usePersistentState('af.selectedProject', null);
   const [brief, setBrief] = usePersistentState('af.brief', {});
-  const [runs, setRuns] = usePersistentState('af.runs', []);
+  const [runs, setRuns] = useState([]);
   const [reports, setReports] = useState([]);
   const [botStatus, setBotStatus] = useState(null);
   const [botBusy, setBotBusy] = useState(false);
@@ -270,7 +270,7 @@ function App() {
     } catch (error) {
       console.error('Failed to load run history', error);
     }
-  }, []);
+  }, [setRuns]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -929,10 +929,24 @@ function App() {
         throw new Error('Pipeline run failed');
       }
 
-      const record = generateRunRecord(pipeline, response.result, context.project);
-      setRuns((prev) => [record, ...prev].slice(0, 20));
+      if (response.run) {
+        const summary = formatRunSummary(response.run);
+
+        if (summary) {
+          setRuns((prev) => {
+            const filtered = prev.filter((item) => item.id !== summary.id);
+            return [summary, ...filtered].slice(0, 50);
+          });
+        } else {
+          await refreshRuns();
+        }
+      } else {
+        await refreshRuns();
+      }
       await loadReports(context?.project?.id ?? selectedProjectId).catch(() => {});
-      showToast(t('app.toasts.pipelineRun', { name: pipeline.name, status: record.status }), 'success');
+      const status =
+        response.run?.status || response.result?.status || response.result?.output?.status || 'unknown';
+      showToast(t('app.toasts.pipelineRun', { name: pipeline.name, status }), 'success');
     } catch (error) {
       console.error('Pipeline execution error', error);
       showToast(t('app.toasts.pipelineRunError'), 'error');
