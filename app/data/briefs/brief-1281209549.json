@@ -1,18 +1,18 @@
 {
-  "id": "brief_242c6867-e9a9-412a-9e18-143e5580dbe1_1760909482799",
-  "projectId": "242c6867-e9a9-412a-9e18-143e5580dbe1",
+  "id": "brief_686ea3ef-0133-42f9-ba91-0c2e8de9004f_1760993024704",
+  "projectId": "686ea3ef-0133-42f9-ba91-0c2e8de9004f",
   "chatId": 1281209549,
-  "summary": "Цели: я\nАудитория: я\nОффер: я\nСообщения: я\nCTA: я",
+  "summary": "Цели: 4\nАудитория: 4\nОффер: 4\nСообщения: 4\nCTA: 4",
   "answers": {
-    "goals": "я",
-    "audience": "я",
-    "offer": "я",
-    "tone": "я",
-    "keyMessages": "я",
-    "callToAction": "я",
-    "successMetrics": "я",
-    "references": "я"
+    "goals": "4",
+    "audience": "4",
+    "offer": "4",
+    "tone": "4",
+    "keyMessages": "4",
+    "callToAction": "4",
+    "successMetrics": "4",
+    "references": "4"
   },
-  "completedAt": "2025-10-19T21:31:22.799Z",
+  "completedAt": "2025-10-20T20:43:44.704Z",
   "source": "telegram"
 }
