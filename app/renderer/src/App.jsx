@@ -272,36 +272,6 @@ function App() {
     }
   }, [setRuns]);
 
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
-
-  useEffect(() => {
-    if (isLogPanelOpen) {
-      setUnreadLogs(0);
-    }
-  }, [isLogPanelOpen]);
-
-  useEffect(() => {
-    refreshRuns();
-  }, [refreshRuns]);
-
-  useEffect(
-    () => () => {
-      if (toastTimerRef.current) {
-        clearTimeout(toastTimerRef.current);
-        toastTimerRef.current = null;
-      }
-    },
-    []
-  );
-
-  useEffect(() => {
-    refreshProjects().catch((error) => {
-      console.error('Failed to hydrate projects', error);
-    });
-  }, [refreshProjects]);
-
   const pushLogEntry = useCallback(
     (entry) => {
       setLogEntries((previous) => {
@@ -366,6 +336,36 @@ function App() {
       throw error;
     }
   }, [setProjects]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    if (isLogPanelOpen) {
+      setUnreadLogs(0);
+    }
+  }, [isLogPanelOpen]);
+
+  useEffect(() => {
+    refreshRuns();
+  }, [refreshRuns]);
+
+  useEffect(
+    () => () => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = null;
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    refreshProjects().catch((error) => {
+      console.error('Failed to hydrate projects', error);
+    });
+  }, [refreshProjects]);
 
   const loadProxyConfig = useCallback(async () => {
     try {
