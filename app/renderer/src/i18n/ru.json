@@ -252,7 +252,7 @@
       "connections": "Пайплайны",
       "actions": "Действия",
       "noUsage": "Не используется",
-      "morePipelines": "+{count} ещё",
+      "morePipelines": "ещё {count}",
       "pluginSource": "Плагин"
     },
     "form": {
@@ -370,7 +370,7 @@
       "models": "Модели",
       "key": "Ключ",
       "keyPresent": "есть",
-      "keyMissing": "{ref}",
+      "keyMissing": "нет ({ref})",
       "keyNotRequired": "не требуется"
     },
     "telegram": {

@@ -246,7 +246,7 @@
       "connections": "Pipelines",
       "actions": "Actions",
       "noUsage": "Not used",
-      "morePipelines": "+{count} more",
+      "morePipelines": "{count} more",
       "pluginSource": "Plugin"
     },
     "form": {
@@ -364,7 +364,7 @@
       "models": "Models",
       "key": "Key",
       "keyPresent": "present",
-      "keyMissing": "{ref}",
+      "keyMissing": "missing ({ref})",
       "keyNotRequired": "not required"
     },
     "telegram": {
