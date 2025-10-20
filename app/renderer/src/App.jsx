@@ -7,13 +7,17 @@ import {
   getTelegramStatus,
   isAgentApiAvailable,
   listAgents,
+  listProjects,
   upsertAgent,
   deleteAgent,
   listPipelines,
+  getProject,
   listProviderStatus,
   listSchedules,
+  listRuns,
   runPipeline,
   upsertSchedule,
+  upsertProject,
   setTelegramToken,
   startTelegramBot,
   stopTelegramBot,
@@ -59,19 +63,37 @@ const SECTION_CONFIG = [
 
 const AGENT_ONLINE = isAgentApiAvailable();
 
-function generateRunRecord(pipeline, result, project) {
-  const timestamp = new Date().toISOString();
-  const artifacts = Array.isArray(result.payload?._artifacts) ? result.payload._artifacts : [];
-  const summary =
-    result.nodes?.find((node) => node.status === 'completed' && node.outputSummary)?.outputSummary ||
-    result.payload?.summary ||
-    '';
+function formatRunSummary(run) {
+  if (!run) {
+    return null;
+  }
+
+  const pipeline = run.input?.pipeline || {};
+  const outputPayload = run.output?.payload || {};
+  const inputPayload = run.input?.payload || {};
+  const artifacts = Array.isArray(outputPayload._artifacts)
+    ? outputPayload._artifacts
+    : Array.isArray(run.output?._artifacts)
+      ? run.output._artifacts
+      : [];
+  const nodeSummary = Array.isArray(run.output?.nodes)
+    ? run.output.nodes.find((node) => node.status === 'completed' && node.outputSummary)?.outputSummary
+    : null;
+  const summary = nodeSummary || outputPayload.summary || run.output?.summary || '';
+  const status = run.status || run.output?.status || 'unknown';
+  const projectName =
+    pipeline.project?.name ||
+    inputPayload.project?.name ||
+    outputPayload.project?.name ||
+    null;
+  const pipelineName = pipeline.name || run.output?.pipeline?.name || pipeline.id || run.pipelineId || '';
+  const timestamp = run.finishedAt || run.startedAt || run.createdAt || new Date().toISOString();
 
   return {
-    id: result.runId || `${pipeline.id}-${timestamp}`,
-    pipelineName: pipeline.name,
-    projectName: project?.name || null,
-    status: result.status || 'unknown',
+    id: run.id,
+    pipelineName,
+    projectName,
+    status,
     artifacts,
     summary,
     timestamp
@@ -135,6 +157,16 @@ function buildPlanFromDetails(details = {}, t) {
   });
 
   return items.join('\n');
+}
+
+function sortProjectsByUpdatedAt(projects) {
+  return projects
+    .slice()
+    .sort((a, b) => {
+      const timeA = a?.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const timeB = b?.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      return timeB - timeA;
+    });
 }
 
 function useAgentResources(locale) {
@@ -228,6 +260,18 @@ function App() {
     entityName: ''
   });
 
+  const refreshRuns = useCallback(async () => {
+    try {
+      const records = await listRuns();
+      const summaries = records
+        .map((run) => formatRunSummary(run))
+        .filter((item) => item !== null);
+      setRuns(summaries);
+    } catch (error) {
+      console.error('Failed to load run history', error);
+    }
+  }, []);
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
@@ -238,6 +282,10 @@ function App() {
     }
   }, [isLogPanelOpen]);
 
+  useEffect(() => {
+    refreshRuns();
+  }, [refreshRuns]);
+
   useEffect(
     () => () => {
       if (toastTimerRef.current) {
@@ -247,6 +295,12 @@ function App() {
     },
     []
   );
+
+  useEffect(() => {
+    refreshProjects().catch((error) => {
+      console.error('Failed to hydrate projects', error);
+    });
+  }, [refreshProjects]);
 
   const pushLogEntry = useCallback(
     (entry) => {
@@ -299,6 +353,19 @@ function App() {
     },
     [pushLogEntry]
   );
+
+  const refreshProjects = useCallback(async () => {
+    try {
+      const projectList = await listProjects();
+      const normalized = Array.isArray(projectList) ? projectList : [];
+      const sorted = sortProjectsByUpdatedAt(normalized);
+      setProjects(sorted);
+      return sorted;
+    } catch (error) {
+      console.error('Failed to load projects', error);
+      throw error;
+    }
+  }, [setProjects]);
 
   const loadProxyConfig = useCallback(async () => {
     try {
@@ -360,10 +427,77 @@ function App() {
   );
 
   useEffect(() => {
-    if (projects.length > 0 && !selectedProject) {
+    if (projects.length === 0) {
+      if (selectedProjectId !== null) {
+        setSelectedProjectId(null);
+      }
+      return;
+    }
+
+    if (!selectedProject) {
       setSelectedProjectId(projects[0].id);
     }
-  }, [projects, selectedProject, setSelectedProjectId]);
+  }, [projects, selectedProject, selectedProjectId, setSelectedProjectId]);
+
+  useEffect(() => {
+    if (!selectedProjectId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const syncSelectedProject = async () => {
+      try {
+        const projectRecord = await getProject(selectedProjectId);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!projectRecord) {
+          setProjects((prev) => {
+            if (!prev.some((item) => item.id === selectedProjectId)) {
+              return prev;
+            }
+
+            return prev.filter((item) => item.id !== selectedProjectId);
+          });
+          return;
+        }
+
+        setProjects((prev) => {
+          const index = prev.findIndex((item) => item.id === projectRecord.id);
+
+          if (index >= 0) {
+            const prevRecord = prev[index];
+            const hasChanged = Object.keys({ ...prevRecord, ...projectRecord }).some(
+              (key) => prevRecord[key] !== projectRecord[key]
+            );
+
+            if (!hasChanged) {
+              return prev;
+            }
+
+            const next = [...prev];
+            next[index] = projectRecord;
+            return sortProjectsByUpdatedAt(next);
+          }
+
+          return sortProjectsByUpdatedAt([...prev, projectRecord]);
+        });
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to sync project', error);
+        }
+      }
+    };
+
+    syncSelectedProject();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProjectId, setProjects]);
 
   const setBotBusyState = useCallback((busy) => {
     botBusyRef.current = busy;
@@ -658,13 +792,31 @@ function App() {
     }
   };
 
-  const handleCreateProject = (project) => {
-    setProjects((prev) => {
-      const filtered = prev.filter((item) => item.id !== project.id);
-      filtered.push(project);
-      return filtered.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-    });
-  };
+  const handleCreateProject = useCallback(
+    async (projectDraft) => {
+      try {
+        const response = await upsertProject(projectDraft);
+
+        if (response?.ok === false) {
+          throw new Error(response?.error || 'Project save failed');
+        }
+
+        const savedProject = response?.project ?? response ?? null;
+
+        await refreshProjects();
+
+        if (savedProject?.id) {
+          setSelectedProjectId(savedProject.id);
+        }
+
+        return savedProject;
+      } catch (error) {
+        console.error('Failed to save project', error);
+        throw error;
+      }
+    },
+    [refreshProjects, setSelectedProjectId]
+  );
 
   const handleUpdateBrief = (nextBrief) => {
     setBrief(nextBrief);
@@ -785,11 +937,6 @@ function App() {
       console.error('Pipeline execution error', error);
       showToast(t('app.toasts.pipelineRunError'), 'error');
     }
-  };
-
-  const handleClearRuns = () => {
-    setRuns([]);
-    showToast(t('app.toasts.runsCleared'), 'info');
   };
 
   const closeVersionModal = () => {
@@ -1067,7 +1214,7 @@ function App() {
           />
         );
       case 'runs':
-        return <RunsPage runs={runs} onClear={handleClearRuns} />;
+        return <RunsPage runs={runs} />;
       case 'reports':
         return <ReportsPage reports={reports} />;
       case 'scheduler':

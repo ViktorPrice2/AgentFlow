@@ -22,6 +22,18 @@ function safeParse(json, fallback = {}) {
   }
 }
 
+function serializeJson(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch (error) {
+    return null;
+  }
+}
+
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -100,6 +112,24 @@ function buildPipelineRecord(row) {
     createdAt: row.createdAt || payload.createdAt || null,
     updatedAt: row.updatedAt || payload.updatedAt || null,
     payload: normalizedPayload
+  };
+}
+
+function buildRunRecord(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    pipelineId: row.pipelineId || null,
+    status: row.status || null,
+    input: safeParse(row.input, null),
+    output: safeParse(row.output, null),
+    createdAt: row.createdAt || null,
+    startedAt: row.startedAt || null,
+    finishedAt: row.finishedAt || null
   };
 }
 
@@ -1181,6 +1211,114 @@ export function createEntityStore(options = {}) {
     }
   }
 
+  function saveRun(run) {
+    if (!run) {
+      throw new Error('Run payload is required');
+    }
+
+    if (!run.projectId) {
+      throw new Error('Run must include a projectId');
+    }
+
+    const db = openDatabase(dbPath);
+    const now = new Date().toISOString();
+
+    try {
+      const id = run.id || randomUUID();
+      const existing = db.prepare('SELECT id, createdAt FROM Runs WHERE id = ?').get(id);
+
+      const createdAt = run.createdAt || existing?.createdAt || now;
+      const startedAt = run.startedAt || null;
+      const finishedAt = run.finishedAt || null;
+      const pipelineId = run.pipelineId || null;
+      const status = run.status || null;
+      const inputJson = serializeJson(run.input);
+      const outputJson = serializeJson(run.output);
+
+      if (existing) {
+        db.prepare(
+          `UPDATE Runs
+              SET projectId = ?, pipelineId = ?, status = ?, input = ?, output = ?,
+                  createdAt = ?, startedAt = ?, finishedAt = ?
+            WHERE id = ?`
+        ).run(run.projectId, pipelineId, status, inputJson, outputJson, createdAt, startedAt, finishedAt, id);
+      } else {
+        db.prepare(
+          `INSERT INTO Runs (id, projectId, pipelineId, status, input, output, createdAt, startedAt, finishedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(id, run.projectId, pipelineId, status, inputJson, outputJson, createdAt, startedAt, finishedAt);
+      }
+
+      return getRunById(id);
+    } finally {
+      db.close();
+    }
+  }
+
+  function getRunById(id) {
+    if (!id) {
+      throw new Error('Run id is required');
+    }
+
+    const db = openDatabase(dbPath);
+
+    try {
+      const row = db
+        .prepare(
+          `SELECT id, projectId, pipelineId, status, input, output, createdAt, startedAt, finishedAt
+             FROM Runs
+            WHERE id = ?`
+        )
+        .get(id);
+
+      return buildRunRecord(row);
+    } finally {
+      db.close();
+    }
+  }
+
+  function listRuns(filter = {}) {
+    const db = openDatabase(dbPath);
+
+    try {
+      const conditions = [];
+      const params = [];
+
+      if (filter.projectId) {
+        conditions.push('projectId = ?');
+        params.push(filter.projectId);
+      }
+
+      if (filter.pipelineId) {
+        conditions.push('pipelineId = ?');
+        params.push(filter.pipelineId);
+      }
+
+      let query =
+        `SELECT id, projectId, pipelineId, status, input, output, createdAt, startedAt, finishedAt
+           FROM Runs`;
+
+      if (conditions.length > 0) {
+        query += ` WHERE ${conditions.join(' AND ')}`;
+      }
+
+      query += ' ORDER BY datetime(COALESCE(finishedAt, startedAt, createdAt)) DESC';
+
+      const limit = Number.isInteger(filter.limit) && filter.limit > 0 ? filter.limit : 50;
+
+      if (limit > 0) {
+        query += ' LIMIT ?';
+        params.push(limit);
+      }
+
+      const rows = db.prepare(query).all(...params);
+
+      return rows.map((row) => buildRunRecord(row));
+    } finally {
+      db.close();
+    }
+  }
+
   function listHistory(entityType, entityId) {
     if (!entityType || !entityId) {
       throw new Error('entityType and entityId are required');
@@ -1438,6 +1576,9 @@ export function createEntityStore(options = {}) {
     getPipelineById,
     savePipeline,
     deletePipeline,
+    saveRun,
+    getRunById,
+    listRuns,
     listHistory,
     diffEntityVersions,
     buildAgentConfigMap,

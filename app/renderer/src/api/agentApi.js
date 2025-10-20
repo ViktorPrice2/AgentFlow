@@ -29,6 +29,7 @@ const fallbackAgents = {
   configs: []
 };
 
+const fallbackProjects = [];
 const fallbackPipelines = [];
 const fallbackReports = [
   {
@@ -91,6 +92,23 @@ const fallbackProxyConfig = {
   httpProxy: ''
 };
 
+const fallbackRuns = [];
+
+const clampFallbackRuns = () => {
+  const limit = 50;
+
+  if (fallbackRuns.length > limit) {
+    fallbackRuns.length = limit;
+  }
+};
+
+const recordFallbackRun = (record) => {
+  const snapshot = JSON.parse(JSON.stringify(record));
+  fallbackRuns.unshift(snapshot);
+  clampFallbackRuns();
+  return snapshot;
+};
+
 const recomputeFallbackUsage = () => {
   const usageMap = new Map();
 
@@ -144,6 +162,92 @@ export async function listAgents() {
 
   await fallbackDelay();
   return JSON.parse(JSON.stringify(fallbackAgents));
+}
+
+export async function listProjects(filter) {
+  if (hasWindowAPI && typeof agentApi.listProjects === 'function') {
+    const response = await agentApi.listProjects(filter ?? {});
+
+    if (Array.isArray(response)) {
+      return response;
+    }
+
+    if (response?.ok === false) {
+      throw new Error(response?.error || 'Failed to load projects');
+    }
+
+    return Array.isArray(response?.projects) ? response.projects : [];
+  }
+
+  await fallbackDelay();
+  return sortByUpdatedAtDesc(fallbackProjects).map((project) => JSON.parse(JSON.stringify(project)));
+}
+
+export async function getProject(projectId) {
+  if (hasWindowAPI && typeof agentApi.getProject === 'function') {
+    const response = await agentApi.getProject(projectId);
+
+    if (response?.ok === false) {
+      throw new Error(response?.error || 'Failed to load project');
+    }
+
+    return response?.project ?? null;
+  }
+
+  await fallbackDelay();
+
+  if (!projectId) {
+    return null;
+  }
+
+  const project = fallbackProjects.find((item) => item.id === projectId);
+  return project ? JSON.parse(JSON.stringify(project)) : null;
+}
+
+export async function upsertProject(project) {
+  if (hasWindowAPI && typeof agentApi.upsertProject === 'function') {
+    return agentApi.upsertProject(project);
+  }
+
+  await fallbackDelay();
+
+  const now = new Date().toISOString();
+  const input = project || {};
+  const id = input.id || `project-${Date.now()}`;
+  const existingIndex = fallbackProjects.findIndex((item) => item.id === id);
+  const previous = existingIndex >= 0 ? fallbackProjects[existingIndex] : null;
+  const createdAt = previous?.createdAt || now;
+
+  const record = {
+    ...previous,
+    ...input,
+    id,
+    name: typeof input.name === 'string' ? input.name.trim() : previous?.name || id,
+    industry: typeof input.industry === 'string' ? input.industry.trim() : previous?.industry || '',
+    description:
+      typeof input.description === 'string' ? input.description.trim() : previous?.description || '',
+    channels: typeof input.channels === 'string' ? input.channels.trim() : previous?.channels || '',
+    deeplink: typeof input.deeplink === 'string' ? input.deeplink.trim() : previous?.deeplink || '',
+    createdAt,
+    updatedAt: now
+  };
+
+  if (existingIndex >= 0) {
+    fallbackProjects[existingIndex] = record;
+  } else {
+    fallbackProjects.push(record);
+  }
+
+  fallbackProjects.sort((a, b) => {
+    const timeA = a?.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+    const timeB = b?.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+    return timeB - timeA;
+  });
+
+  return {
+    ok: true,
+    project: JSON.parse(JSON.stringify(record))
+  };
 }
 
 export async function upsertAgent(agentConfig) {
@@ -442,15 +546,51 @@ export async function runPipeline(pipeline, payload) {
   }
 
   await fallbackDelay();
-  return {
-    ok: true,
-    result: {
+  const now = new Date().toISOString();
+  const projectId =
+    pipeline?.projectId || payload?.project?.id || payload?.projectId || pipeline?.payload?.projectId || 'fallback-project';
+  const runRecord = {
+    id: `run-${Date.now()}`,
+    projectId,
+    pipelineId: pipeline?.id || null,
+    status: 'mock',
+    input: {
+      pipeline: pipeline || null,
+      payload: payload || null
+    },
+    output: {
       status: 'mock',
       pipeline,
       payload,
       nodes: []
-    }
+    },
+    createdAt: now,
+    startedAt: now,
+    finishedAt: now
   };
+
+  recordFallbackRun(runRecord);
+
+  return {
+    ok: true,
+    result: runRecord.output,
+    run: JSON.parse(JSON.stringify(runRecord))
+  };
+}
+
+export async function listRuns(filter) {
+  if (hasWindowAPI && typeof agentApi.listRuns === 'function') {
+    const response = await agentApi.listRuns(filter);
+
+    if (response?.ok) {
+      return response.runs ?? [];
+    }
+
+    throw new Error(response?.error || 'Failed to load runs');
+  }
+
+  await fallbackDelay();
+  return JSON.parse(JSON.stringify(fallbackRuns));
 }
 
 export async function listSchedules(projectId) {
