@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
@@ -10,10 +10,10 @@ function getEnvironmentInfo() {
   }
 
   return [
-    { label: 'Node', value: process.versions?.node },
-    { label: 'Chromium', value: process.versions?.chrome },
-    { label: 'Electron', value: process.versions?.electron },
-    { label: 'OS', value: typeof navigator !== 'undefined' ? navigator.userAgent : '' }
+    { labelKey: 'node', value: process.versions?.node },
+    { labelKey: 'chromium', value: process.versions?.chrome },
+    { labelKey: 'electron', value: process.versions?.electron },
+    { labelKey: 'os', value: typeof navigator !== 'undefined' ? navigator.userAgent : '' }
   ];
 }
 
@@ -36,7 +36,7 @@ export function SettingsPage({
 }) {
   const { t, language, setLanguage } = useI18n();
   const locale = language === 'en' ? 'en-US' : 'ru-RU';
-  const envInfo = getEnvironmentInfo();
+  const envInfo = useMemo(() => getEnvironmentInfo(), []);
   const storedProxyValue = typeof proxyValue === 'string' ? proxyValue : '';
   const [tokenInput, setTokenInput] = useState('');
   const [proxyInput, setProxyInput] = useState(storedProxyValue);
@@ -167,7 +167,7 @@ export function SettingsPage({
               try {
                 dataText = JSON.stringify(data);
               } catch (serializationError) {
-                dataText = '[unserializable]';
+                dataText = t('settings.telegram.logUnserializable', undefined, '[unserializable]');
               }
             }
           }
@@ -235,13 +235,14 @@ export function SettingsPage({
       >
         <ul className="env-info">
           {envInfo.map((item) => (
-            <li key={item.label}>
-              <strong>{item.label}:</strong> {item.value || 'вЂ”'}
+            <li key={item.labelKey}>
+              <strong>{t(`settings.system.env.${item.labelKey}`)}:</strong>{' '}
+              {item.value || t('common.notAvailable')}
             </li>
           ))}
         </ul>
         <p className="env-info__status">
-          IPC API:{' '}
+          <strong>{t('settings.system.ipcLabel')}:</strong>{' '}
           {apiAvailable ? (
             <span className="status-label ok">{t('settings.system.ipcAvailable')}</span>
           ) : (

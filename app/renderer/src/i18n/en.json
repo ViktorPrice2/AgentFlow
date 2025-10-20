@@ -246,7 +246,8 @@
       "connections": "Pipelines",
       "actions": "Actions",
       "noUsage": "Not used",
-      "morePipelines": "+{count} more"
+      "morePipelines": "+{count} more",
+      "pluginSource": "Plugin"
     },
     "form": {
       "createTitle": "Create agent config",
@@ -339,12 +340,19 @@
   },
   "settings": {
     "system": {
-      "title": "System info",
-      "subtitle": "Environment details for AgentFlow Desktop.",
-      "refresh": "Check providers",
+      "title": "System",
+      "subtitle": "Inspect environment details and IPC availability.",
+      "refresh": "Refresh info",
+      "ipcLabel": "IPC API",
       "ipcAvailable": "available",
-      "ipcUnavailable": "offline",
-      "hint": "Environment file: <code>.env</code>. Provider config: <code>config/providers.json</code>."
+      "ipcUnavailable": "unavailable",
+      "hint": "IPC connects the interface with the background process. Restart the app if it stays unavailable.",
+      "env": {
+        "node": "Node.js",
+        "chromium": "Chromium",
+        "electron": "Electron",
+        "os": "User agent"
+      }
     },
     "providers": {
       "title": "Providers",
@@ -400,7 +408,8 @@
       "errorAuth": "Check the token",
       "errorProxy": "Set the HTTPS_PROXY environment variable",
       "errorUnknown": "See the Telegram log for details",
-      "controlsHint": "Use the Projects tab to start or stop the bot."
+      "controlsHint": "Use the Projects tab to start or stop the bot.",
+      "logUnserializable": "[unserializable]"
     },
     "language": {
       "title": "Interface",
@@ -503,4 +512,3 @@
     "close": "Close"
   }
 }
-
