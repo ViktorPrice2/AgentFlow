@@ -49,6 +49,11 @@ export function SchedulerPage({
   const renderHtml = (key, params) => ({ __html: t(key, params) });
   const [form, setForm] = useState(DEFAULT_FORM);
   const [saving, setSaving] = useState(false);
+  const isRunning = Boolean(status?.running);
+  const runningClassName = isRunning ? 'status-label ok' : 'status-label warn';
+  const runningLabelKey = isRunning
+    ? 'scheduler.status.runningActive'
+    : 'scheduler.status.runningInactive';
 
   useEffect(() => {
     if (!form.pipelineId && pipelines.length > 0) {
@@ -238,11 +243,10 @@ export function SchedulerPage({
       <section className="info-card">
         <header className="info-card__header">
           <h3>{t('scheduler.status.title')}</h3>
-          <p
-            dangerouslySetInnerHTML={renderHtml('scheduler.status.running', {
-              value: status?.running ? t('common.yes') : t('common.no')
-            })}
-          />
+          <p>
+            <strong>{t('scheduler.status.stateLabel')}:</strong>{' '}
+            <span className={runningClassName}>{t(runningLabelKey)}</span>
+          </p>
         </header>
 
         <div className="info-card__content">

@@ -326,7 +326,22 @@
     "project": "Project",
     "summary": "Summary",
     "artifacts": "Artifacts",
-    "noArtifacts": "No artifacts were produced."
+    "noArtifacts": "No artifacts were produced.",
+    "statuses": {
+      "completed": "Completed",
+      "success": "Completed",
+      "succeeded": "Completed",
+      "failed": "Failed",
+      "error": "Error",
+      "running": "Running",
+      "in_progress": "In progress",
+      "queued": "Queued",
+      "pending": "Pending",
+      "canceled": "Canceled",
+      "cancelled": "Canceled",
+      "skipped": "Skipped",
+      "timeout": "Timed out"
+    }
   },
   "reports": {
     "title": "Reports",
@@ -456,7 +471,9 @@
     },
     "status": {
       "title": "Scheduler status",
-      "running": "Running: <strong>{value}</strong>",
+      "stateLabel": "State",
+      "runningActive": "Running",
+      "runningInactive": "Stopped",
       "started": "<strong>Started</strong>",
       "lastRun": "<strong>Last run</strong>",
       "activeJobs": "<strong>Active jobs</strong>",

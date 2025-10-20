@@ -332,7 +332,22 @@
     "project": "Проект",
     "summary": "Кратко",
     "artifacts": "Артефакты",
-    "noArtifacts": "Артефакты не сформированы."
+    "noArtifacts": "Артефакты не сформированы.",
+    "statuses": {
+      "completed": "Завершён",
+      "success": "Завершён",
+      "succeeded": "Завершён",
+      "failed": "С ошибкой",
+      "error": "Ошибка",
+      "running": "Выполняется",
+      "in_progress": "Выполняется",
+      "queued": "В очереди",
+      "pending": "В ожидании",
+      "canceled": "Отменён",
+      "cancelled": "Отменён",
+      "skipped": "Пропущен",
+      "timeout": "Истекло время"
+    }
   },
   "reports": {
     "title": "Отчёты",
@@ -462,7 +477,9 @@
     },
     "status": {
       "title": "Статус планировщика",
-      "running": "Работает: <strong>{value}</strong>",
+      "stateLabel": "Состояние",
+      "runningActive": "Запущен",
+      "runningInactive": "Остановлен",
       "started": "<strong>Запущен</strong>",
       "lastRun": "<strong>Последний запуск</strong>",
       "activeJobs": "<strong>Активных заданий</strong>",

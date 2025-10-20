@@ -3,6 +3,16 @@ import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
 import { useI18n } from '../i18n/useI18n.jsx';
 
+function formatStatusLabel(status, t) {
+  if (!status) {
+    return t('common.notAvailable');
+  }
+
+  const normalized = String(status).toLowerCase();
+
+  return t(`runs.statuses.${normalized}`, undefined, status);
+}
+
 export function RunsPage({ runs = [], onClear }) {
   const { t, language } = useI18n();
   const locale = language === 'en' ? 'en-US' : 'ru-RU';
@@ -30,7 +40,7 @@ export function RunsPage({ runs = [], onClear }) {
                 <span>{new Date(run.timestamp).toLocaleString(locale)}</span>
               </header>
               <p>
-                {t('runs.status')}: {run.status}
+                {t('runs.status')}: {formatStatusLabel(run.status, t)}
               </p>
               {run.projectName ? <p>{t('runs.project')}: {run.projectName}</p> : null}
               {run.summary ? <p>{t('runs.summary')}: {run.summary}</p> : null}
