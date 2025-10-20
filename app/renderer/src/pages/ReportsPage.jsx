@@ -3,6 +3,16 @@ import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
 import { useI18n } from '../i18n/useI18n.jsx';
 
+function formatStatusLabel(status, t) {
+  if (!status) {
+    return t('common.notAvailable');
+  }
+
+  const normalized = String(status).toLowerCase();
+
+  return t(`runs.statuses.${normalized}`, undefined, status);
+}
+
 function calculateMetrics(runs) {
   const total = runs.length;
 
@@ -51,7 +61,7 @@ export function ReportsPage({ runs = [] }) {
               {metrics.lastRun
                 ? `${metrics.lastRun.pipelineName || t('common.pipeline')} • ${new Date(
                     metrics.lastRun.timestamp
-                  ).toLocaleString(locale)} • ${metrics.lastRun.status}`
+                  ).toLocaleString(locale)} • ${formatStatusLabel(metrics.lastRun.status, t)}`
                 : t('common.notAvailable')}
             </p>
           </section>

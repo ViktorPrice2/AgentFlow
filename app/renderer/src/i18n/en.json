@@ -246,7 +246,8 @@
       "connections": "Pipelines",
       "actions": "Actions",
       "noUsage": "Not used",
-      "morePipelines": "+{count} more"
+      "morePipelines": "{count} more",
+      "pluginSource": "Plugin"
     },
     "form": {
       "createTitle": "Create agent config",
@@ -325,7 +326,22 @@
     "project": "Project",
     "summary": "Summary",
     "artifacts": "Artifacts",
-    "noArtifacts": "No artifacts were produced."
+    "noArtifacts": "No artifacts were produced.",
+    "statuses": {
+      "completed": "Completed",
+      "success": "Completed",
+      "succeeded": "Completed",
+      "failed": "Failed",
+      "error": "Error",
+      "running": "Running",
+      "in_progress": "In progress",
+      "queued": "Queued",
+      "pending": "Pending",
+      "canceled": "Canceled",
+      "cancelled": "Canceled",
+      "skipped": "Skipped",
+      "timeout": "Timed out"
+    }
   },
   "reports": {
     "title": "Reports",
@@ -339,12 +355,19 @@
   },
   "settings": {
     "system": {
-      "title": "System info",
-      "subtitle": "Environment details for AgentFlow Desktop.",
-      "refresh": "Check providers",
+      "title": "System",
+      "subtitle": "Inspect environment details and IPC availability.",
+      "refresh": "Refresh info",
+      "ipcLabel": "IPC API",
       "ipcAvailable": "available",
-      "ipcUnavailable": "offline",
-      "hint": "Environment file: <code>.env</code>. Provider config: <code>config/providers.json</code>."
+      "ipcUnavailable": "unavailable",
+      "hint": "IPC connects the interface with the background process. Restart the app if it stays unavailable.",
+      "env": {
+        "node": "Node.js",
+        "chromium": "Chromium",
+        "electron": "Electron",
+        "os": "User agent"
+      }
     },
     "providers": {
       "title": "Providers",
@@ -356,7 +379,7 @@
       "models": "Models",
       "key": "Key",
       "keyPresent": "present",
-      "keyMissing": "{ref}",
+      "keyMissing": "missing ({ref})",
       "keyNotRequired": "not required"
     },
     "telegram": {
@@ -400,7 +423,8 @@
       "errorAuth": "Check the token",
       "errorProxy": "Set the HTTPS_PROXY environment variable",
       "errorUnknown": "See the Telegram log for details",
-      "controlsHint": "Use the Projects tab to start or stop the bot."
+      "controlsHint": "Use the Projects tab to start or stop the bot.",
+      "logUnserializable": "[unserializable]"
     },
     "language": {
       "title": "Interface",
@@ -447,7 +471,9 @@
     },
     "status": {
       "title": "Scheduler status",
-      "running": "Running: <strong>{value}</strong>",
+      "stateLabel": "State",
+      "runningActive": "Running",
+      "runningInactive": "Stopped",
       "started": "<strong>Started</strong>",
       "lastRun": "<strong>Last run</strong>",
       "activeJobs": "<strong>Active jobs</strong>",
@@ -503,4 +529,3 @@
     "close": "Close"
   }
 }
-
