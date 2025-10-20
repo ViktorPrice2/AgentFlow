@@ -5,20 +5,19 @@ import { EmptyState } from '../components/EmptyState.jsx';
 import { useI18n } from '../i18n/useI18n.jsx';
 
 function createProjectPayload(formState) {
-  const id =
-    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : `project-${Date.now()}`;
-
-  return {
-    id: formState.id || id,
+  const payload = {
     name: formState.name.trim(),
     industry: formState.industry.trim(),
     description: formState.description.trim(),
     deeplink: formState.deeplink.trim(),
-    channels: formState.channels.trim(),
-    updatedAt: new Date().toISOString()
+    channels: formState.channels.trim()
   };
+
+  if (formState.id) {
+    payload.id = formState.id;
+  }
+
+  return payload;
 }
 
 const INITIAL_FORM_STATE = {
@@ -55,7 +54,7 @@ export function ProjectsPage({
     setFormState((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
 
     if (!formState.name.trim()) {
@@ -64,10 +63,18 @@ export function ProjectsPage({
     }
 
     const payload = createProjectPayload(formState);
-    onCreateProject(payload);
-    onNotify(t('projects.toast.saved'), 'success');
-    setFormState(INITIAL_FORM_STATE);
-    onSelectProject(payload.id);
+    try {
+      const savedProject = await onCreateProject(payload);
+      onNotify(t('projects.toast.saved'), 'success');
+      setFormState(INITIAL_FORM_STATE);
+
+      if (savedProject?.id) {
+        onSelectProject(savedProject.id);
+      }
+    } catch (error) {
+      console.error('Failed to create project', error);
+      onNotify(error?.message || t('app.toasts.genericError'), 'error');
+    }
   };
 
   const statusKey = (botStatus?.status || (botStatus?.running ? 'running' : 'stopped') || '').toLowerCase();
