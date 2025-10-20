@@ -13,6 +13,9 @@ const DIST_DIR = path.join(APP_ROOT, 'renderer', 'dist');
 const LOG_FILE = path.join(APP_ROOT, 'data', 'logs', 'app-start.jsonl');
 const SCHEDULER_LOG = path.join(APP_ROOT, 'data', 'logs', 'scheduler.jsonl');
 
+const E2E_STORAGE_KEY = 'af:e2e:mode';
+const E2E_BRIDGE_CHANNEL = 'af:e2e:bridge';
+
 const requireFromApp = createRequire(path.join(APP_ROOT, 'package.json'));
 const { test, expect } = requireFromApp('@playwright/test');
 
@@ -116,6 +119,23 @@ async function startStaticServer() {
   });
 }
 
+test.beforeEach(async ({ page }) => {
+  if (!page || process.env.E2E !== '1') {
+    return;
+  }
+
+  await page.addInitScript(
+    (storageKey) => {
+      try {
+        window.sessionStorage.setItem(storageKey, '1');
+      } catch (error) {
+        // Storage might be disabled; ignore in that case.
+      }
+    },
+    E2E_STORAGE_KEY
+  );
+});
+
 test.describe('Electron smoke', () => {
   test('app starts and writes startup log', async () => {
     await resetStartupLog();
@@ -151,13 +171,15 @@ test.describe('Electron smoke', () => {
       await page.goto(url);
       await page.waitForSelector('[data-testid="app-root"]');
 
-      await page.evaluate(() => {
+      await page.evaluate((bridgeChannel) => {
+        const message = { bridge: bridgeChannel, type: 'SET_LANG', lang: 'ru' };
+
         if (window.e2e?.setLang) {
           window.e2e.setLang('ru');
         } else {
-          window.postMessage({ __e2e__: true, type: 'SET_LANG', lang: 'ru' }, '*');
+          window.postMessage(message, '*');
         }
-      });
+      }, E2E_BRIDGE_CHANNEL);
 
       await page.waitForTimeout(200);
       await expect(page.getByText('Проекты').first()).toBeVisible();
