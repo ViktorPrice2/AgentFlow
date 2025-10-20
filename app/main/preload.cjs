@@ -1,3 +1,6 @@
+/* eslint-disable no-undef */
+'use strict';
+
 const { contextBridge, ipcRenderer } = require('electron');
 let registerE2EBridge = () => false;
 try {
@@ -10,20 +13,25 @@ try {
 
     const normalizedEnv = env || {};
     const nodeEnv = (normalizedEnv.NODE_ENV || '').toLowerCase();
-    const e2eFlag = String(normalizedEnv.E2E || '0');
+    const e2eEnabled = String(normalizedEnv.E2E || '0') === '1';
 
-    if (nodeEnv !== 'test' && e2eFlag !== '1') {
+    if (nodeEnv !== 'test' && !e2eEnabled) {
       return false;
     }
 
-    contextBridge.exposeInMainWorld('e2e', {
-      setLang(lang) {
-        if (!lang) {
-          return;
+    try {
+      contextBridge.exposeInMainWorld('e2e', {
+        setLang(lang) {
+          if (!lang) {
+            return;
+          }
+          window.postMessage({ __e2e__: true, type: 'SET_LANG', lang }, '*');
         }
-        window.postMessage({ __e2e__: true, type: 'SET_LANG', lang }, '*');
-      }
-    });
+      });
+    } catch (error) {
+      console.warn('[preload] e2e bridge expose failed:', error && error.message);
+      return false;
+    }
 
     return true;
   };
