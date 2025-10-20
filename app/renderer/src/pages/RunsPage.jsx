@@ -13,7 +13,7 @@ function formatStatusLabel(status, t) {
   return t(`runs.statuses.${normalized}`, undefined, status);
 }
 
-export function RunsPage({ runs = [], onClear }) {
+export function RunsPage({ runs = [] }) {
   const { t, language } = useI18n();
   const locale = language === 'en' ? 'en-US' : 'ru-RU';
 
@@ -21,13 +21,6 @@ export function RunsPage({ runs = [], onClear }) {
     <InfoCard
       title={t('runs.title')}
       subtitle={t('runs.subtitle')}
-      footer={
-        runs.length > 0 ? (
-          <button type="button" className="secondary-button" onClick={onClear}>
-            {t('runs.clear')}
-          </button>
-        ) : null
-      }
     >
       {runs.length === 0 ? (
         <EmptyState title={t('runs.emptyTitle')} description={t('runs.emptyDescription')} />
@@ -70,6 +63,5 @@ RunsPage.propTypes = {
       summary: PropTypes.string,
       artifacts: PropTypes.arrayOf(PropTypes.string)
     })
-  ),
-  onClear: PropTypes.func.isRequired
+  )
 };

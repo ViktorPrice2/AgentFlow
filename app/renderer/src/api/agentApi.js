@@ -64,6 +64,23 @@ const fallbackProxyConfig = {
   httpProxy: ''
 };
 
+const fallbackRuns = [];
+
+const clampFallbackRuns = () => {
+  const limit = 50;
+
+  if (fallbackRuns.length > limit) {
+    fallbackRuns.length = limit;
+  }
+};
+
+const recordFallbackRun = (record) => {
+  const snapshot = JSON.parse(JSON.stringify(record));
+  fallbackRuns.unshift(snapshot);
+  clampFallbackRuns();
+  return snapshot;
+};
+
 const recomputeFallbackUsage = () => {
   const usageMap = new Map();
 
@@ -340,15 +357,51 @@ export async function runPipeline(pipeline, payload) {
   }
 
   await fallbackDelay();
-  return {
-    ok: true,
-    result: {
+  const now = new Date().toISOString();
+  const projectId =
+    pipeline?.projectId || payload?.project?.id || payload?.projectId || pipeline?.payload?.projectId || 'fallback-project';
+  const runRecord = {
+    id: `run-${Date.now()}`,
+    projectId,
+    pipelineId: pipeline?.id || null,
+    status: 'mock',
+    input: {
+      pipeline: pipeline || null,
+      payload: payload || null
+    },
+    output: {
       status: 'mock',
       pipeline,
       payload,
       nodes: []
-    }
+    },
+    createdAt: now,
+    startedAt: now,
+    finishedAt: now
   };
+
+  recordFallbackRun(runRecord);
+
+  return {
+    ok: true,
+    result: runRecord.output,
+    run: JSON.parse(JSON.stringify(runRecord))
+  };
+}
+
+export async function listRuns(filter) {
+  if (hasWindowAPI && typeof agentApi.listRuns === 'function') {
+    const response = await agentApi.listRuns(filter);
+
+    if (response?.ok) {
+      return response.runs ?? [];
+    }
+
+    throw new Error(response?.error || 'Failed to load runs');
+  }
+
+  await fallbackDelay();
+  return JSON.parse(JSON.stringify(fallbackRuns));
 }
 
 export async function listSchedules(projectId) {
