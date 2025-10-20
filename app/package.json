@@ -38,8 +38,7 @@
     "global-agent": "^3.0.0",
     "keytar": "^7.9.0",
     "node-cron": "^3.0.3",
-    "telegraf": "^4.16.3",
-    "zod": "^4.1.12"
+    "telegraf": "^4.16.3"
   },
   "devDependencies": {
     "@eslint/js": "^8.57.0",
