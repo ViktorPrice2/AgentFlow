@@ -9,6 +9,8 @@ export function Navigation({ sections, activeId, onChange }) {
           type="button"
           className={`nav-tab ${section.id === activeId ? 'active' : ''}`}
           onClick={() => onChange(section.id)}
+          aria-label={section.label}
+          aria-current={section.id === activeId ? 'page' : undefined}
         >
           <span className="nav-tab__label">{section.label}</span>
           {section.badge ? <span className="nav-tab__badge">{section.badge}</span> : null}
