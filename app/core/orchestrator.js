@@ -201,6 +201,32 @@ function buildContext(runId, pipeline, options, logFn, artifactCollector) {
     }
   };
 
+  if (typeof options.projectUpdater === 'function') {
+    context.updateProject = async (updates = {}) => {
+      const currentProject = context.project || { id: projectId };
+
+      if (!currentProject?.id) {
+        throw new Error('Project id is required to update project state');
+      }
+
+      const nextProject = await options.projectUpdater(currentProject.id, updates);
+
+      if (nextProject) {
+        context.project = nextProject;
+        return nextProject;
+      }
+
+      const merged = { ...currentProject, ...updates };
+      context.project = merged;
+      return merged;
+    };
+
+    context.updatePresetDraft = async (draft) => {
+      const normalizedDraft = draft && typeof draft === 'object' ? draft : {};
+      return context.updateProject({ presetDraft: normalizedDraft });
+    };
+  }
+
   if (options.providerManager) {
     context.providers = options.providerManager.createExecutionContext(context);
   }

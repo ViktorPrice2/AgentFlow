@@ -51,6 +51,12 @@ function createProjectPayload(formState) {
     channels: normalizeChannelList(formState.channels)
   };
 
+  if (formState.presetId && formState.presetId !== 'generic') {
+    payload.presetId = formState.presetId;
+  } else {
+    payload.presetId = formState.presetId || 'generic';
+  }
+
   if (formState.id) {
     payload.id = formState.id;
   }
@@ -64,7 +70,8 @@ const INITIAL_FORM_STATE = {
   industry: '',
   description: '',
   deeplink: '',
-  channels: ''
+  channels: '',
+  presetId: 'generic'
 };
 
 export function ProjectsPage({
@@ -86,7 +93,16 @@ export function ProjectsPage({
   onSendInvite = async () => false,
   onApproveBrief = async () => false,
   inviteHistory = [],
-  onRefreshInviteHistory = async () => []
+  onRefreshInviteHistory = async () => [],
+  presetOptions = [],
+  presetsLoading = false,
+  presetDiff = null,
+  presetBusy = false,
+  presetDiffLoading = false,
+  onApplyPreset = async () => false,
+  onClearPresetDraft = async () => false,
+  onRefreshPresetDiff = async () => {},
+  onOpenBrief = () => {}
 }) {
   const { t, language } = useI18n();
   const locale = language === 'en' ? 'en-US' : 'ru-RU';
@@ -95,6 +111,10 @@ export function ProjectsPage({
   const [contactForm, setContactForm] = useState({ chatId: '', label: '' });
   const [inviteFeedback, setInviteFeedback] = useState(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [approveModalOpen, setApproveModalOpen] = useState(false);
+  const [approveLoading, setApproveLoading] = useState(false);
+  const [presetModalOpen, setPresetModalOpen] = useState(false);
+  const [presetReviewLoading, setPresetReviewLoading] = useState(false);
   const selectedProject = useMemo(
     () => selectedProjectProp || projects.find((project) => project.id === selectedProjectId) || null,
     [projects, selectedProjectId, selectedProjectProp]
@@ -141,12 +161,52 @@ export function ProjectsPage({
     [inviteHistory]
   );
   const hasInviteHistory = inviteHistoryItems.length > 0;
+  const presetOptionMap = useMemo(() => {
+    const map = new Map();
+    (Array.isArray(presetOptions) ? presetOptions : []).forEach((option) => {
+      if (option && option.id) {
+        map.set(option.id, option);
+      }
+    });
+    return map;
+  }, [presetOptions]);
+  const selectedProjectPresetId = selectedProject?.presetId || 'generic';
+  const selectedProjectPreset =
+    presetOptionMap.get(selectedProjectPresetId) || presetOptionMap.get('generic') || null;
+  const presetName = selectedProjectPreset?.name || t('projects.presets.genericName');
+  const presetVersionValue =
+    selectedProject?.presetVersion && String(selectedProject.presetVersion).trim().length > 0
+      ? selectedProject.presetVersion
+      : null;
+  const presetUpdatedAt = selectedProjectPreset?.updatedAt || presetDiff?.meta?.updatedAt || null;
+  const hasPresetUpdate = Boolean(presetDiff?.hasUpdate);
+  const presetNotes = Array.isArray(presetDiff?.notes) ? presetDiff.notes : [];
+  const isPresetLoading = presetsLoading || presetDiffLoading || presetBusy;
+  const presetDraft =
+    selectedProject?.presetDraft && typeof selectedProject.presetDraft === 'object'
+      ? selectedProject.presetDraft
+      : null;
+  const presetDraftSummary = typeof presetDraft?.summary === 'string' ? presetDraft.summary : null;
+  const presetDraftSuggestions = Array.isArray(presetDraft?.suggestions) ? presetDraft.suggestions : [];
+  const presetDraftQuestions = Array.isArray(presetDraft?.additionalQuestions)
+    ? presetDraft.additionalQuestions
+    : [];
+  const hasPresetDraft = Boolean(
+    presetDraftSummary || presetDraftSuggestions.length > 0 || presetDraftQuestions.length > 0
+  );
+  const presetDraftMeta = presetDraft?.presetMeta || null;
+  const presetDraftGeneratedAt = presetDraft?.generatedAt || null;
+  const canOpenBriefSection = ['review', 'approved'].includes(briefStatusKey);
 
   useEffect(() => {
     setSelectedContactId('');
     setContactForm({ chatId: '', label: '' });
     setInviteFeedback(null);
     setHistoryLoading(false);
+    setApproveModalOpen(false);
+    setApproveLoading(false);
+    setPresetModalOpen(false);
+    setPresetReviewLoading(false);
   }, [selectedProjectId]);
 
   useEffect(() => {
@@ -155,6 +215,28 @@ export function ProjectsPage({
       setInviteFeedback(null);
     }
   }, [contacts, selectedContactId]);
+
+  useEffect(() => {
+    if (!Array.isArray(presetOptions) || presetOptions.length === 0) {
+      return;
+    }
+
+    setFormState((previous) => {
+      const currentPresetId = previous.presetId || 'generic';
+      if (presetOptions.some((option) => option.id === currentPresetId)) {
+        return previous;
+      }
+
+      const fallbackPreset =
+        presetOptions.find((option) => option.id === 'generic') || presetOptions[0] || null;
+
+      if (!fallbackPreset || fallbackPreset.id === previous.presetId) {
+        return previous;
+      }
+
+      return { ...previous, presetId: fallbackPreset.id };
+    });
+  }, [presetOptions]);
 
   const handleInputChange = (event) => {
     const { name, value } = event.target;
@@ -270,7 +352,7 @@ export function ProjectsPage({
     }
   };
 
-  const handleApproveBriefClick = async () => {
+  const handleApproveBriefClick = () => {
     if (!selectedProject) {
       onNotify(t('projects.toast.projectRequired'), 'error');
       return;
@@ -285,7 +367,113 @@ export function ProjectsPage({
       return;
     }
 
-    await onApproveBrief(selectedProject);
+    setApproveModalOpen(true);
+  };
+
+  const handleApproveModalConfirm = async () => {
+    if (!selectedProject || !canApproveBrief) {
+      return;
+    }
+
+    setApproveLoading(true);
+
+    try {
+      const result = await onApproveBrief(selectedProject);
+
+      if (result !== false) {
+        setApproveModalOpen(false);
+      }
+    } finally {
+      setApproveLoading(false);
+    }
+  };
+
+  const handleApproveModalClose = () => {
+    if (!approveLoading) {
+      setApproveModalOpen(false);
+    }
+  };
+
+  const handleOpenBriefClick = () => {
+    if (!selectedProject) {
+      onNotify(t('projects.toast.projectRequired'), 'error');
+      return;
+    }
+
+    if (!canOpenBriefSection) {
+      onNotify(t('projects.details.openBriefDisabled'), 'info');
+      return;
+    }
+
+    onOpenBrief(selectedProject);
+  };
+
+  const handleRefreshPresetClick = () => {
+    if (!selectedProject) {
+      onNotify(t('projects.toast.projectRequired'), 'error');
+      return;
+    }
+
+    const maybePromise = onRefreshPresetDiff(selectedProject);
+
+    if (maybePromise && typeof maybePromise.then === 'function') {
+      maybePromise.catch(() => {});
+    }
+  };
+
+  const handleApplyPresetClick = async () => {
+    if (!selectedProject) {
+      onNotify(t('projects.toast.projectRequired'), 'error');
+      return;
+    }
+
+    await onApplyPreset(selectedProject.id, selectedProject.presetId || 'generic');
+  };
+
+  const handleReviewPresetDraft = () => {
+    if (!hasPresetDraft) {
+      onNotify(t('projects.details.presetDraftMissing'), 'info');
+      return;
+    }
+
+    setPresetModalOpen(true);
+  };
+
+  const handleApplyPresetDraft = async () => {
+    if (!selectedProject || !hasPresetDraft) {
+      return;
+    }
+
+    setPresetReviewLoading(true);
+
+    try {
+      const presetIdToApply = presetDraft?.presetId || selectedProject.presetId || 'generic';
+      const result = await onApplyPreset(selectedProject.id, presetIdToApply, { clearDraft: true });
+
+      if (result) {
+        setPresetModalOpen(false);
+      }
+    } finally {
+      setPresetReviewLoading(false);
+    }
+  };
+
+  const handleDismissPresetDraft = async () => {
+    if (!selectedProject || !hasPresetDraft) {
+      return;
+    }
+
+    setPresetReviewLoading(true);
+
+    try {
+      const result = await onClearPresetDraft(selectedProject.id);
+
+      if (result) {
+        setPresetModalOpen(false);
+      }
+    } finally {
+      setPresetReviewLoading(false);
+    }
   };
 
   const handleSubmit = async (event) => {
@@ -300,7 +488,7 @@ export function ProjectsPage({
     try {
       const savedProject = await onCreateProject(payload);
       onNotify(t('projects.toast.saved'), 'success');
-      setFormState(INITIAL_FORM_STATE);
+      setFormState(() => ({ ...INITIAL_FORM_STATE }));
 
       if (savedProject?.id) {
         onSelectProject(savedProject.id);
@@ -333,7 +521,8 @@ export function ProjectsPage({
           : 'info';
 
   return (
-    <div className="page-grid">
+    <>
+      <div className="page-grid">
       <InfoCard
         title={t('projects.list.title')}
         subtitle={t('projects.list.subtitle')}
@@ -396,6 +585,23 @@ export function ProjectsPage({
               rows={4}
               placeholder={t('projects.form.descriptionPlaceholder')}
             />
+          </label>
+          <label>
+            {t('projects.form.preset')}
+            <select
+              name="presetId"
+              value={formState.presetId}
+              onChange={handleInputChange}
+              disabled={presetsLoading}
+            >
+              {(Array.isArray(presetOptions) ? presetOptions : []).map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.name}
+                  {option.version ? ` (${option.version})` : ''}
+                </option>
+              ))}
+            </select>
+            <span className="hint">{t('projects.form.presetHint')}</span>
           </label>
           <label>
             {t('projects.form.channels')}
@@ -538,15 +744,100 @@ export function ProjectsPage({
           <div className="project-actions">
             <button
               type="button"
+              className="secondary-button"
+              onClick={handleOpenBriefClick}
+              disabled={!canOpenBriefSection}
+            >
+              {t('projects.details.openBrief')}
+            </button>
+            <button
+              type="button"
               className="primary-button"
               onClick={handleApproveBriefClick}
-              disabled={!canApproveBrief}
+              disabled={!canApproveBrief || approveLoading}
             >
-              {briefApproved
-                ? t('projects.details.briefApprovedLabel')
-                : t('projects.details.approveBrief')}
+              {approveLoading
+                ? t('common.loading')
+                : briefApproved
+                  ? t('projects.details.briefApprovedLabel')
+                  : t('projects.details.approveBrief')}
             </button>
           </div>
+          <section className="preset-section">
+            <header className="preset-section__header">
+              <div>
+                <h4>{t('projects.details.presetHeading')}</h4>
+                <p>{t('projects.details.presetSubtitle', { preset: presetName })}</p>
+              </div>
+              <span
+                className={`preset-status ${hasPresetUpdate ? 'preset-status--update' : 'preset-status--ok'}`}
+              >
+                {hasPresetUpdate
+                  ? t('projects.details.presetStatusUpdate', {
+                      latest: presetDiff?.latestVersion || t('projects.presets.versionUnknown'),
+                      current: presetVersionValue || t('projects.presets.versionUnknown')
+                    })
+                  : t('projects.details.presetStatusUpToDate', {
+                      version: presetVersionValue || t('projects.presets.versionUnknown')
+                    })}
+              </span>
+            </header>
+            <dl className="preset-section__meta">
+              <div>
+                <dt>{t('projects.details.presetName')}</dt>
+                <dd>{presetName}</dd>
+              </div>
+              <div>
+                <dt>{t('projects.details.presetVersion')}</dt>
+                <dd>{presetVersionValue || t('projects.presets.versionUnknown')}</dd>
+              </div>
+              <div>
+                <dt>{t('projects.details.presetLatest')}</dt>
+                <dd>{presetDiff?.latestVersion || t('projects.presets.versionUnknown')}</dd>
+              </div>
+              <div>
+                <dt>{t('projects.details.presetUpdatedAt')}</dt>
+                <dd>
+                  {presetUpdatedAt
+                    ? new Date(presetUpdatedAt).toLocaleString(locale)
+                    : t('common.notAvailable')}
+                </dd>
+              </div>
+            </dl>
+            {presetNotes.length > 0 ? (
+              <ul className="preset-section__notes">
+                {presetNotes.map((note, index) => (
+                  <li key={`${note}-${index}`}>{note}</li>
+                ))}
+              </ul>
+            ) : null}
+            <div className="button-row">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={handleRefreshPresetClick}
+                disabled={isPresetLoading}
+              >
+                {isPresetLoading ? t('common.loading') : t('projects.details.refreshPreset')}
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={handleApplyPresetClick}
+                disabled={isPresetLoading}
+              >
+                {isPresetLoading ? t('projects.details.presetLoading') : t('projects.details.applyPreset')}
+              </button>
+            </div>
+            {hasPresetDraft ? (
+              <div className="preset-draft-notice">
+                <p>{presetDraftSummary || t('projects.details.presetDraftSummary')}</p>
+                <button type="button" className="link-button" onClick={handleReviewPresetDraft}>
+                  {t('projects.details.reviewPresetDraft')}
+                </button>
+              </div>
+            ) : null}
+          </section>
         </InfoCard>
       ) : null}
 
@@ -715,7 +1006,125 @@ export function ProjectsPage({
           </div>
         </InfoCard>
       ) : null}
-    </div>
+      </div>
+      {approveModalOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <div className="modal" role="dialog" aria-modal="true">
+            <header className="modal-header">
+              <h3>{t('projects.approveModal.title')}</h3>
+              <p className="modal-subtitle">{t('projects.approveModal.subtitle')}</p>
+            </header>
+            <div className="modal-content">
+              <p className="modal-meta">{t('projects.approveModal.progress', { percent: briefProgressValue })}</p>
+              {needsAttentionLabels.length > 0 ? (
+                <div>
+                  <h4>{t('projects.approveModal.needsAttentionTitle')}</h4>
+                  <ul className="needs-attention-list">
+                    {needsAttentionLabels.map((label) => (
+                      <li key={`approve-${label}`}>{label}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p>{t('projects.approveModal.noIssues')}</p>
+              )}
+            </div>
+            <footer className="modal-footer">
+              <button type="button" className="secondary-button" onClick={handleApproveModalClose}>
+                {t('projects.approveModal.cancel')}
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={handleApproveModalConfirm}
+                disabled={approveLoading}
+              >
+                {approveLoading ? t('common.loading') : t('projects.approveModal.confirm')}
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+      {presetModalOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <div className="modal" role="dialog" aria-modal="true">
+            <header className="modal-header">
+              <h3>{t('projects.presetModal.title')}</h3>
+              <p className="modal-subtitle">{t('projects.presetModal.subtitle', { preset: presetName })}</p>
+            </header>
+            <div className="modal-content">
+              {presetDraftSummary ? <p>{presetDraftSummary}</p> : null}
+              {presetDraftMeta ? (
+                <p className="modal-meta">
+                  {t('projects.presetModal.meta', {
+                    id: presetDraftMeta.id || '—',
+                    industry: presetDraftMeta.industry || t('common.notAvailable')
+                  })}
+                </p>
+              ) : null}
+              {presetDraftSuggestions.length > 0 ? (
+                <section>
+                  <h4>{t('projects.presetModal.suggestions')}</h4>
+                  <ul className="preset-draft-list">
+                    {presetDraftSuggestions.map((item, index) => (
+                      <li key={`suggestion-${index}`}>
+                        <strong>{item.channel ? `${item.channel}: ` : ''}</strong>
+                        {item.message || JSON.stringify(item)}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+              {presetDraftQuestions.length > 0 ? (
+                <section>
+                  <h4>{t('projects.presetModal.questions')}</h4>
+                  <ul className="preset-draft-list">
+                    {presetDraftQuestions.map((item, index) => (
+                      <li key={`question-${index}`}>{item.prompt || item.question || JSON.stringify(item)}</li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+            </div>
+            <footer className="modal-footer">
+              <div className="modal-meta">
+                {presetDraftGeneratedAt
+                  ? t('projects.presetModal.updatedAt', {
+                      date: new Date(presetDraftGeneratedAt).toLocaleString(locale)
+                    })
+                  : null}
+              </div>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={handleDismissPresetDraft}
+                  disabled={presetReviewLoading}
+                >
+                  {presetReviewLoading ? t('common.loading') : t('projects.presetModal.dismiss')}
+                </button>
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={handleApplyPresetDraft}
+                  disabled={presetReviewLoading || isPresetLoading}
+                >
+                  {presetReviewLoading ? t('common.loading') : t('projects.presetModal.apply')}
+                </button>
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => !presetReviewLoading && setPresetModalOpen(false)}
+                  disabled={presetReviewLoading}
+                >
+                  {t('projects.presetModal.close')}
+                </button>
+              </div>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -742,6 +1151,9 @@ ProjectsPage.propTypes = {
     briefStatus: PropTypes.string,
     briefProgress: PropTypes.number,
     needsAttention: PropTypes.object,
+    presetId: PropTypes.string,
+    presetVersion: PropTypes.string,
+    presetDraft: PropTypes.object,
     tgContactStatus: PropTypes.string,
     tgLastInvitation: PropTypes.string
   }),
@@ -783,5 +1195,28 @@ ProjectsPage.propTypes = {
       error: PropTypes.string
     })
   ),
-  onRefreshInviteHistory: PropTypes.func
+  onRefreshInviteHistory: PropTypes.func,
+  presetOptions: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.string.isRequired,
+      name: PropTypes.string,
+      version: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+      description: PropTypes.string,
+      updatedAt: PropTypes.string
+    })
+  ),
+  presetsLoading: PropTypes.bool,
+  presetDiff: PropTypes.shape({
+    hasUpdate: PropTypes.bool,
+    latestVersion: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    projectVersion: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    notes: PropTypes.arrayOf(PropTypes.string),
+    meta: PropTypes.object
+  }),
+  presetBusy: PropTypes.bool,
+  presetDiffLoading: PropTypes.bool,
+  onApplyPreset: PropTypes.func,
+  onClearPresetDraft: PropTypes.func,
+  onRefreshPresetDiff: PropTypes.func,
+  onOpenBrief: PropTypes.func
 };
