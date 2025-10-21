@@ -686,6 +686,9 @@ function App() {
   ]
 );
 
+  const { agentsData, providerStatus, providerUpdatedAt, refreshAgents } = useAgentResources(locale);
+  const { pipelines, refreshPipelines } = usePipelineResources();
+
   const refreshPresetDiff = useCallback(
     async (projectOverride) => {
       const project = projectOverride || selectedProject;
@@ -939,9 +942,6 @@ function App() {
     }),
     [t]
   );
-
-  const { agentsData, providerStatus, providerUpdatedAt, refreshAgents } = useAgentResources(locale);
-  const { pipelines, refreshPipelines } = usePipelineResources();
 
   const agentOptions = useMemo(() => {
     const pluginOptions = Array.isArray(agentsData?.plugins)
