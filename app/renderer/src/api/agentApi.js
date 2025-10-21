@@ -31,6 +31,7 @@ const fallbackAgents = {
 
 const fallbackProjects = [];
 const fallbackPipelines = [];
+const fallbackTelegramContacts = [];
 const fallbackReports = [
   {
     id: 'offline-report-demo',
@@ -138,9 +139,32 @@ function cloneFallbackProject(project) {
   }
 
   const normalizedChannels = normalizeFallbackChannelList(project.channels);
-  const copy = { ...project, channels: normalizedChannels };
+  const copy = {
+    ...project,
+    channels: normalizedChannels,
+    needsAttention: project.needsAttention ? JSON.parse(JSON.stringify(project.needsAttention)) : {},
+    presetDraft: project.presetDraft ? JSON.parse(JSON.stringify(project.presetDraft)) : {}
+  };
 
   return JSON.parse(JSON.stringify(copy));
+}
+
+function clampFallbackProgress(value) {
+  const numeric = Number(value);
+
+  if (!Number.isFinite(numeric) || Number.isNaN(numeric)) {
+    return 0;
+  }
+
+  if (numeric < 0) {
+    return 0;
+  }
+
+  if (numeric > 1) {
+    return 1;
+  }
+
+  return numeric;
 }
 
 function sortByUpdatedAtDesc(list = []) {
@@ -280,17 +304,91 @@ export async function upsertProject(project) {
   const createdAt = previous?.createdAt || now;
   const channelsInput = input.channels === undefined ? previous?.channels : input.channels;
   const channels = normalizeFallbackChannelList(channelsInput);
+  const briefStatus =
+    typeof input.briefStatus === 'string' && input.briefStatus.trim()
+      ? input.briefStatus.trim()
+      : previous?.briefStatus || 'pending';
+  const briefProgress =
+    input.briefProgress === undefined
+      ? previous?.briefProgress ?? 0
+      : clampFallbackProgress(input.briefProgress);
+  const briefVersion =
+    input.briefVersion === undefined
+      ? previous?.briefVersion ?? null
+      : input.briefVersion === null || input.briefVersion === ''
+      ? null
+      : input.briefVersion;
+  const needsAttention =
+    input.needsAttention === undefined
+      ? previous?.needsAttention ?? {}
+      : typeof input.needsAttention === 'object' && input.needsAttention !== null
+      ? JSON.parse(JSON.stringify(input.needsAttention))
+      : {};
+  const tgLinkBase =
+    input.tgLinkBase === undefined
+      ? previous?.tgLinkBase ?? null
+      : input.tgLinkBase === null || input.tgLinkBase === ''
+      ? null
+      : String(input.tgLinkBase).trim();
+  const tgLastInvitation =
+    input.tgLastInvitation === undefined
+      ? previous?.tgLastInvitation ?? null
+      : input.tgLastInvitation === null || input.tgLastInvitation === ''
+      ? null
+      : String(input.tgLastInvitation);
+  const tgContactStatus =
+    input.tgContactStatus === undefined
+      ? previous?.tgContactStatus ?? null
+      : input.tgContactStatus === null || input.tgContactStatus === ''
+      ? null
+      : String(input.tgContactStatus).trim();
+  const presetId =
+    input.presetId === undefined
+      ? previous?.presetId ?? null
+      : input.presetId === null || input.presetId === ''
+      ? null
+      : String(input.presetId);
+  const presetVersion =
+    input.presetVersion === undefined
+      ? previous?.presetVersion ?? null
+      : input.presetVersion === null || input.presetVersion === ''
+      ? null
+      : String(input.presetVersion);
+  const presetDraft =
+    input.presetDraft === undefined
+      ? previous?.presetDraft ?? {}
+      : typeof input.presetDraft === 'object' && input.presetDraft !== null
+      ? JSON.parse(JSON.stringify(input.presetDraft))
+      : {};
 
   const record = {
     ...previous,
     ...input,
     id,
-    name: typeof input.name === 'string' ? input.name.trim() : previous?.name || id,
-    industry: typeof input.industry === 'string' ? input.industry.trim() : previous?.industry || '',
+    name: typeof input.name === 'string' && input.name.trim() ? input.name.trim() : previous?.name || id,
+    industry:
+      typeof input.industry === 'string' && input.industry.trim()
+        ? input.industry.trim()
+        : previous?.industry || null,
     description:
-      typeof input.description === 'string' ? input.description.trim() : previous?.description || '',
+      typeof input.description === 'string' && input.description.trim()
+        ? input.description.trim()
+        : previous?.description || null,
     channels,
-    deeplink: typeof input.deeplink === 'string' ? input.deeplink.trim() : previous?.deeplink || '',
+    deeplink:
+      typeof input.deeplink === 'string' && input.deeplink.trim()
+        ? input.deeplink.trim()
+        : previous?.deeplink || '',
+    briefStatus,
+    briefProgress,
+    briefVersion,
+    needsAttention,
+    tgLinkBase,
+    tgLastInvitation,
+    tgContactStatus,
+    presetId,
+    presetVersion,
+    presetDraft,
     createdAt,
     updatedAt: now
   };
@@ -949,6 +1047,130 @@ export async function setTelegramProxyConfig(config) {
 
   await fallbackDelay();
   return { ...fallbackProxyConfig };
+}
+
+export async function listTelegramContacts(projectId) {
+  if (hasWindowAPI && typeof agentApi.listTelegramContacts === 'function') {
+    const response = await agentApi.listTelegramContacts(projectId);
+
+    if (response?.ok === false) {
+      throw new Error(response?.error || 'Failed to load Telegram contacts');
+    }
+
+    if (Array.isArray(response?.contacts)) {
+      return response.contacts;
+    }
+
+    if (Array.isArray(response)) {
+      return response;
+    }
+
+    return [];
+  }
+
+  await fallbackDelay();
+
+  if (!projectId) {
+    return fallbackTelegramContacts.map((contact) => ({ ...contact }));
+  }
+
+  return fallbackTelegramContacts
+    .filter((contact) => !contact.projectId || contact.projectId === projectId)
+    .map((contact) => ({ ...contact }));
+}
+
+export async function saveTelegramContact(contact) {
+  if (hasWindowAPI && typeof agentApi.saveTelegramContact === 'function') {
+    const response = await agentApi.saveTelegramContact(contact);
+
+    if (response?.ok === false) {
+      throw new Error(response?.error || 'Failed to save Telegram contact');
+    }
+
+    return response?.contact ?? null;
+  }
+
+  await fallbackDelay();
+
+  if (!contact?.chatId) {
+    throw new Error('chatId is required');
+  }
+
+  const now = new Date().toISOString();
+  const existingIndex = fallbackTelegramContacts.findIndex((item) => item.chatId === contact.chatId);
+  const previous = existingIndex >= 0 ? fallbackTelegramContacts[existingIndex] : null;
+  const id = contact.id || previous?.id || `contact-${Date.now()}`;
+
+  const record = {
+    id,
+    chatId: contact.chatId,
+    label: contact.label || previous?.label || null,
+    status: contact.status || previous?.status || 'unknown',
+    lastContactAt: contact.lastContactAt || previous?.lastContactAt || null,
+    projectId: contact.projectId === undefined ? previous?.projectId ?? null : contact.projectId ?? null,
+    createdAt: previous?.createdAt || now,
+    updatedAt: now
+  };
+
+  if (existingIndex >= 0) {
+    fallbackTelegramContacts[existingIndex] = record;
+  } else {
+    fallbackTelegramContacts.push(record);
+  }
+
+  return { ...record };
+}
+
+export async function sendTelegramInvite(projectId, chatId) {
+  if (hasWindowAPI && typeof agentApi.sendTelegramInvite === 'function') {
+    const response = await agentApi.sendTelegramInvite(projectId, chatId);
+
+    if (response?.ok === false) {
+      throw new Error(response?.error || 'Failed to send Telegram invite');
+    }
+
+    return response;
+  }
+
+  await fallbackDelay();
+
+  if (!projectId) {
+    throw new Error('projectId is required');
+  }
+
+  if (!chatId) {
+    throw new Error('chatId is required');
+  }
+
+  const now = new Date().toISOString();
+  const link = `https://t.me/fallback-bot?start=project_${encodeURIComponent(projectId)}`;
+  const sanitizedChatId = String(chatId).replace(/[^0-9-]+/g, '');
+
+  await saveTelegramContact({ chatId, projectId, status: 'invited', lastContactAt: now }).catch(() => {});
+
+  const project = fallbackProjects.find((item) => item.id === projectId);
+  if (project) {
+    project.tgLastInvitation = now;
+    project.tgContactStatus = 'invited';
+    project.updatedAt = now;
+  }
+
+  fallbackBotLog.push({
+    ts: now,
+    level: 'info',
+    event: 'telegram.invite.sent',
+    data: { projectId, chatId: sanitizedChatId, link }
+  });
+
+  return {
+    ok: true,
+    projectId,
+    chatId: sanitizedChatId,
+    sentAt: now,
+    link,
+    message:
+      `Fallback invite: open ${link} and run /start project=${projectId} to begin the survey.`
+  };
 }
 
 export async function fetchLatestBrief(projectId) {

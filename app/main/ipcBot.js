@@ -699,6 +699,12 @@ async function recordSurveyAnswer(session, answer, ctx) {
     questionKey: question.key
   });
 
+  updateProjectBriefState(session.projectId, {
+    briefStatus: 'collecting',
+    briefProgress: computeSurveyProgress(session),
+    needsAttention: computeNeedsAttention(session)
+  });
+
   if (session.stepIndex < session.survey.length) {
     await sendNextSurveyQuestion(session, ctx);
   } else {
@@ -744,6 +750,109 @@ function emitBriefUpdate(projectId, briefId) {
 function emitBriefError(projectId, data = {}) {
   emitToRenderer('brief:error', { projectId, ...data, error: true });
   log('brief.renderer.error', { projectId, ...data }, 'error').catch(() => {});
+}
+
+function emitBriefStatusChange(project) {
+  if (!project) {
+    return;
+  }
+
+  const payload = {
+    projectId: project.id,
+    status: project.briefStatus,
+    progress: project.briefProgress,
+    briefVersion: project.briefVersion,
+    needsAttention: project.needsAttention,
+    tgLastInvitation: project.tgLastInvitation,
+    tgContactStatus: project.tgContactStatus
+  };
+
+  emitToRenderer('brief:statusChanged', payload);
+}
+
+function computeSurveyProgress(session) {
+  if (!session?.survey?.length) {
+    return 0;
+  }
+
+  const answered = Math.min(Math.max(session.stepIndex || 0, 0), session.survey.length);
+  const progress = answered / session.survey.length;
+
+  if (!Number.isFinite(progress)) {
+    return 0;
+  }
+
+  if (progress < 0) {
+    return 0;
+  }
+
+  if (progress > 1) {
+    return 1;
+  }
+
+  return progress;
+}
+
+function computeNeedsAttention(session) {
+  if (!session?.survey?.length) {
+    return {};
+  }
+
+  const missingDetails = session.survey
+    .map((question, index) => {
+      const value = session.answers?.[question.key];
+      const unanswered = typeof value !== 'string' || value.trim().length === 0;
+
+      if (!unanswered) {
+        return null;
+      }
+
+      return {
+        key: question.key,
+        question: question.question || null,
+        hint: question.hint || null,
+        order: index + 1,
+        section: question.section || question.sectionId || null
+      };
+    })
+    .filter(Boolean);
+
+  if (missingDetails.length === 0) {
+    return {};
+  }
+
+  return {
+    missingFields: missingDetails.map((item) => item.key),
+    pendingCount: missingDetails.length,
+    message: 'brief_incomplete',
+    details: missingDetails,
+    summary:
+      missingDetails
+        .map((item) => item.question || item.key)
+        .filter(Boolean)
+        .join('; ') || null,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function updateProjectBriefState(projectId, updates = {}) {
+  if (!projectId) {
+    return null;
+  }
+
+  try {
+    const store = getEntityStore();
+    const saved = store.saveProject({ id: projectId, ...updates });
+    emitBriefStatusChange(saved);
+    return saved;
+  } catch (error) {
+    log('project.brief.update_error', { projectId, error: error.message }, 'error').catch(() => {});
+    getLogger().warn('Failed to update project brief state', {
+      projectId,
+      message: error?.message
+    });
+    return null;
+  }
 }
 
 async function persistBriefArtifacts(session, briefId, summary, details) {
@@ -820,6 +929,15 @@ async function finalizeBriefSession(session, ctx) {
     });
     throw error;
   }
+
+  const needsAttention = computeNeedsAttention(session);
+  updateProjectBriefState(session.projectId, {
+    briefStatus: 'review',
+    briefProgress: 1,
+    briefVersion: briefId,
+    needsAttention,
+    tgContactStatus: 'completed'
+  });
 
   emitBriefUpdate(session.projectId, briefId);
   await persistSessionMeta(session, ctx);
@@ -901,6 +1019,12 @@ async function handleStartCommand(ctx) {
   session.completedAt = null;
   session.briefPath = null;
   ensureSurveyDefinition(session);
+  updateProjectBriefState(projectId, {
+    briefStatus: 'collecting',
+    briefProgress: computeSurveyProgress(session),
+    needsAttention: computeNeedsAttention(session),
+    tgContactStatus: 'collecting'
+  });
   await persistSessionMeta(session, ctx);
   await log('command.start.accepted', {
     chatId,
@@ -1550,9 +1674,128 @@ function formatContact(contact) {
 }
 
 async function sendProjectInvite(_projectId, _chatId, _options = {}) {
-  const error = new Error('Telegram project invites are not yet implemented');
-  error.code = 'TELEGRAM_INVITE_UNAVAILABLE';
-  throw error;
+  const projectId = sanitizeProjectId(_projectId);
+  const chatIdRaw = _chatId ?? '';
+  const options = _options || {};
+
+  if (!projectId) {
+    const error = new Error('projectId is required');
+    error.code = 'PROJECT_ID_REQUIRED';
+    throw error;
+  }
+
+  if (!chatIdRaw) {
+    const error = new Error('chatId is required');
+    error.code = 'CHAT_ID_REQUIRED';
+    throw error;
+  }
+
+  ensureDepsConfigured();
+
+  const store = getEntityStore();
+  const project = store.getProjectById(projectId);
+
+  if (!project) {
+    const error = new Error(`Project ${projectId} not found`);
+    error.code = 'PROJECT_NOT_FOUND';
+    throw error;
+  }
+
+  const bot = await ensureBot();
+
+  if (!bot || !bot.telegram) {
+    const error = new Error('Telegram bot is not running');
+    error.code = 'BOT_NOT_RUNNING';
+    throw error;
+  }
+
+  const baseCandidates = [];
+  const statusSnapshot = getStatus();
+
+  if (typeof options.linkBase === 'string' && options.linkBase.trim()) {
+    baseCandidates.push(options.linkBase.trim());
+  }
+
+  if (typeof project.tgLinkBase === 'string' && project.tgLinkBase.trim()) {
+    baseCandidates.push(project.tgLinkBase.trim());
+  }
+
+  if (typeof statusSnapshot.deeplinkBase === 'string' && statusSnapshot.deeplinkBase.trim()) {
+    baseCandidates.push(statusSnapshot.deeplinkBase.trim());
+  }
+
+  const resolvedBase = baseCandidates.find((candidate) => candidate.length > 0) || null;
+
+  if (!resolvedBase) {
+    const error = new Error('Telegram deeplink is not available');
+    error.code = 'DEEPLINK_UNAVAILABLE';
+    throw error;
+  }
+
+  const startPayload = options.startPayload || `project_${projectId}`;
+
+  let inviteLink;
+
+  try {
+    const baseUrl = resolvedBase.startsWith('http') ? resolvedBase : `https://t.me/${resolvedBase.replace(/^@/, '')}`;
+    const url = new URL(baseUrl);
+    url.searchParams.set('start', startPayload);
+    inviteLink = url.toString();
+  } catch {
+    const separator = resolvedBase.includes('?') ? '&' : '?';
+    inviteLink = `${resolvedBase}${separator}start=${encodeURIComponent(startPayload)}`;
+  }
+
+  const projectName = project.name || project.id || 'project';
+  const command = `/start project=${projectId}`;
+  const message =
+    options.message ||
+    `Здравствуйте! Чтобы заполнить бриф для проекта "${projectName}", перейдите по ссылке ${inviteLink} и отправьте команду ${command}.`;
+
+  const numericChatId = Number(chatIdRaw);
+  const targetChatId = Number.isFinite(numericChatId) && !Number.isNaN(numericChatId) ? numericChatId : chatIdRaw;
+
+  try {
+    await bot.telegram.sendMessage(targetChatId, message);
+  } catch (error) {
+    await log(
+      'telegram.invite.send_error',
+      { projectId, chatId: sanitizeChatId(chatIdRaw), error: error.message },
+      'error'
+    );
+    const friendly = new Error(error?.message || 'Failed to send Telegram invite');
+    friendly.code = 'TELEGRAM_SEND_FAILED';
+    throw friendly;
+  }
+
+  const now = new Date().toISOString();
+  const sanitizedChatId = sanitizeChatId(chatIdRaw);
+
+  store.saveTelegramContact({
+    chatId: chatIdRaw,
+    projectId,
+    status: 'invited',
+    lastContactAt: now
+  });
+
+  updateProjectBriefState(projectId, {
+    tgLastInvitation: now,
+    tgContactStatus: 'invited'
+  });
+
+  await log('telegram.invite.sent', {
+    projectId,
+    chatId: sanitizedChatId,
+    link: inviteLink
+  });
+
+  return {
+    projectId,
+    chatId: sanitizedChatId,
+    sentAt: now,
+    link: inviteLink,
+    message
+  };
 }
 
 const handleContactsList = async (_event, payload = {}) => {

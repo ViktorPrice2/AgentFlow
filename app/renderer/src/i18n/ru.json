@@ -119,7 +119,22 @@
   "projects": {
     "toast": {
       "nameRequired": "Введите название проекта",
-      "saved": "Проект сохранён"
+      "saved": "Проект сохранён",
+      "contactsLoadError": "Не удалось загрузить контакты Telegram",
+      "contactSaved": "Контакт сохранён",
+      "contactSaveError": "Не удалось сохранить контакт",
+      "inviteSent": "Приглашение отправлено",
+      "inviteError": "Не удалось отправить приглашение",
+      "chatIdRequired": "Укажите chat ID или @username",
+      "projectRequired": "Сначала выберите проект",
+      "briefApproved": "Бриф одобрен",
+      "briefApproveError": "Не удалось одобрить бриф"
+    },
+    "status": {
+      "pending": "Ожидает запуска",
+      "collecting": "Сбор ответов",
+      "review": "Готов к проверке",
+      "approved": "Одобрен"
     },
     "list": {
       "title": "Проекты",
@@ -152,7 +167,60 @@
       "industry": "Отрасль",
       "description": "Описание",
       "channels": "Каналы",
-      "deeplink": "Диплинк"
+      "deeplink": "Диплинк",
+      "briefStatus": "Статус брифа",
+      "briefProgress": "Прогресс заполнения",
+      "needsAttention": "Требует внимания",
+      "needsAttentionNone": "Все разделы заполнены",
+      "approveBrief": "Подтвердить бриф",
+      "approveUnavailable": "Заполните бриф, чтобы подтвердить",
+      "alreadyApproved": "Бриф уже одобрен",
+      "briefApprovedLabel": "Бриф одобрен"
+    },
+    "telegram": {
+      "title": "Контакты Telegram",
+      "subtitle": "Назначьте контакт, отправьте ссылку и отслеживайте ответы.",
+      "contactSelect": "Сохранённые контакты",
+      "contactPlaceholder": "Выберите контакт",
+      "refresh": "Обновить",
+      "refreshing": "Обновление...",
+      "chatIdLabel": "Chat ID",
+      "contactStatusLabel": "Статус",
+      "lastContactAt": "Последний ответ",
+      "newContactChatId": "Chat ID или @username",
+      "chatIdPlaceholder": "например, @briefmanager или 123456789",
+      "newContactLabel": "Подпись контакта",
+      "labelPlaceholder": "Команда маркетинга, аккаунт-менеджер...",
+      "saveContact": "Сохранить контакт",
+      "sendInvite": "Отправить приглашение",
+      "statusLabel": "Статус контакта",
+      "lastInvitation": "Последнее приглашение",
+      "lastInviteAt": "Последнее приглашение {date}",
+      "noInvites": "Приглашение ещё не отправляли",
+      "inviteInlineSuccess": "Приглашение отправлено контакту {chatId}.",
+      "inviteInlineSuccessWithDate": "Приглашение отправлено контакту {chatId} в {date}.",
+      "inviteInlineError": "Не удалось отправить приглашение.",
+      "inviteInlineErrorWithReason": "Не удалось отправить приглашение: {reason}.",
+      "inviteHistory": {
+        "title": "История приглашений",
+        "empty": "Записей об отправленных приглашениях пока нет.",
+        "refresh": "Обновить историю",
+        "status": {
+          "sent": "Отправлено",
+          "error": "Ошибка",
+          "send_error": "Ошибка отправки"
+        },
+        "chat": "Чат",
+        "link": "Ссылка",
+        "message": "Сообщение",
+        "error": "Ошибка"
+      },
+      "status": {
+        "invited": "Приглашён",
+        "collecting": "Заполняет бриф",
+        "completed": "Заполнил",
+        "unknown": "Неизвестно"
+      }
     },
     "history": {
       "title": "История версий",

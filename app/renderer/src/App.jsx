@@ -32,7 +32,10 @@ import {
   toggleSchedule,
   runScheduleNow,
   getSchedulerStatus,
-  listReports
+  listReports,
+  listTelegramContacts,
+  saveTelegramContact,
+  sendTelegramInvite
 } from './api/agentApi.js';
 import { Navigation } from './components/Navigation.jsx';
 import { Toast } from './components/Toast.jsx';
@@ -169,6 +172,99 @@ function sortProjectsByUpdatedAt(projects) {
     });
 }
 
+function normalizeInviteLogEntry(entry, fallbackKey = 0) {
+  if (!entry || typeof entry !== 'object') {
+    return null;
+  }
+
+  const event = typeof entry.event === 'string' ? entry.event : '';
+
+  if (!event.startsWith('telegram.invite')) {
+    return null;
+  }
+
+  const data = entry.data && typeof entry.data === 'object' ? entry.data : {};
+  const nestedPayload = data.payload && typeof data.payload === 'object' ? data.payload : {};
+  const projectId = data.projectId ?? nestedPayload.projectId ?? null;
+  const chatId = data.chatId ?? nestedPayload.chatId ?? null;
+  const link = data.link ?? nestedPayload.link ?? null;
+  const message = data.message ?? nestedPayload.message ?? null;
+  const error = data.error ?? nestedPayload.error ?? null;
+  const timestamp = entry.ts || data.ts || null;
+  const parsedTimestamp = timestamp ? Date.parse(timestamp) : Number.NaN;
+  const timestampMs = Number.isNaN(parsedTimestamp) ? null : parsedTimestamp;
+  const normalizedProjectId =
+    projectId !== undefined && projectId !== null ? String(projectId) : null;
+  const normalizedChatId =
+    chatId !== undefined && chatId !== null ? String(chatId) : null;
+  const status =
+    event === 'telegram.invite.sent'
+      ? 'sent'
+      : event === 'telegram.invite.send_error'
+        ? 'send_error'
+        : 'error';
+
+  return {
+    id: `${event}:${timestamp || fallbackKey}:${normalizedChatId ?? ''}`,
+    event,
+    status,
+    projectId: normalizedProjectId,
+    chatId: normalizedChatId,
+    link: link ?? null,
+    message: message ?? null,
+    error: error ?? null,
+    timestamp: timestamp ?? null,
+    timestampMs,
+    level: entry.level || 'info'
+  };
+}
+
+function buildInviteHistoryFromLog(entries, projectId) {
+  if (!projectId || !Array.isArray(entries)) {
+    return [];
+  }
+
+  const normalizedProjectId = String(projectId);
+
+  return entries
+    .map((entry, index) => normalizeInviteLogEntry(entry, index))
+    .filter((item) => item && item.projectId === normalizedProjectId)
+    .sort((a, b) => {
+      const timeA = typeof a.timestampMs === 'number' ? a.timestampMs : 0;
+      const timeB = typeof b.timestampMs === 'number' ? b.timestampMs : 0;
+      return timeB - timeA;
+    });
+}
+
+function inviteHistoriesEqual(a = [], b = []) {
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  for (let index = 0; index < a.length; index += 1) {
+    const left = a[index];
+    const right = b[index];
+
+    if (!right) {
+      return false;
+    }
+
+    if (
+      left.id !== right.id ||
+      left.status !== right.status ||
+      left.timestamp !== right.timestamp ||
+      left.chatId !== right.chatId ||
+      left.link !== right.link ||
+      left.message !== right.message ||
+      left.error !== right.error
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function useAgentResources(locale) {
   const [agentsData, setAgentsData] = useState({ plugins: [], configs: [] });
   const [providerStatus, setProviderStatus] = useState([]);
@@ -236,6 +332,9 @@ function App() {
   const [brief, setBrief] = usePersistentState('af.brief', {});
   const [runs, setRuns] = useState([]);
   const [reports, setReports] = useState([]);
+  const [telegramContacts, setTelegramContacts] = useState([]);
+  const [telegramContactsLoading, setTelegramContactsLoading] = useState(false);
+  const [inviteHistoryMap, setInviteHistoryMap] = useState({});
   const [botStatus, setBotStatus] = useState(null);
   const [botBusy, setBotBusy] = useState(false);
   const botBusyRef = useRef(false);
@@ -337,6 +436,193 @@ function App() {
     }
   }, [setProjects]);
 
+  const loadTelegramContacts = useCallback(
+    async (projectId = selectedProjectId) => {
+      if (!projectId) {
+        setTelegramContacts([]);
+        return [];
+      }
+
+      setTelegramContactsLoading(true);
+
+      try {
+        const contactList = await listTelegramContacts(projectId);
+        const normalized = Array.isArray(contactList) ? contactList : [];
+        setTelegramContacts(normalized);
+        return normalized;
+      } catch (error) {
+        console.error('Failed to load Telegram contacts', error);
+        showToast(t('projects.toast.contactsLoadError'), 'error', {
+          source: 'telegram',
+          details: { projectId, message: error?.message }
+        });
+        setTelegramContacts([]);
+        throw error;
+      } finally {
+        setTelegramContactsLoading(false);
+      }
+    },
+    [selectedProjectId, showToast, t]
+  );
+
+  const loadInviteHistory = useCallback(
+    async (projectId) => {
+      if (!projectId) {
+        return [];
+      }
+
+      try {
+        const lines = await tailTelegramLog(100);
+        const history = buildInviteHistoryFromLog(Array.isArray(lines) ? lines : [], projectId);
+
+        setInviteHistoryMap((previous) => {
+          const current = previous[projectId] || [];
+
+          if (inviteHistoriesEqual(current, history)) {
+            return previous;
+          }
+
+          return { ...previous, [projectId]: history };
+        });
+
+        return history;
+      } catch (error) {
+        console.error('Failed to load invite history', error);
+        return [];
+      }
+    },
+    [tailTelegramLog]
+  );
+
+  const handleRefreshInviteHistory = useCallback(
+    async (projectId = selectedProjectId) => {
+      if (!projectId) {
+        return [];
+      }
+
+      return loadInviteHistory(projectId);
+    },
+    [selectedProjectId, loadInviteHistory]
+  );
+
+  const handleSaveTelegramContact = useCallback(
+    async (contactDraft) => {
+      if (!selectedProjectId) {
+        showToast(t('projects.toast.projectRequired'), 'error', { source: 'telegram' });
+        return null;
+      }
+
+      try {
+        const payload = {
+          ...contactDraft,
+          projectId: contactDraft?.projectId ?? selectedProjectId
+        };
+        const saved = await saveTelegramContact(payload);
+        await loadTelegramContacts(selectedProjectId).catch(() => {});
+        if (saved?.chatId) {
+          showToast(t('projects.toast.contactSaved'), 'success', {
+            source: 'telegram',
+            details: { chatId: saved.chatId }
+          });
+        }
+        return saved;
+      } catch (error) {
+        console.error('Failed to save Telegram contact', error);
+        showToast(t('projects.toast.contactSaveError'), 'error', {
+          source: 'telegram',
+          details: { message: error?.message }
+        });
+        return null;
+      }
+    },
+    [selectedProjectId, loadTelegramContacts, showToast, t]
+  );
+
+  const handleSendTelegramInvite = useCallback(
+    async (chatId) => {
+      if (!selectedProjectId) {
+        showToast(t('projects.toast.projectRequired'), 'error', { source: 'telegram' });
+        return { ok: false, error: 'project_required' };
+      }
+
+      const normalizedChatId = typeof chatId === 'string' ? chatId.trim() : chatId;
+
+      if (!normalizedChatId) {
+        showToast(t('projects.toast.chatIdRequired'), 'error', { source: 'telegram' });
+        return { ok: false, error: 'chat_id_required' };
+      }
+
+      try {
+        const response = await sendTelegramInvite(selectedProjectId, normalizedChatId);
+        await Promise.all([
+          refreshProjects().catch(() => {}),
+          loadTelegramContacts(selectedProjectId).catch(() => {}),
+          loadInviteHistory(selectedProjectId).catch(() => {})
+        ]);
+        showToast(t('projects.toast.inviteSent'), 'success', {
+          source: 'telegram',
+          details: { chatId: response?.chatId, link: response?.link }
+        });
+        return {
+          ok: true,
+          response: {
+            ...response,
+            chatId: response?.chatId ?? normalizedChatId
+          }
+        };
+      } catch (error) {
+        console.error('Failed to send Telegram invite', error);
+        const inlineMessage = resolveMessage(error.message) || t('projects.toast.inviteError');
+        showToast(inlineMessage, 'error', {
+          source: 'telegram',
+          details: { chatId: normalizedChatId, message: error?.message }
+        });
+        await loadInviteHistory(selectedProjectId).catch(() => {});
+        return {
+          ok: false,
+          error: error?.message || 'invite_failed',
+          code: error?.code ?? null,
+          message: inlineMessage
+        };
+      }
+    },
+    [
+      selectedProjectId,
+      loadTelegramContacts,
+      refreshProjects,
+      loadInviteHistory,
+      resolveMessage,
+      showToast,
+      t
+    ]
+  );
+
+  const handleApproveBrief = useCallback(async () => {
+    if (!selectedProjectId) {
+      showToast(t('projects.toast.projectRequired'), 'error', { source: 'brief' });
+      return false;
+    }
+
+    try {
+      const response = await upsertProject({ id: selectedProjectId, briefStatus: 'approved', briefProgress: 1 });
+
+      if (response?.ok === false) {
+        throw new Error(response?.error || 'Brief approval failed');
+      }
+
+      await refreshProjects();
+      showToast(t('projects.toast.briefApproved'), 'success', { source: 'brief' });
+      return true;
+    } catch (error) {
+      console.error('Failed to approve brief', error);
+      showToast(t('projects.toast.briefApproveError'), 'error', {
+        source: 'brief',
+        details: { message: error?.message }
+      });
+      return false;
+    }
+  }, [selectedProjectId, refreshProjects, showToast, t]);
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
@@ -367,6 +653,15 @@ function App() {
     });
   }, [refreshProjects]);
 
+  useEffect(() => {
+    if (!selectedProjectId) {
+      setTelegramContacts([]);
+      return;
+    }
+
+    loadTelegramContacts(selectedProjectId).catch(() => {});
+  }, [selectedProjectId, loadTelegramContacts]);
+
   const loadProxyConfig = useCallback(async () => {
     try {
       const config = await getTelegramProxyConfig();
@@ -384,10 +679,20 @@ function App() {
     }
   }, [resolveMessage, showToast, t]);
 
-  const sections = useMemo(
-    () => SECTION_CONFIG.map((section) => ({ id: section.id, label: t(section.labelKey) })),
-    [t]
-  );
+  const sections = useMemo(() => {
+    const activeProject = projects.find((item) => item.id === selectedProjectId) || null;
+    const briefStatus = (activeProject?.briefStatus || '').toLowerCase();
+
+    return SECTION_CONFIG.map((section) => {
+      const entry = { id: section.id, label: t(section.labelKey) };
+
+      if (section.id === 'brief') {
+        entry.disabled = !['review', 'approved'].includes(briefStatus);
+      }
+
+      return entry;
+    });
+  }, [projects, selectedProjectId, t]);
 
   const pipelineDefaults = useMemo(
     () => ({
@@ -425,6 +730,14 @@ function App() {
     () => projects.find((item) => item.id === selectedProjectId) || null,
     [projects, selectedProjectId]
   );
+
+  useEffect(() => {
+    if (!selectedProjectId) {
+      return;
+    }
+
+    loadInviteHistory(selectedProjectId).catch(() => {});
+  }, [selectedProjectId, selectedProject?.tgLastInvitation, loadInviteHistory]);
 
   useEffect(() => {
     if (projects.length === 0) {
@@ -594,6 +907,16 @@ function App() {
 
       const { projectId } = payload;
 
+      if (payload?.statusUpdate) {
+        if (projectId) {
+          refreshProjects().catch(() => {});
+          if (projectId === selectedProjectId) {
+            loadTelegramContacts(projectId).catch(() => {});
+          }
+        }
+        return;
+      }
+
       if (selectedProjectId && projectId === selectedProjectId) {
         setBriefLoading(true);
         try {
@@ -624,7 +947,16 @@ function App() {
         unsubscribe();
       }
     };
-  }, [selectedProjectId, showToast, fetchLatestBrief, subscribeToBriefUpdates, t, resolveMessage]);
+  }, [
+    selectedProjectId,
+    showToast,
+    fetchLatestBrief,
+    subscribeToBriefUpdates,
+    t,
+    resolveMessage,
+    refreshProjects,
+    loadTelegramContacts
+  ]);
 
   useEffect(() => {
     loadSchedulerStatus().catch(() => {});
@@ -1171,6 +1503,7 @@ function App() {
           <ProjectsPage
             projects={projects}
             selectedProjectId={selectedProjectId}
+            selectedProject={selectedProject}
             onCreateProject={handleCreateProject}
             onSelectProject={setSelectedProjectId}
             onNotify={showToast}
@@ -1179,6 +1512,14 @@ function App() {
             onStartBot={handleStartBot}
             onStopBot={handleStopBot}
             onRefreshBot={handleRefreshBotStatus}
+            contacts={telegramContacts}
+            contactsLoading={telegramContactsLoading}
+            onRefreshContacts={loadTelegramContacts}
+            onSaveContact={handleSaveTelegramContact}
+            onSendInvite={handleSendTelegramInvite}
+            onApproveBrief={handleApproveBrief}
+            inviteHistory={inviteHistoryMap[selectedProjectId] || []}
+            onRefreshInviteHistory={handleRefreshInviteHistory}
           />
         );
       case 'brief':
@@ -1305,7 +1646,9 @@ function App() {
     refreshPipelines,
     handleShowAgentHistory,
     handleShowPipelineHistory,
-    showToast
+    showToast,
+    inviteHistoryMap,
+    handleRefreshInviteHistory
   ]);
 
   return (
