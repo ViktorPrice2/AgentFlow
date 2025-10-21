@@ -367,6 +367,11 @@ function App() {
     entityName: ''
   });
 
+  const selectedProject = useMemo(
+    () => projects.find((item) => item.id === selectedProjectId) || null,
+    [projects, selectedProjectId]
+  );
+
   const refreshRuns = useCallback(async () => {
     try {
       const records = await listRuns();
@@ -927,9 +932,35 @@ function App() {
     return [...pluginOptions, ...configOptions];
   }, [agentsData]);
 
-  const selectedProject = useMemo(
-    () => projects.find((item) => item.id === selectedProjectId) || null,
-    [projects, selectedProjectId]
+  const refreshPresetDiff = useCallback(
+    async (projectOverride) => {
+      const project = projectOverride || selectedProject;
+
+      if (!project) {
+        setPresetDiffState(null);
+        return null;
+      }
+
+      const targetPresetId = project.presetId || 'generic';
+      setPresetDiffLoading(true);
+
+      try {
+        const diff = await diffPreset(targetPresetId, project.presetVersion ?? null);
+        setPresetDiffState(diff);
+        return diff;
+      } catch (error) {
+        console.error('Failed to diff preset', error);
+        setPresetDiffState(null);
+        showToast(t('projects.toast.presetDiffError'), 'error', {
+          source: 'preset',
+          details: { projectId: project.id, message: error?.message }
+        });
+        return null;
+      } finally {
+        setPresetDiffLoading(false);
+      }
+    },
+    [selectedProject, showToast, t]
   );
 
   const refreshPresetDiff = useCallback(
