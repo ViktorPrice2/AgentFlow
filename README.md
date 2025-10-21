@@ -3,12 +3,13 @@
 AgentFlow Desktop is an Electron application that orchestrates multi-agent marketing workflows. It combines a hardened Node and Electron core, a React renderer, and a SQLite-backed data layer to provide an offline-first control plane for pipelines, schedulers, and human-in-the-loop automation.
 
 ## Highlights
+- Industry presets that ship surveys, agent bundles, and pipelines with version tracking and project-scoped overrides.
 - Multi-agent pipelines with versioned definitions and execution history.
 - Electron main process with React-based renderer UI and modular plugin registry.
 - SQLite datastore with schema migrations, history tracking, and WAL support.
 - Built-in scheduler with cron-style triggers, run logs, and manual overrides.
 - Provider manager with config-backed credentials and mock diagnostics.
-- Telegram bot bridge, verification pipeline, and observability reports.
+- Telegram bot bridge, contact management, and invite logging tied to brief status automation.
 - Strict filesystem sandboxing helpers and secret redaction utilities.
 
 ## Quick Start
@@ -39,6 +40,19 @@ AgentFlow Desktop is an Electron application that orchestrates multi-agent marke
    ```bash
    npm run build --prefix app
    ```
+
+## Briefs, Presets, and Telegram Workflows
+- **Industry presets** (`app/config/industries/*.json`) define surveys, default agents, and pipelines. They are validated via
+  `app/core/presets/industryPresetSchema.js` and applied to projects with `app/core/presets/applyPreset.js`, tagging cloned
+  entities with `source: "preset"` for future updates.
+- **Project brief state** persists in the `Projects` table (fields such as `briefStatus`, `briefProgress`, `needsAttention`,
+  `presetVersion`). The Telegram bot updates these fields as users progress through the survey and emits renderer events for
+  real-time status changes.
+- **Telegram contacts and invites** are stored in the `TelegramContacts` table. IPC handlers exposed by
+  `app/main/ipcBot.js` allow the renderer to list/save contacts and send deep-link invites while logging activity to
+  `app/data/logs/telegram-bot.jsonl`.
+- **Reports** generated after pipeline runs are captured in the `Reports` table with Markdown/JSON artifacts so project managers
+  can audit campaign outputs alongside brief data.
 
 ## Testing and Automation
 - Lint: `npm run lint --prefix app`
@@ -74,6 +88,7 @@ tests/              End-to-end Playwright specs
 - `docs/AutomationGuide.md` - DAG and workitems, CI gates, verification outputs.
 - `docs/VerificationReport.md` - latest verification status (generated).
 - `docs/CHANGELOG.md` - release history.
+- `docs/IndustryPreset.md` - format and lifecycle for industry presets and preset-driven project workflows.
 
 ## Licensing
 AgentFlow Desktop is published under the MIT License. See `LICENSE` (if present) or package metadata for details.

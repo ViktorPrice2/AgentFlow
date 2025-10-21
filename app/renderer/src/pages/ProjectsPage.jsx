@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
@@ -70,6 +70,7 @@ const INITIAL_FORM_STATE = {
 export function ProjectsPage({
   projects,
   selectedProjectId = null,
+  selectedProject: selectedProjectProp = null,
   onCreateProject,
   onSelectProject,
   onNotify,
@@ -77,23 +78,214 @@ export function ProjectsPage({
   botBusy = false,
   onStartBot = () => {},
   onStopBot = () => {},
-  onRefreshBot = () => {}
+  onRefreshBot = () => {},
+  contacts = [],
+  contactsLoading = false,
+  onRefreshContacts = () => {},
+  onSaveContact = async () => null,
+  onSendInvite = async () => false,
+  onApproveBrief = async () => false,
+  inviteHistory = [],
+  onRefreshInviteHistory = async () => []
 }) {
   const { t, language } = useI18n();
   const locale = language === 'en' ? 'en-US' : 'ru-RU';
   const [formState, setFormState] = useState(INITIAL_FORM_STATE);
+  const [selectedContactId, setSelectedContactId] = useState('');
+  const [contactForm, setContactForm] = useState({ chatId: '', label: '' });
+  const [inviteFeedback, setInviteFeedback] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const selectedProject = useMemo(
-    () => projects.find((project) => project.id === selectedProjectId) || null,
-    [projects, selectedProjectId]
+    () => selectedProjectProp || projects.find((project) => project.id === selectedProjectId) || null,
+    [projects, selectedProjectId, selectedProjectProp]
   );
-
   const selectedProjectChannels = normalizeChannelList(selectedProject?.channels);
   const selectedProjectChannelsLabel =
     selectedProjectChannels.length > 0 ? selectedProjectChannels.join(', ') : t('common.notAvailable');
+  const briefStatusKey = (selectedProject?.briefStatus || 'pending').toLowerCase();
+  const briefStatusLabel = t(`projects.status.${briefStatusKey}`, undefined, selectedProject?.briefStatus || 'pending');
+  const briefProgressValue = Math.round(Math.min(Math.max((selectedProject?.briefProgress ?? 0) * 100, 0), 100));
+  const needsAttentionFields = Array.isArray(selectedProject?.needsAttention?.missingFields)
+    ? selectedProject.needsAttention.missingFields
+    : [];
+  const needsAttentionLabels = needsAttentionFields.map((field) =>
+    t(`brief.labels.${field}`, undefined, field)
+  );
+  const canApproveBrief = selectedProject?.briefStatus === 'review';
+  const briefApproved = selectedProject?.briefStatus === 'approved';
+  const projectLastInvite = selectedProject?.tgLastInvitation
+    ? new Date(selectedProject.tgLastInvitation).toLocaleString(locale)
+    : null;
+  const projectContactStatus = (selectedProject?.tgContactStatus || 'unknown').toLowerCase();
+  const projectContactStatusLabel = t(
+    `projects.telegram.status.${projectContactStatus}`,
+    undefined,
+    selectedProject?.tgContactStatus || 'unknown'
+  );
+  const selectedContact = useMemo(
+    () => contacts.find((contact) => contact.id === selectedContactId) || null,
+    [contacts, selectedContactId]
+  );
+  const selectedContactStatus = (selectedContact?.status || 'unknown').toLowerCase();
+  const selectedContactStatusLabel = t(
+    `projects.telegram.status.${selectedContactStatus}`,
+    undefined,
+    selectedContact?.status || 'unknown'
+  );
+  const selectedContactLastSeen = selectedContact?.lastContactAt
+    ? new Date(selectedContact.lastContactAt).toLocaleString(locale)
+    : null;
+  const inviteDisabled = contactsLoading || botBusy;
+  const inviteHistoryItems = useMemo(
+    () => (Array.isArray(inviteHistory) ? inviteHistory.slice(0, 5) : []),
+    [inviteHistory]
+  );
+  const hasInviteHistory = inviteHistoryItems.length > 0;
+
+  useEffect(() => {
+    setSelectedContactId('');
+    setContactForm({ chatId: '', label: '' });
+    setInviteFeedback(null);
+    setHistoryLoading(false);
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    if (selectedContactId && !contacts.some((contact) => contact.id === selectedContactId)) {
+      setSelectedContactId('');
+      setInviteFeedback(null);
+    }
+  }, [contacts, selectedContactId]);
 
   const handleInputChange = (event) => {
     const { name, value } = event.target;
     setFormState((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleContactSelect = (event) => {
+    setSelectedContactId(event.target.value);
+    setInviteFeedback(null);
+  };
+
+  const handleContactFormChange = (event) => {
+    const { name, value } = event.target;
+    setContactForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSaveContactClick = async () => {
+    if (!contactForm.chatId.trim()) {
+      onNotify(t('projects.telegram.chatIdRequired'), 'error');
+      return;
+    }
+
+    const saved = await onSaveContact({
+      chatId: contactForm.chatId.trim(),
+      label: contactForm.label.trim()
+    });
+
+    if (saved?.id) {
+      setSelectedContactId(saved.id);
+      setContactForm({ chatId: '', label: '' });
+      setInviteFeedback(null);
+    }
+  };
+
+  const handleSendInviteClick = async () => {
+    const chatId = selectedContact?.chatId || contactForm.chatId.trim();
+
+    if (!chatId) {
+      onNotify(t('projects.telegram.chatIdRequired'), 'error');
+      return;
+    }
+
+    setInviteFeedback(null);
+
+    try {
+      const result = await onSendInvite(chatId);
+      const manualChatId = contactForm.chatId.trim();
+      const targetLabel =
+        selectedContact?.label ||
+        (selectedContact?.chatId !== undefined ? String(selectedContact.chatId) : '') ||
+        (manualChatId ? manualChatId : '') ||
+        String(chatId);
+
+      if (result && typeof result === 'object') {
+        if (result.ok) {
+          const sentAt = result.response?.sentAt;
+          const formattedDate = sentAt ? new Date(sentAt).toLocaleString(locale) : null;
+          const successMessage = formattedDate
+            ? t('projects.telegram.inviteInlineSuccessWithDate', {
+                chatId: targetLabel,
+                date: formattedDate
+              })
+            : t('projects.telegram.inviteInlineSuccess', { chatId: targetLabel });
+
+          setInviteFeedback({ type: 'success', message: successMessage });
+        } else {
+          const inlineMessage =
+            typeof result.message === 'string' && result.message
+              ? result.message
+              : result.error
+                ? t('projects.telegram.inviteInlineErrorWithReason', { reason: result.error })
+                : t('projects.telegram.inviteInlineError');
+
+          setInviteFeedback({ type: 'error', message: inlineMessage });
+        }
+      } else if (result === true) {
+        setInviteFeedback({
+          type: 'success',
+          message: t('projects.telegram.inviteInlineSuccess', { chatId: targetLabel })
+        });
+      } else if (result === false) {
+        setInviteFeedback({ type: 'error', message: t('projects.telegram.inviteInlineError') });
+      }
+    } catch (error) {
+      console.error('Failed to send invite (UI)', error);
+      const inlineMessage = error?.message
+        ? t('projects.telegram.inviteInlineErrorWithReason', { reason: error.message })
+        : t('projects.telegram.inviteInlineError');
+      setInviteFeedback({ type: 'error', message: inlineMessage });
+    }
+  };
+
+  const handleRefreshContacts = () => {
+    if (selectedProjectId) {
+      onRefreshContacts(selectedProjectId);
+    }
+  };
+
+  const handleRefreshHistory = async () => {
+    if (!selectedProjectId || typeof onRefreshInviteHistory !== 'function') {
+      return;
+    }
+
+    setHistoryLoading(true);
+
+    try {
+      await onRefreshInviteHistory(selectedProjectId);
+    } catch (error) {
+      console.error('Failed to refresh invite history', error);
+      onNotify(t('projects.toast.inviteError'), 'error');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const handleApproveBriefClick = async () => {
+    if (!selectedProject) {
+      onNotify(t('projects.toast.projectRequired'), 'error');
+      return;
+    }
+
+    if (!canApproveBrief) {
+      if (briefApproved) {
+        onNotify(t('projects.details.alreadyApproved'), 'info');
+      } else {
+        onNotify(t('projects.details.approveUnavailable'), 'info');
+      }
+      return;
+    }
+
+    await onApproveBrief(selectedProject);
   };
 
   const handleSubmit = async (event) => {
@@ -303,7 +495,224 @@ export function ProjectsPage({
                 )}
               </dd>
             </div>
+            <div>
+              <dt>{t('projects.details.briefStatus')}</dt>
+              <dd>
+                <span className={`status-badge status-${briefStatusKey}`}>{briefStatusLabel}</span>
+              </dd>
+            </div>
+            <div>
+              <dt>{t('projects.details.briefProgress')}</dt>
+              <dd>
+                <div className="brief-progress">
+                  <div className="brief-progress__track">
+                    <div className="brief-progress__bar" style={{ width: `${briefProgressValue}%` }} />
+                  </div>
+                  <span className="brief-progress__value">{briefProgressValue}%</span>
+                </div>
+              </dd>
+            </div>
+            <div>
+              <dt>{t('projects.details.needsAttention')}</dt>
+              <dd>
+                {needsAttentionLabels.length === 0 ? (
+                  <span>{t('projects.details.needsAttentionNone')}</span>
+                ) : (
+                  <ul className="needs-attention-list">
+                    {needsAttentionLabels.map((label) => (
+                      <li key={label}>{label}</li>
+                    ))}
+                  </ul>
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>{t('projects.telegram.statusLabel')}</dt>
+              <dd>{projectContactStatusLabel}</dd>
+            </div>
+            <div>
+              <dt>{t('projects.telegram.lastInvitation')}</dt>
+              <dd>{projectLastInvite || t('common.notAvailable')}</dd>
+            </div>
           </dl>
+          <div className="project-actions">
+            <button
+              type="button"
+              className="primary-button"
+              onClick={handleApproveBriefClick}
+              disabled={!canApproveBrief}
+            >
+              {briefApproved
+                ? t('projects.details.briefApprovedLabel')
+                : t('projects.details.approveBrief')}
+            </button>
+          </div>
+        </InfoCard>
+      ) : null}
+
+      {selectedProject ? (
+        <InfoCard title={t('projects.telegram.title')} subtitle={t('projects.telegram.subtitle')}>
+          <div className="telegram-contact-controls">
+            <label>
+              {t('projects.telegram.contactSelect')}
+              <select
+                value={selectedContactId}
+                onChange={handleContactSelect}
+                disabled={contactsLoading}
+              >
+                <option value="">{t('projects.telegram.contactPlaceholder')}</option>
+                {contacts.map((contact) => (
+                  <option key={contact.id} value={contact.id}>
+                    {contact.label || contact.chatId}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={handleRefreshContacts}
+              disabled={contactsLoading}
+            >
+              {contactsLoading ? t('projects.telegram.refreshing') : t('projects.telegram.refresh')}
+            </button>
+          </div>
+
+          {selectedContact ? (
+            <div className="telegram-contact-meta">
+              <p>
+                <strong>{t('projects.telegram.chatIdLabel')}:</strong> {selectedContact.chatId}
+              </p>
+              <p>
+                <strong>{t('projects.telegram.contactStatusLabel')}:</strong> {selectedContactStatusLabel}
+              </p>
+              <p>
+                <strong>{t('projects.telegram.lastContactAt')}:</strong>{' '}
+                {selectedContactLastSeen || t('common.notAvailable')}
+              </p>
+            </div>
+          ) : null}
+
+          <div className="telegram-contact-form">
+            <label>
+              {t('projects.telegram.newContactChatId')}
+              <input
+                name="chatId"
+                value={contactForm.chatId}
+                onChange={handleContactFormChange}
+                placeholder={t('projects.telegram.chatIdPlaceholder')}
+              />
+            </label>
+            <label>
+              {t('projects.telegram.newContactLabel')}
+              <input
+                name="label"
+                value={contactForm.label}
+                onChange={handleContactFormChange}
+                placeholder={t('projects.telegram.labelPlaceholder')}
+              />
+            </label>
+            <div className="button-row">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={handleSaveContactClick}
+                disabled={contactsLoading}
+              >
+                {t('projects.telegram.saveContact')}
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={handleSendInviteClick}
+                disabled={inviteDisabled}
+              >
+                {t('projects.telegram.sendInvite')}
+              </button>
+            </div>
+            {inviteFeedback?.message ? (
+              <p className={`form-feedback ${inviteFeedback.type === 'success' ? 'success' : 'error'}`}>
+                {inviteFeedback.message}
+              </p>
+            ) : null}
+          </div>
+
+          <p className="hint">
+            {projectLastInvite
+              ? t('projects.telegram.lastInviteAt', { date: projectLastInvite })
+              : t('projects.telegram.noInvites')}
+          </p>
+
+          <div className="telegram-invite-history">
+            <div className="telegram-invite-history__header">
+              <h4>{t('projects.telegram.inviteHistory.title')}</h4>
+              <button
+                type="button"
+                className="link-button"
+                onClick={handleRefreshHistory}
+                disabled={historyLoading}
+              >
+                {historyLoading
+                  ? t('common.loadingHistory')
+                  : t('projects.telegram.inviteHistory.refresh')}
+              </button>
+            </div>
+
+            {historyLoading ? (
+              <p className="hint">{t('common.loadingHistory')}</p>
+            ) : hasInviteHistory ? (
+              <ul className="telegram-invite-history__list">
+                {inviteHistoryItems.map((entry) => {
+                  const statusKey = String(entry.status || 'sent').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+                  const statusLabel = t(
+                    `projects.telegram.inviteHistory.status.${entry.status}`,
+                    undefined,
+                    entry.status
+                  );
+                  const timestampLabel = entry.timestamp
+                    ? new Date(entry.timestamp).toLocaleString(locale)
+                    : t('common.notAvailable');
+
+                  return (
+                    <li key={entry.id} className="telegram-invite-history__item">
+                      <div className="telegram-invite-history__meta">
+                        <span
+                          className={`telegram-invite-history__status telegram-invite-history__status--${statusKey}`}
+                        >
+                          {statusLabel}
+                        </span>
+                        <span className="telegram-invite-history__timestamp">{timestampLabel}</span>
+                      </div>
+                      <p className="telegram-invite-history__detail">
+                        <strong>{t('projects.telegram.inviteHistory.chat')}:</strong>{' '}
+                        {entry.chatId || t('common.notAvailable')}
+                      </p>
+                      {entry.link ? (
+                        <p className="telegram-invite-history__detail">
+                          <strong>{t('projects.telegram.inviteHistory.link')}:</strong>{' '}
+                          <a href={entry.link} target="_blank" rel="noreferrer">
+                            {entry.link}
+                          </a>
+                        </p>
+                      ) : null}
+                      {entry.message ? (
+                        <p className="telegram-invite-history__message">
+                          <strong>{t('projects.telegram.inviteHistory.message')}:</strong> {entry.message}
+                        </p>
+                      ) : null}
+                      {entry.error ? (
+                        <p className="telegram-invite-history__error">
+                          <strong>{t('projects.telegram.inviteHistory.error')}:</strong> {entry.error}
+                        </p>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="hint">{t('projects.telegram.inviteHistory.empty')}</p>
+            )}
+          </div>
         </InfoCard>
       ) : null}
     </div>
@@ -323,6 +732,19 @@ ProjectsPage.propTypes = {
     })
   ).isRequired,
   selectedProjectId: PropTypes.string,
+  selectedProject: PropTypes.shape({
+    id: PropTypes.string,
+    name: PropTypes.string,
+    industry: PropTypes.string,
+    description: PropTypes.string,
+    channels: PropTypes.oneOfType([PropTypes.string, PropTypes.arrayOf(PropTypes.string)]),
+    deeplink: PropTypes.string,
+    briefStatus: PropTypes.string,
+    briefProgress: PropTypes.number,
+    needsAttention: PropTypes.object,
+    tgContactStatus: PropTypes.string,
+    tgLastInvitation: PropTypes.string
+  }),
   onCreateProject: PropTypes.func.isRequired,
   onSelectProject: PropTypes.func.isRequired,
   onNotify: PropTypes.func.isRequired,
@@ -335,5 +757,31 @@ ProjectsPage.propTypes = {
   botBusy: PropTypes.bool,
   onStartBot: PropTypes.func,
   onStopBot: PropTypes.func,
-  onRefreshBot: PropTypes.func
+  onRefreshBot: PropTypes.func,
+  contacts: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.string.isRequired,
+      chatId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+      label: PropTypes.string,
+      status: PropTypes.string,
+      lastContactAt: PropTypes.string
+    })
+  ),
+  contactsLoading: PropTypes.bool,
+  onRefreshContacts: PropTypes.func,
+  onSaveContact: PropTypes.func,
+  onSendInvite: PropTypes.func,
+  onApproveBrief: PropTypes.func,
+  inviteHistory: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.string.isRequired,
+      status: PropTypes.string.isRequired,
+      timestamp: PropTypes.string,
+      chatId: PropTypes.string,
+      link: PropTypes.string,
+      message: PropTypes.string,
+      error: PropTypes.string
+    })
+  ),
+  onRefreshInviteHistory: PropTypes.func
 };

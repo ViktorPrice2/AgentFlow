@@ -3,9 +3,9 @@
 This guide explains the internals of AgentFlow Desktop so you can extend the platform, reason about runtime behaviour, and keep production parity. It covers architecture, storage, IPC boundaries, and developer workflows.
 
 ## Architecture Overview
-- **Electron main process (`app/main/`)** creates windows, registers IPC handlers, manages lifecycle logging, and bootstraps plugins, providers, scheduler, and Telegram IPC.
-- **Core runtime (`app/core/`)** exposes orchestrator, scheduler, API facade, storage abstraction, provider manager, and security utilities shared by main and renderer.
-- **Renderer (`app/renderer/`)** is a Vite + React single-page app. It consumes IPC-backed `agentApi` helpers, renders dashboards (projects, briefs, agents, pipelines, scheduler, reports, settings), and maintains local state with hooks and contexts.
+- **Electron main process (`app/main/`)** creates windows, registers IPC handlers, manages lifecycle logging, and bootstraps plugins, providers, scheduler, preset loaders, and Telegram IPC.
+- **Core runtime (`app/core/`)** exposes orchestrator, scheduler, API facade, storage abstraction, provider manager, preset utilities, and security helpers shared by main and renderer.
+- **Renderer (`app/renderer/`)** is a Vite + React single-page app. It consumes IPC-backed `agentApi` helpers, renders dashboards (projects, briefs, agents, pipelines, reports, presets, settings), and maintains local state with hooks and contexts.
 - **Scripts (`scripts/`, `app/scripts/`)** run orchestrator pipelines, verify automation health, and execute CI gates.
 - **Data layer (`app/data/`)** houses the SQLite database, WAL logs, generated artifacts, and operational jsonl logs (scheduler, telegram, app lifecycle).
 
@@ -17,19 +17,22 @@ The execution flow: the Electron main process loads environment variables, ensur
 - **Provider Manager (`app/core/providers/manager.js`)** reads `config/providers.json`, consults environment variables for credentials, applies rate-limit and circuit-breaker policies, and exposes diagnostics. It can fall back to deterministic mock responses when credentials are missing.
 - **API Facade (`app/core/api.js`)** assembles IPC endpoints for agents, providers, pipelines, schedules, and run execution. It maintains an in-memory mirror of agent configs derived from the entity store, auto-seeds default agents, and wraps orchestrator invocations.
 - **Storage (`app/core/storage/entityStore.js`)** encapsulates SQLite access: CRUD for agents, pipelines (with versioning), history diffs, schedules, and metadata updates.
+- **Preset utilities (`app/core/presets/`)** validate preset files, cache them on disk, and apply preset agents/pipelines to projects while tagging copied entities with `source: "preset"` and `originPresetVersion` metadata.
 - **Security Utils (`app/core/utils/security.js`)** enforces filesystem allow-lists, sanitises filenames and artifact paths, and redacts secrets from logs or human-readable outputs.
 
 ## Database Schema
 SQLite lives at `app/data/app.db` (WAL enabled). Schema migrations in `app/db/migrations/` cover:
-- `Projects` - top-level container (id, name, description, status timestamps).
-- `Agents` - stored configs with `version`, `config` json, project linkage.
-- `Pipelines` - graph definitions (nodes, edges) plus `version`.
-- `Runs` - execution history with status, input/output payload snapshots.
-- `Briefs` - marketing brief summaries and detailed answer maps.
-- `Schedules` - cron metadata, enable flags, `nextRun`.
-- `Metrics` / `Reports` - aggregate outputs and generated reports.
-- `EntityHistory` - append-only audit for versioned agent/pipeline payloads.
-- `Logs` - structured event stream for orchestrator/scheduler/telemetry.
+- `Projects` — top-level container (id, name, description) plus brief workflow fields such as `briefStatus`, `briefProgress`,
+  `needsAttention`, Telegram deeplink metadata, `presetId`, `presetVersion`, and `presetDraft` for pending updates.
+- `Agents` — stored configs with `version`, `config` JSON, project linkage, and preset markers (`source`, `originPresetVersion`).
+- `Pipelines` — graph definitions (nodes, edges, override metadata) and preset markers mirroring the agent schema.
+- `Runs` — execution history with status, input/output payload snapshots.
+- `Briefs` — marketing brief summaries and detailed answer maps persisted after Telegram sessions finish.
+- `Reports` — pipeline report entries with Markdown/JSON content, status, linked artifacts, and timestamps.
+- `Schedules` — cron metadata, enable flags, `nextRun`.
+- `TelegramContacts` — reusable chat handles with invite status, labels, and project association.
+- `EntityHistory` — append-only audit for versioned agent/pipeline payloads.
+- `Logs` — structured event stream for orchestrator, scheduler, telegram bot, and telemetry.
 
 Run `node app/main/db/migrate.js` to apply migrations and assert indexes. The migrator verifies runtime-critical tables (`Agents`, `Pipelines`, `Runs`, `Briefs`, `Logs`) are present before boot finishes.
 
@@ -59,6 +62,30 @@ Run `node app/main/db/migrate.js` to apply migrations and assert indexes. The mi
 - The helper script `app/test-bot.js` skips live traffic unless a token is present in the environment. It always stores placeholder values when running in CI.
 - `.env.example` intentionally keeps Telegram variables empty; copy the file to `.env` locally and populate the values out-of-band if you need persistent configuration.
 - Logs in `app/data/logs/telegram-bot.jsonl` redact sensitive fields automatically, but always review before sharing outside the team.
+
+## Preset-driven Projects
+- Preset files under `app/config/industries/` describe surveys, agent bundles, and pipelines. They are validated at load time by
+  `app/core/presets/industryPresetSchema.js`, which throws `IndustryPresetValidationError` if a structure deviates from the
+  contract defined in `app/types/industryPreset.d.ts`.
+- `app/core/presets/loader.js` discovers preset files, caches them by checksum, and exposes `listPresets`, `loadPreset`, and
+  `diffPreset` helpers. Electron IPC bridges surface these helpers to the renderer for preset selection and upgrade prompts.
+- Applying a preset uses `app/core/presets/applyPreset.js`. The service removes stale preset-sourced agents/pipelines, copies the
+  latest definitions into the project with scoped ids, and sets `source: "preset"` plus `originPresetVersion` so future updates
+  only touch preset-managed records.
+- Project rows keep `presetId`, `presetVersion`, `briefVersion`, and `presetDraft` blobs to coordinate moderation flows and LLM
+  suggestions before a preset upgrade is confirmed.
+
+## Brief Lifecycle & Telegram Integration
+- The Telegram bot (`app/main/ipcBot.js`) drives the survey. During `/start` it creates a session, updates `Projects.briefStatus`
+  to `collecting`, and streams progress to the renderer via the `brief:statusChanged` event.
+- Each response updates `briefProgress`. Unanswered questions populate the `needsAttention` payload used by the renderer to
+  highlight missing fields. When `/finish` is invoked, the bot saves the brief record and flips the project to `review`.
+- Projects surface a “Approve brief” action in the renderer. Confirming the brief toggles the status to `approved`, allowing the
+  preset pipelines to run without manual gating.
+- Telegram contacts persist in `TelegramContacts`. IPC handlers (`AgentFlow:telegram:contacts:*`) allow the renderer to create
+  reusable contacts, send invites via `sendProjectInvite`, and record invite timestamps/statuses back on the project row.
+- All Telegram interactions (start/stop, survey events, invite attempts) append structured entries to
+  `app/data/logs/telegram-bot.jsonl` for auditability.
 
 ## Default Agent Roles
 - **WriterAgent** - templated content generator producing title, caption, description, and summary fields based on project context.
@@ -98,3 +125,4 @@ Custom agents can be registered via the plugin registry or stored in SQLite usin
 - Automation internals: `docs/AutomationGuide.md`
 - Verification status: `docs/VerificationReport.md`
 - Release notes: `docs/CHANGELOG.md`
+- Preset format and lifecycle: `docs/IndustryPreset.md`
