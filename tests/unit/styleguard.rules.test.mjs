@@ -191,4 +191,39 @@ describe('StyleGuard rules', () => {
     expect(result.summary).toBe('Detected stylistic issues.');
     expect(ctx.log.mock.calls.find(([event]) => event === 'agent:styleGuard:llm:used')).toBeDefined();
   });
+
+  it('injects project metadata into rule evaluation context', async () => {
+    const config = {
+      ...baseConfig,
+      params: {
+        ...baseConfig.params,
+        rules: [
+          {
+            id: 'channels-required',
+            path: 'project.channelSummary',
+            mustInclude: ['telegram'],
+            reasonTemplate: 'Missing {{missingToken}} for {{project.industry}} via {{project.channelSummary}}'
+          }
+        ],
+        failTemplate: 'Metadata mismatch'
+      }
+    };
+
+    const ctx = createCtx(config, {
+      project: {
+        id: 'project-1',
+        industry: 'SaaS',
+        channels: ['Email']
+      }
+    });
+
+    const payload = { channels: ['LinkedIn'] };
+    const result = await runStyleGuard(payload, ctx);
+
+    expect(result.guard.pass).toBe(false);
+    const issue = result.guard.results[0];
+    expect(issue.pass).toBe(false);
+    expect(issue.reasons[0]).toContain('SaaS');
+    expect(issue.reasons[0]).toContain('Email');
+  });
 });

@@ -1,0 +1,5 @@
+{
+  "name": "BriefMaster",
+  "version": "0.1.0",
+  "description": "Analyzes presets and project context to propose brief updates"
+}

@@ -1,8 +1,11 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { runPipeline, runDemoPipeline } from './orchestrator.js';
 import { createEntityStore } from './storage/entityStore.js';
 import { listPresets, loadPreset, diffPreset } from './presets/loader.js';
 import { applyPresetToProject } from './presets/applyPreset.js';
+import { resolveDataPath, assertAllowedPath } from './utils/security.js';
 
 const agentConfigs = new Map();
 let entityStore;
@@ -36,6 +39,22 @@ const defaultAgentConfigs = [
       caption: '{{tone}} {{message}}',
       description: '{{outline}}',
       summary: 'Prepared placeholders for {{project.name}}'
+    }
+  },
+  {
+    id: 'BriefMaster',
+    name: 'BriefMaster',
+    type: 'analysis',
+    version: '0.1.0',
+    source: 'auto',
+    instructions: 'Analyze presets and briefs to recommend updates.',
+    params: {
+      maxSuggestions: 5,
+      llm: true
+    },
+    templates: {
+      summary:
+        'BriefMaster предложил {{suggestions.length || 0}} рекомендаций для {{project.name || project.id}}.'
     }
   },
   {
@@ -322,6 +341,61 @@ function collectArtifactsFromPayload(payload) {
   return artifacts;
 }
 
+async function writeReportFiles({
+  reportId,
+  projectId,
+  pipelineId,
+  title,
+  summary,
+  content,
+  payload
+}) {
+  const safeProjectId = projectId || 'unassigned';
+  const reportsRoot = resolveDataPath('reports');
+  const projectDir = resolveDataPath('reports', safeProjectId);
+  await fs.mkdir(projectDir, { recursive: true });
+
+  const dataRoot = resolveDataPath();
+  const markdownFile = path.join(projectDir, `${reportId}.md`);
+  const jsonFile = path.join(projectDir, `${reportId}.json`);
+  assertAllowedPath(markdownFile, { allowedRoots: [reportsRoot] });
+  assertAllowedPath(jsonFile, { allowedRoots: [reportsRoot] });
+
+  const lines = [];
+  if (title) {
+    lines.push(`# ${title}`);
+  }
+  if (summary) {
+    lines.push(summary);
+  }
+  if (content) {
+    lines.push('', content);
+  }
+
+  const markdownBody = lines.join('\n\n').trim();
+  await fs.writeFile(markdownFile, `${markdownBody}\n`, 'utf8');
+
+  const jsonPayload = {
+    id: reportId,
+    projectId: safeProjectId,
+    pipelineId: pipelineId || null,
+    title: title || null,
+    summary: summary || null,
+    content: content || null,
+    payload: payload || null,
+    generatedAt: new Date().toISOString()
+  };
+  await fs.writeFile(jsonFile, `${JSON.stringify(jsonPayload, null, 2)}\n`, 'utf8');
+
+  const relativeMarkdown = path.relative(dataRoot, markdownFile).split(path.sep).join('/');
+  const relativeJson = path.relative(dataRoot, jsonFile).split(path.sep).join('/');
+
+  return {
+    markdown: relativeMarkdown,
+    json: relativeJson
+  };
+}
+
 function buildReportContent(payload, result) {
   const sections = [];
 
@@ -468,7 +542,7 @@ function buildReportSummary(payload, result, fallbackMessage) {
   );
 }
 
-function persistPipelineReport({
+async function persistPipelineReport({
   store,
   result,
   pipelineDefinition,
@@ -488,19 +562,37 @@ function persistPipelineReport({
   const title = buildReportTitle({ payload, pipelineDefinition, runId: result.runId });
   const content = buildReportContent(payload, result);
   const artifacts = collectArtifactsFromPayload(payload);
+  const reportId = result.runId || randomUUID();
+  let fileArtifacts = [];
+
+  try {
+    const fileInfo = await writeReportFiles({
+      reportId,
+      projectId,
+      pipelineId,
+      title,
+      summary,
+      content,
+      payload: result
+    });
+    fileArtifacts = [fileInfo.markdown, fileInfo.json].filter(Boolean);
+  } catch (error) {
+    console.error('Failed to persist report files', error);
+  }
 
   return store.saveReport({
+    id: reportId,
     projectId,
     pipelineId,
     status: result.status || 'completed',
     title,
     summary,
     content,
-    artifacts
+    artifacts: [...artifacts, ...fileArtifacts]
   });
 }
 
-function persistPipelineFailureReport({
+async function persistPipelineFailureReport({
   store,
   projectId,
   pipelineId,
@@ -525,14 +617,33 @@ function persistPipelineFailureReport({
     summary ? `Reason: ${summary}` : null
   ].filter(Boolean);
 
+  const reportId = runId || randomUUID();
+  let fileArtifacts = [];
+
+  try {
+    const fileInfo = await writeReportFiles({
+      reportId,
+      projectId,
+      pipelineId,
+      title,
+      summary,
+      content: contentLines.length > 0 ? contentLines.join('\n\n') : '',
+      payload: { error: error?.message || summary }
+    });
+    fileArtifacts = [fileInfo.markdown, fileInfo.json].filter(Boolean);
+  } catch (fileError) {
+    console.error('Failed to persist failure report files', fileError);
+  }
+
   return store.saveReport({
+    id: reportId,
     projectId,
     pipelineId,
     status: 'error',
     title,
     summary,
     content: contentLines.length > 0 ? contentLines.join('\n\n') : null,
-    artifacts: []
+    artifacts: fileArtifacts
   });
 }
 
@@ -887,7 +998,15 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
         pluginRegistry,
         agentConfigs,
         providerManager,
-        runId: generatedRunId
+        runId: generatedRunId,
+        projectUpdater: async (projectId, updates) => {
+          if (!projectId) {
+            return null;
+          }
+
+          const saved = store.saveProject({ id: projectId, ...updates });
+          return formatProjectRecord(saved);
+        }
       });
 
       const finishedAt = new Date().toISOString();
@@ -912,7 +1031,7 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
         }
 
         try {
-          const storedReport = persistPipelineReport({
+          const storedReport = await persistPipelineReport({
             store,
             result,
             pipelineDefinition,
@@ -955,7 +1074,7 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
       }
 
         try {
-          persistPipelineFailureReport({
+          await persistPipelineFailureReport({
             store,
             projectId,
             pipelineId,

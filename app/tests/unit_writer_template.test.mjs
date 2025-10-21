@@ -61,4 +61,55 @@ describe('WriterAgent templating', () => {
       })
     );
   });
+
+  it('enriches template context with project industry and channels', async () => {
+    const config = {
+      id: 'WriterAgent',
+      params: {
+        outputs: ['brief'],
+        summaryTemplate: ''
+      },
+      templates: {
+        brief:
+          'Industry: {{project.industry}} | Channels: {{project.channelSummary}} | Primary: {{projectChannelSummary}}'
+      }
+    };
+
+    const payload = {
+      topic: 'Promo blast',
+      project: {
+        id: 'project-1',
+        name: 'Alpha Launch',
+        industry: 'Retail'
+      },
+      channels: ['Telegram ', { id: 'instagram', name: 'Instagram' }]
+    };
+
+    const ctx = {
+      runId: 'unit-run',
+      project: {
+        id: 'project-1',
+        name: 'Alpha Launch',
+        industry: 'SaaS',
+        channels: ['Email', 'LinkedIn']
+      },
+      getAgentConfig: vi.fn().mockImplementation((agentName) => {
+        return agentName === 'WriterAgent' ? config : null;
+      }),
+      log: vi.fn()
+    };
+
+    const result = await runWriterAgent(payload, ctx);
+
+    expect(result.writer.outputs.brief).toBe(
+      'Industry: Retail | Channels: Email, LinkedIn, Telegram, instagram | Primary: Email, LinkedIn, Telegram, instagram'
+    );
+    expect(ctx.log).toHaveBeenCalledWith(
+      'agent:writer:completed',
+      expect.objectContaining({
+        runId: 'unit-run',
+        outputs: ['brief']
+      })
+    );
+  });
 });

@@ -95,6 +95,19 @@ const fallbackProxyConfig = {
 
 const fallbackRuns = [];
 
+const fallbackPresets = [
+  {
+    id: 'generic',
+    name: 'Generic',
+    description: 'Fallback preset for offline mode',
+    version: '0.0.0',
+    checksum: null,
+    industry: null,
+    tags: [],
+    updatedAt: null
+  }
+];
+
 function normalizeFallbackChannelList(value) {
   if (Array.isArray(value)) {
     return value
@@ -147,6 +160,24 @@ function cloneFallbackProject(project) {
   };
 
   return JSON.parse(JSON.stringify(copy));
+}
+
+function cloneFallbackPreset(preset) {
+  if (!preset) {
+    return null;
+  }
+
+  return JSON.parse(JSON.stringify(preset));
+}
+
+function findFallbackPreset(presetId) {
+  if (!presetId) {
+    return fallbackPresets[0];
+  }
+
+  const normalized = String(presetId).trim().toLowerCase();
+  const match = fallbackPresets.find((preset) => String(preset.id).toLowerCase() === normalized);
+  return match || fallbackPresets[0];
 }
 
 function clampFallbackProgress(value) {
@@ -268,6 +299,34 @@ export async function listProjects(filter) {
   return sortByUpdatedAtDesc(fallbackProjects).map((project) => cloneFallbackProject(project));
 }
 
+export async function listPresets() {
+  if (hasWindowAPI && typeof agentApi.listPresets === 'function') {
+    try {
+      const response = await agentApi.listPresets();
+
+      if (Array.isArray(response)) {
+        return response;
+      }
+
+      if (response?.ok === false) {
+        throw new Error(response?.error || 'Failed to load presets');
+      }
+
+      if (response && typeof response === 'object') {
+        const presets = Array.isArray(response.presets) ? response.presets : [];
+        if (presets.length > 0) {
+          return presets;
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to load presets via AgentAPI, using fallback data', error);
+    }
+  }
+
+  await fallbackDelay();
+  return fallbackPresets.map((preset) => cloneFallbackPreset(preset));
+}
+
 export async function getProject(projectId) {
   if (hasWindowAPI && typeof agentApi.getProject === 'function') {
     const response = await agentApi.getProject(projectId);
@@ -287,6 +346,119 @@ export async function getProject(projectId) {
 
   const project = fallbackProjects.find((item) => item.id === projectId);
   return project ? cloneFallbackProject(project) : null;
+}
+
+export async function diffPreset(presetId, projectPresetVersion) {
+  if (!presetId) {
+    throw new Error('presetId is required');
+  }
+
+  if (hasWindowAPI && typeof agentApi.diffPreset === 'function') {
+    try {
+      const response = await agentApi.diffPreset(presetId, projectPresetVersion ?? null);
+
+      if (response?.ok === false) {
+        throw new Error(response?.error || 'Failed to diff preset');
+      }
+
+      if (response?.diff) {
+        return response.diff;
+      }
+
+      if (response && typeof response === 'object') {
+        return response;
+      }
+    } catch (error) {
+      console.warn('Failed to diff preset via AgentAPI, using fallback logic', error);
+    }
+  }
+
+  await fallbackDelay();
+  const preset = findFallbackPreset(presetId);
+  const latestVersion = preset?.version || null;
+  const projectVersion = projectPresetVersion || null;
+  const hasUpdate = projectVersion ? projectVersion !== latestVersion : Boolean(latestVersion);
+
+  return {
+    presetId: preset?.id || presetId,
+    latestVersion,
+    projectVersion,
+    hasUpdate,
+    checksum: preset?.checksum ?? null,
+    meta: {
+      id: preset?.id || presetId,
+      name: preset?.name || presetId,
+      description: preset?.description || null,
+      industry: preset?.industry || null,
+      updatedAt: preset?.updatedAt || null,
+      tags: Array.isArray(preset?.tags) ? [...preset.tags] : []
+    }
+  };
+}
+
+export async function applyPreset(projectId, presetId) {
+  if (!projectId) {
+    throw new Error('projectId is required');
+  }
+
+  const normalizedPresetId = presetId || 'generic';
+
+  if (hasWindowAPI && typeof agentApi.applyProjectPreset === 'function') {
+    try {
+      const response = await agentApi.applyProjectPreset({ projectId, presetId: normalizedPresetId });
+
+      if (response?.ok === false) {
+        throw new Error(response?.error || 'Failed to apply preset');
+      }
+
+      if (response && typeof response === 'object') {
+        return response;
+      }
+    } catch (error) {
+      console.warn('Failed to apply preset via AgentAPI, using fallback logic', error);
+    }
+  }
+
+  await fallbackDelay();
+  const projectIndex = fallbackProjects.findIndex((project) => project.id === projectId);
+
+  if (projectIndex === -1) {
+    throw new Error('project_not_found');
+  }
+
+  const preset = findFallbackPreset(normalizedPresetId);
+  const now = new Date().toISOString();
+  const previous = fallbackProjects[projectIndex];
+  const updated = {
+    ...previous,
+    presetId: preset?.id || normalizedPresetId,
+    presetVersion: preset?.version || '0.0.0',
+    briefVersion: preset?.version || previous?.briefVersion || '0.0.0',
+    presetDraft: {},
+    updatedAt: now
+  };
+
+  fallbackProjects[projectIndex] = updated;
+
+  return {
+    ok: true,
+    project: cloneFallbackProject(updated),
+    agents: [],
+    pipelines: [],
+    preset: {
+      id: preset?.id || normalizedPresetId,
+      version: preset?.version || '0.0.0',
+      checksum: preset?.checksum ?? null,
+      meta: {
+        id: preset?.id || normalizedPresetId,
+        name: preset?.name || normalizedPresetId,
+        description: preset?.description || null,
+        industry: preset?.industry || null,
+        updatedAt: preset?.updatedAt || null,
+        tags: Array.isArray(preset?.tags) ? [...preset.tags] : []
+      }
+    }
+  };
 }
 
 export async function upsertProject(project) {

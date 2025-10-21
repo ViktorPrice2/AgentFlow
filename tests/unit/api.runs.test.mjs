@@ -110,14 +110,14 @@ describe('AgentFlow pipeline run IPC handlers', () => {
       result,
       run: savedRecord,
       report: {
-        id: 'report-1',
+        id: 'run-1',
         projectId: 'proj-1',
         pipelineId: 'pipe-1',
         status: 'completed',
         title: 'Pipeline',
         summary: null,
         content: null,
-        artifacts: [],
+        artifacts: ['reports/proj-1/run-1.md', 'reports/proj-1/run-1.json'],
         createdAt: '2025-10-20T23:30:00.000Z',
         updatedAt: '2025-10-20T23:30:00.000Z'
       }

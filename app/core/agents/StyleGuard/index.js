@@ -1,4 +1,5 @@
 import { getValueByPath, renderTemplate, renderTemplateWithFallback } from '../../utils/template.js';
+import { enrichWithProjectContext } from '../../utils/project.js';
 
 const DEFAULT_LLM_REVIEW_PROMPT =
   'You are a marketing compliance reviewer. Evaluate the provided copy quality report.';
@@ -34,7 +35,7 @@ function sanitizeJsonBlock(rawContent = '') {
   }
 }
 
-function mergeInputs(payload, config) {
+function mergeInputs(payload, config, ctx) {
   const override = payload?.override && typeof payload.override === 'object' ? payload.override : {};
   const overrideParams =
     override.params && typeof override.params === 'object' ? override.params : {};
@@ -55,6 +56,8 @@ function mergeInputs(payload, config) {
     ...(Array.isArray(config?.params?.rules) ? config.params.rules : []),
     ...(Array.isArray(override.rules) ? override.rules : [])
   ];
+
+  enrichWithProjectContext(merged, ctx, payload);
 
   return { merged, templates, rules };
 }
@@ -223,7 +226,7 @@ export async function execute(payload, ctx) {
     throw new Error('StyleGuard configuration not found');
   }
 
-  const { merged, templates, rules } = mergeInputs(payload, agentConfig);
+  const { merged, templates, rules } = mergeInputs(payload, agentConfig, ctx);
 
   if (rules.length === 0) {
     throw new Error('StyleGuard rules are not configured');
