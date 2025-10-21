@@ -1,19 +1,34 @@
-<testsuites id="" name="" tests="2" failures="0" skipped="0" errors="0" time="7.275806999999999">
-<testsuite name="smoke.pipeline.spec.mjs" timestamp="2025-10-19T07:42:49.156Z" hostname="" tests="2" failures="0" skipped="0" time="4.174" errors="0">
-<testcase name="Electron smoke › приложение стартует и пишет лог запуска" classname="smoke.pipeline.spec.mjs" time="2.842">
-</testcase>
-<testcase name="Electron smoke › переключение языка и smoke Scheduler" classname="smoke.pipeline.spec.mjs" time="1.332">
+<testsuites id="" name="" tests="3" failures="0" skipped="0" errors="0" time="13.552341">
+<testsuite name="smoke.pipeline.spec.mjs" timestamp="2025-10-21T14:09:47.910Z" hostname="" tests="3" failures="0" skipped="0" time="9.999" errors="0">
+<testcase name="Electron smoke › app starts and writes startup log" classname="smoke.pipeline.spec.mjs" time="1.217">
 <system-out>
-<![CDATA[[verify] Проверка выполнена {
-  scheduler: { status: [32m'ok'[39m, reason: [32m'Последний запуск 0 секунд назад'[39m },
-  i18n: { status: [32m'ok'[39m, reason: [32m'Словари загружены (en.json, ru.json)'[39m },
+<![CDATA[
+]]>
+</system-out>
+</testcase>
+<testcase name="Electron smoke › supports language switch and scheduler smoke verify" classname="smoke.pipeline.spec.mjs" time="1.231">
+<system-out>
+<![CDATA[[verify] All checks passed: {
+  scheduler: {
+    status: [32m'ok'[39m,
+    reason: [32m'Scheduler heartbeat recorded within the 3 minute threshold'[39m,
+    meta: { lastTimestamp: [32m'2025-10-21T14:09:52.613Z'[39m, secondsSince: [33m0[39m }
+  },
+  i18n: {
+    status: [32m'ok'[39m,
+    reason: [32m'Localization files loaded (en.json, ru.json)'[39m,
+    meta: {}
+  },
   telegram: {
     status: [32m'ok'[39m,
-    reason: [32m'Telegram IPC зарегистрирован, токены заданы'[39m
+    reason: [32m'Telegram IPC handlers available and credentials detected'[39m,
+    meta: {}
   }
 }
 ]]>
 </system-out>
+</testcase>
+<testcase name="Electron smoke › creates and removes fallback agents and pipelines" classname="smoke.pipeline.spec.mjs" time="7.551">
 </testcase>
 </testsuite>
 </testsuites>

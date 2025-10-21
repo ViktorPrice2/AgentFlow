@@ -350,15 +350,16 @@ export function AgentsPage({
           </header>
           <p className="hint">{t('agents.form.hint')}</p>
           <form className="form" onSubmit={handleSubmit}>
-            <label>
-              {t('agents.form.jsonLabel')}
+            <div>
+              <label htmlFor="agent-editor-json">{t('agents.form.jsonLabel')}</label>
               <textarea
+                id="agent-editor-json"
                 rows={14}
                 value={editorJson}
                 onChange={handleFormChange}
                 spellCheck={false}
               />
-            </label>
+            </div>
             {formError ? <p className="form-error">{formError}</p> : null}
             <div className="form-actions">
               <button type="submit" className="primary-button">

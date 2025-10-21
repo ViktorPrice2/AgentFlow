@@ -5,11 +5,11 @@
     "nav": {
       "projects": "Проекты",
       "brief": "Бриф",
-      "agents": "Агенты",
-      "pipelines": "Пайплайны",
+      "agents": "ИИ\u2011агенты",
+      "pipelines": "Цепочки агентов",
       "runs": "Запуски",
       "reports": "Отчёты",
-      "scheduler": "Планировщик",
+      "scheduler": "Автозадачи",
       "settings": "Настройки"
     },
     "defaults": {

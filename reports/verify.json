@@ -1,14 +1,20 @@
 {
   "scheduler": {
     "status": "ok",
-    "reason": "Последний запуск 18 секунд назад"
+    "reason": "Scheduler heartbeat recorded within the 3 minute threshold",
+    "meta": {
+      "lastTimestamp": "2025-10-21T14:09:52.613Z",
+      "secondsSince": 0
+    }
   },
   "i18n": {
     "status": "ok",
-    "reason": "Словари загружены (en.json, ru.json)"
+    "reason": "Localization files loaded (en.json, ru.json)",
+    "meta": {}
   },
   "telegram": {
     "status": "ok",
-    "reason": "Telegram IPC зарегистрирован, токены заданы"
+    "reason": "Telegram IPC handlers available and credentials detected",
+    "meta": {}
   }
 }

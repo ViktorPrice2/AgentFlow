@@ -1,11 +1,11 @@
 {
   "chatId": 1281209549,
-  "projectId": "686ea3ef-0133-42f9-ba91-0c2e8de9004f",
-  "createdAt": "2025-10-20T20:43:34.305Z",
-  "updatedAt": "2025-10-20T20:43:44.722Z",
+  "projectId": "ba00e899-717b-4849-9209-fd2a93a6520a",
+  "createdAt": "2025-10-20T22:14:52.031Z",
+  "updatedAt": "2025-10-20T22:15:05.470Z",
   "stepIndex": 8,
   "answersCount": 8,
-  "completedAt": "2025-10-20T20:43:44.704Z",
+  "completedAt": "2025-10-20T22:15:05.449Z",
   "briefPath": "D:\\AgentFlow\\app\\data\\briefs\\brief-1281209549.json",
   "user": {
     "id": 1281209549,
