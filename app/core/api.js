@@ -241,6 +241,301 @@ function formatReportRecord(report) {
   };
 }
 
+function selectFirstString(...values) {
+  for (const value of values) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) {
+        return trimmed;
+      }
+    }
+  }
+
+  return null;
+}
+
+function extractNodeSummaries(result) {
+  if (!Array.isArray(result?.nodes)) {
+    return [];
+  }
+
+  return result.nodes
+    .map((node) => {
+      if (typeof node?.outputSummary === 'string') {
+        const summary = node.outputSummary.trim();
+        if (summary) {
+          return { id: node.id || 'node', summary };
+        }
+      }
+
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function collectArtifactsFromPayload(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return [];
+  }
+
+  const candidateArrays = [];
+
+  if (Array.isArray(payload._artifacts)) {
+    candidateArrays.push(payload._artifacts);
+  }
+
+  if (Array.isArray(payload.artifacts)) {
+    candidateArrays.push(payload.artifacts);
+  }
+
+  if (Array.isArray(payload.report?.artifacts)) {
+    candidateArrays.push(payload.report.artifacts);
+  }
+
+  const artifacts = [];
+  const seenStrings = new Set();
+  const seenObjects = new Set();
+
+  candidateArrays
+    .flat()
+    .forEach((artifact) => {
+      if (typeof artifact === 'string') {
+        if (!seenStrings.has(artifact)) {
+          seenStrings.add(artifact);
+          artifacts.push(artifact);
+        }
+
+        return;
+      }
+
+      if (artifact && typeof artifact === 'object') {
+        const clone = { ...artifact };
+        const key = JSON.stringify(clone);
+
+        if (!seenObjects.has(key)) {
+          seenObjects.add(key);
+          artifacts.push(clone);
+        }
+      }
+    });
+
+  return artifacts;
+}
+
+function buildReportContent(payload, result) {
+  const sections = [];
+
+  if (result?.status && result.status !== 'completed') {
+    const failureSection = [];
+    failureSection.push(`Status: ${result.status}`);
+
+    const failedNode = Array.isArray(result?.nodes)
+      ? result.nodes.find((node) => node?.status === 'error')
+      : null;
+
+    if (failedNode?.error) {
+      failureSection.push(`Error: ${failedNode.error}`);
+    }
+
+    sections.push(failureSection.join('\n'));
+  }
+
+  if (payload?.writer?.outputs && typeof payload.writer.outputs === 'object') {
+    const entries = Object.entries(payload.writer.outputs).filter(
+      ([, value]) => typeof value === 'string' && value.trim().length > 0
+    );
+
+    if (entries.length > 0) {
+      const lines = entries.map(([key, value]) => `- ${key}: ${value.trim()}`);
+      sections.push(['Writer outputs:', ...lines].join('\n'));
+    }
+  }
+
+  if (payload?.guard && typeof payload.guard === 'object') {
+    const guardLines = [];
+
+    if (typeof payload.guard.pass === 'boolean') {
+      guardLines.push(`Verdict: ${payload.guard.pass ? 'pass' : 'fail'}`);
+    }
+
+    if (Array.isArray(payload.guard.results) && payload.guard.results.length > 0) {
+      const failed = payload.guard.results.filter((entry) => entry && entry.pass === false);
+
+      if (failed.length > 0) {
+        guardLines.push('Failed rules:');
+        failed.forEach((entry) => {
+          const ruleId = entry.id || 'rule';
+          const reasons = Array.isArray(entry.reasons) && entry.reasons.length > 0
+            ? entry.reasons.join('; ')
+            : 'No reason provided';
+          guardLines.push(`  - ${ruleId}: ${reasons}`);
+        });
+      }
+    }
+
+    if (
+      Array.isArray(payload.guard.llm?.suggestions) &&
+      payload.guard.llm.suggestions.length > 0
+    ) {
+      guardLines.push('Suggestions:');
+      payload.guard.llm.suggestions.forEach((suggestion) => {
+        if (typeof suggestion === 'string' && suggestion.trim()) {
+          guardLines.push(`  - ${suggestion.trim()}`);
+        }
+      });
+    }
+
+    if (guardLines.length > 0) {
+      sections.push(['Guard review:', ...guardLines].join('\n'));
+    }
+  }
+
+  const nodeSummaries = extractNodeSummaries(result);
+  if (nodeSummaries.length > 0) {
+    const lines = nodeSummaries.map((entry) => `- ${entry.id}: ${entry.summary}`);
+    sections.push(['Node summaries:', ...lines].join('\n'));
+  }
+
+  if (payload?.uploader && typeof payload.uploader === 'object') {
+    const uploaderLines = [];
+
+    if (typeof payload.uploader.status === 'string' && payload.uploader.status) {
+      uploaderLines.push(`Status: ${payload.uploader.status}`);
+    }
+
+    if (Array.isArray(payload.uploader.uploaded) && payload.uploader.uploaded.length > 0) {
+      uploaderLines.push('Uploaded artifacts:');
+      payload.uploader.uploaded.forEach((entry) => {
+        if (!entry) {
+          return;
+        }
+
+        if (typeof entry === 'string') {
+          uploaderLines.push(`  - ${entry}`);
+          return;
+        }
+
+        if (typeof entry === 'object') {
+          const label = entry.path || entry.name || entry.id || JSON.stringify(entry);
+          uploaderLines.push(`  - ${label}`);
+        }
+      });
+    }
+
+    if (typeof payload.uploader.summary === 'string' && payload.uploader.summary.trim()) {
+      uploaderLines.push(`Summary: ${payload.uploader.summary.trim()}`);
+    }
+
+    if (uploaderLines.length > 0) {
+      sections.push(['Uploader:', ...uploaderLines].join('\n'));
+    }
+  }
+
+  const content = sections.join('\n\n').trim();
+
+  return content.length > 0 ? content : null;
+}
+
+function buildReportTitle({ payload, pipelineDefinition, runId }) {
+  const pipelineName = pipelineDefinition?.name;
+  const metadataTitle = pipelineDefinition?.metadata?.title;
+
+  return (
+    selectFirstString(
+      payload?.report?.title,
+      payload?.summaryTitle,
+      payload?.writer?.outputs?.title,
+      payload?.writer?.outputs?.headline,
+      metadataTitle,
+      pipelineName
+    ) || (pipelineName ? `${pipelineName} run` : null) || (runId ? `Run ${runId}` : null) || 'Pipeline run'
+  );
+}
+
+function buildReportSummary(payload, result, fallbackMessage) {
+  const nodeSummaries = extractNodeSummaries(result).map((entry) => entry.summary);
+
+  return (
+    selectFirstString(
+      payload?.report?.summary,
+      payload?.summary,
+      payload?.writer?.summary,
+      payload?.guard?.summary,
+      payload?.uploader?.summary,
+      ...nodeSummaries,
+      fallbackMessage
+    ) || null
+  );
+}
+
+function persistPipelineReport({
+  store,
+  result,
+  pipelineDefinition,
+  projectId,
+  pipelineId
+}) {
+  if (!store || !projectId || !result) {
+    return null;
+  }
+
+  const payload = result.payload || {};
+  const failedNode = Array.isArray(result?.nodes)
+    ? result.nodes.find((node) => node?.status === 'error')
+    : null;
+
+  const summary = buildReportSummary(payload, result, failedNode?.error || null);
+  const title = buildReportTitle({ payload, pipelineDefinition, runId: result.runId });
+  const content = buildReportContent(payload, result);
+  const artifacts = collectArtifactsFromPayload(payload);
+
+  return store.saveReport({
+    projectId,
+    pipelineId,
+    status: result.status || 'completed',
+    title,
+    summary,
+    content,
+    artifacts
+  });
+}
+
+function persistPipelineFailureReport({
+  store,
+  projectId,
+  pipelineId,
+  pipelineDefinition,
+  runId,
+  error
+}) {
+  if (!store || !projectId) {
+    return null;
+  }
+
+  const summary = selectFirstString(error?.message, error?.code, 'Pipeline run failed');
+  const title = (
+    selectFirstString(
+      pipelineDefinition?.metadata?.reportTitle,
+      pipelineDefinition?.name
+    ) || (pipelineId ? `${pipelineId} run` : null) || (runId ? `Run ${runId}` : null) || 'Pipeline run'
+  );
+
+  const contentLines = [
+    `Pipeline execution failed for run ${runId || 'unknown'}.`,
+    summary ? `Reason: ${summary}` : null
+  ].filter(Boolean);
+
+  return store.saveReport({
+    projectId,
+    pipelineId,
+    status: 'error',
+    title,
+    summary,
+    content: contentLines.length > 0 ? contentLines.join('\n\n') : null,
+    artifacts: []
+  });
+}
+
 function storeAgentConfig(agent) {
   const store = getEntityStore();
   const stored = store.saveAgent(agent);
@@ -597,6 +892,7 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
 
       const finishedAt = new Date().toISOString();
       let runRecord = null;
+      let reportRecord = null;
 
       if (projectId) {
         try {
@@ -614,12 +910,29 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
         } catch (persistError) {
           console.error('Failed to persist pipeline run', persistError);
         }
+
+        try {
+          const storedReport = persistPipelineReport({
+            store,
+            result,
+            pipelineDefinition,
+            projectId,
+            pipelineId
+          });
+
+          if (storedReport) {
+            reportRecord = storedReport;
+          }
+        } catch (reportError) {
+          console.error('Failed to persist pipeline report', reportError);
+        }
       }
 
       return {
         ok: true,
         result,
-        run: runRecord
+        run: runRecord,
+        report: reportRecord ? formatReportRecord(reportRecord) : null
       };
     } catch (error) {
       const finishedAt = new Date().toISOString();
@@ -635,10 +948,23 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
             output: { error: error.message },
             createdAt: startedAt,
             startedAt,
-            finishedAt
+          finishedAt
+        });
+      } catch (persistError) {
+        console.error('Failed to record failed pipeline run', persistError);
+      }
+
+        try {
+          persistPipelineFailureReport({
+            store,
+            projectId,
+            pipelineId,
+            pipelineDefinition,
+            runId: generatedRunId,
+            error
           });
         } catch (persistError) {
-          console.error('Failed to record failed pipeline run', persistError);
+          console.error('Failed to record failed pipeline report', persistError);
         }
       }
 

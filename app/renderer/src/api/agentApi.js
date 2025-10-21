@@ -396,9 +396,28 @@ function matchesReportFilter(report, filter = {}) {
 export async function listReports(filter = {}) {
   if (hasWindowAPI && typeof agentApi.listReports === 'function') {
     try {
-      const reports = await agentApi.listReports(filter);
-      if (Array.isArray(reports)) {
-        return reports;
+      const response = await agentApi.listReports(filter ?? {});
+
+      if (Array.isArray(response)) {
+        return response
+          .map(cloneReport)
+          .filter(Boolean)
+          .filter((report) => matchesReportFilter(report, filter));
+      }
+
+      if (response?.ok === false) {
+        throw new Error(response?.error || 'Failed to load reports');
+      }
+
+      if (response && typeof response === 'object') {
+        const data = Array.isArray(response.reports) ? response.reports : [];
+
+        if (response.ok === true || data.length > 0) {
+          return data
+            .map(cloneReport)
+            .filter(Boolean)
+            .filter((report) => matchesReportFilter(report, filter));
+        }
       }
     } catch (error) {
       console.warn('Failed to load reports via AgentAPI, using fallback data', error);
@@ -406,15 +425,37 @@ export async function listReports(filter = {}) {
   }
 
   await fallbackDelay();
-  return fallbackReports.filter((report) => matchesReportFilter(report, filter)).map(cloneReport);
+  return fallbackReports
+    .filter((report) => matchesReportFilter(report, filter))
+    .map(cloneReport)
+    .filter(Boolean);
 }
 
 export async function getReport(reportId) {
   if (hasWindowAPI && typeof agentApi.getReport === 'function') {
     try {
-      const report = await agentApi.getReport(reportId);
-      if (report) {
-        return report;
+      const response = await agentApi.getReport(reportId);
+
+      if (!response) {
+        return null;
+      }
+
+      if (response?.ok === false) {
+        throw new Error(response?.error || 'Failed to fetch report');
+      }
+
+      if (response?.ok === true) {
+        return cloneReport(response.report) ?? null;
+      }
+
+      if (response && typeof response === 'object') {
+        if (response.report) {
+          return cloneReport(response.report) ?? null;
+        }
+
+        if (response.id || response.projectId) {
+          return cloneReport(response) ?? null;
+        }
       }
     } catch (error) {
       console.warn('Failed to fetch report via AgentAPI, using fallback data', error);

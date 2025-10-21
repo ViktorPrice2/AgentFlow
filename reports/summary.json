@@ -1,7 +1,7 @@
 {
-  "runId": "1c3fd87c-e435-4dc6-9646-3b51840fc83a",
-  "startedAt": "2025-10-19T07:47:58.285Z",
-  "finishedAt": "2025-10-19T07:48:58.626Z",
+  "runId": "4f748b17-2ad0-4c3a-90ff-bf4d6868c9b3",
+  "startedAt": "2025-10-20T23:30:00.000Z",
+  "finishedAt": "2025-10-20T23:32:30.000Z",
   "results": [
     {
       "id": "W-VRF-01",
@@ -33,7 +33,7 @@
         "id": "W-TST-01",
         "goal": "Юнит-тесты генератора Writer: тон, CTA, дефолты",
         "inputs": [
-          "app/server/agents/writer/index.js"
+          "app/core/agents/WriterAgent/index.js"
         ],
         "outputs": [
           "tests/unit/writer.templating.test.mjs"
@@ -53,7 +53,7 @@
         "id": "W-TST-02",
         "goal": "Юнит-тесты StyleGuard: запрещённые слова/длина",
         "inputs": [
-          "app/server/agents/styleguard/index.js"
+          "app/core/agents/StyleGuard/index.js"
         ],
         "outputs": [
           "tests/unit/styleguard.rules.test.mjs"
@@ -85,12 +85,34 @@
           "Coverage ≥ 80% для security utils"
         ]
       }
+    },
+    {
+      "id": "W-E2E-01",
+      "type": "test",
+      "status": "completed",
+      "workItem": {
+        "id": "W-E2E-01",
+        "goal": "Смоук e2e Writer → Uploader: проверить артефакты и лог",
+        "inputs": [
+          "app/tests/e2e_smoke.test.mjs",
+          "app/core/pluginLoader.js",
+          "app/core/orchestrator.js"
+        ],
+        "outputs": [
+          "app/tests/e2e_smoke.test.mjs"
+        ],
+        "acceptance": [
+          "Pipeline run завершается со статусом completed",
+          "Uploader сохраняет артефакт в data/artifacts",
+          "Временный лог раннера удаляется по окончании теста"
+        ]
+      }
     }
   ],
   "checks": {
     "scheduler": "ok",
     "i18n": "ok",
     "tg": "ok",
-    "e2e": "pending"
+    "e2e": "ok"
   }
 }
