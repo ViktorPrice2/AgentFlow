@@ -128,7 +128,12 @@
       "chatIdRequired": "Укажите chat ID или @username",
       "projectRequired": "Сначала выберите проект",
       "briefApproved": "Бриф одобрен",
-      "briefApproveError": "Не удалось одобрить бриф"
+      "briefApproveError": "Не удалось одобрить бриф",
+      "presetApplied": "Пресет {{name}} применён ({{version}})",
+      "presetApplyError": "Не удалось применить пресет",
+      "presetDiffError": "Не удалось сравнить версии пресета",
+      "presetDraftCleared": "Предложения сохранены в архив",
+      "presetDraftClearError": "Не удалось архивировать предложения"
     },
     "status": {
       "pending": "Ожидает запуска",
@@ -152,6 +157,8 @@
       "industryPlaceholder": "SaaS, e-commerce, образование...",
       "description": "Описание",
       "descriptionPlaceholder": "Цели, продукт и уникальное предложение",
+      "preset": "Пресет",
+      "presetHint": "Выберите отраслевой пресет. Если ничего не выбрано, будет применён Generic.",
       "channels": "Каналы",
       "channelsPlaceholder": "Telegram, ВКонтакте, Email, реклама...",
       "deeplink": "Диплинк / URL",
@@ -175,7 +182,23 @@
       "approveBrief": "Подтвердить бриф",
       "approveUnavailable": "Заполните бриф, чтобы подтвердить",
       "alreadyApproved": "Бриф уже одобрен",
-      "briefApprovedLabel": "Бриф одобрен"
+      "briefApprovedLabel": "Бриф одобрен",
+      "openBrief": "Открыть бриф",
+      "openBriefDisabled": "Завершите сбор брифа, чтобы открыть вкладку",
+      "presetHeading": "Пресет",
+      "presetSubtitle": "Применён: {{preset}}",
+      "presetStatusUpdate": "Доступно обновление (последняя: {{latest}}, текущая: {{current}})",
+      "presetStatusUpToDate": "Актуальная версия ({{version}})",
+      "presetName": "Название пресета",
+      "presetVersion": "Текущая версия",
+      "presetLatest": "Последняя версия",
+      "presetUpdatedAt": "Обновлён",
+      "refreshPreset": "Проверить обновления",
+      "applyPreset": "Применить пресет",
+      "presetLoading": "Применение...",
+      "presetDraftSummary": "Изучите предложения BriefMaster перед применением.",
+      "reviewPresetDraft": "Посмотреть предложения",
+      "presetDraftMissing": "Предложений нет"
     },
     "telegram": {
       "title": "Контакты Telegram",
@@ -221,6 +244,31 @@
         "completed": "Заполнил",
         "unknown": "Неизвестно"
       }
+    },
+    "presets": {
+      "genericName": "Generic",
+      "genericDescription": "Базовый пресет на случай отсутствия отраслевого шаблона.",
+      "versionUnknown": "нет данных"
+    },
+    "approveModal": {
+      "title": "Подтвердить бриф",
+      "subtitle": "Проверьте незаполненные поля перед подтверждением",
+      "progress": "Заполнено: {{percent}}%",
+      "needsAttentionTitle": "Что заполнить",
+      "noIssues": "Все поля заполнены",
+      "cancel": "Отмена",
+      "confirm": "Одобрить"
+    },
+    "presetModal": {
+      "title": "Предложения по пресету",
+      "subtitle": "Проверьте изменения для {{preset}}",
+      "meta": "ID пресета: {{id}}, отрасль: {{industry}}",
+      "suggestions": "Автоматизация",
+      "questions": "Дополнительные вопросы",
+      "updatedAt": "Сформировано {{date}}",
+      "dismiss": "В архив",
+      "apply": "Применить обновление",
+      "close": "Закрыть"
     },
     "history": {
       "title": "История версий",

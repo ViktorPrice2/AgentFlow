@@ -8,6 +8,7 @@ import {
   isAgentApiAvailable,
   listAgents,
   listProjects,
+  listPresets,
   upsertAgent,
   deleteAgent,
   listPipelines,
@@ -33,6 +34,8 @@ import {
   runScheduleNow,
   getSchedulerStatus,
   listReports,
+  diffPreset,
+  applyPreset,
   listTelegramContacts,
   saveTelegramContact,
   sendTelegramInvite
@@ -335,6 +338,11 @@ function App() {
   const [telegramContacts, setTelegramContacts] = useState([]);
   const [telegramContactsLoading, setTelegramContactsLoading] = useState(false);
   const [inviteHistoryMap, setInviteHistoryMap] = useState({});
+  const [presets, setPresets] = useState([]);
+  const [presetsLoading, setPresetsLoading] = useState(false);
+  const [presetDiffState, setPresetDiffState] = useState(null);
+  const [presetDiffLoading, setPresetDiffLoading] = useState(false);
+  const [presetActionBusy, setPresetActionBusy] = useState(false);
   const [botStatus, setBotStatus] = useState(null);
   const [botBusy, setBotBusy] = useState(false);
   const botBusyRef = useRef(false);
@@ -435,6 +443,82 @@ function App() {
       throw error;
     }
   }, [setProjects]);
+
+  const loadPresetOptions = useCallback(async () => {
+    setPresetsLoading(true);
+
+    try {
+      const presetList = await listPresets();
+      const normalized = Array.isArray(presetList) ? presetList : [];
+      const seen = new Set();
+
+      const entries = normalized
+        .map((preset) => {
+          const meta = preset && typeof preset.meta === 'object' ? preset.meta : {};
+          const id = preset?.id || meta?.id || 'generic';
+
+          return {
+            id,
+            name: preset?.name || meta?.name || id,
+            description: preset?.description || meta?.description || '',
+            version: preset?.version || meta?.version || null,
+            checksum: preset?.checksum || null,
+            industry: preset?.industry || meta?.industry || null,
+            updatedAt: preset?.updatedAt || meta?.updatedAt || null,
+            tags: Array.isArray(preset?.tags)
+              ? preset.tags
+              : Array.isArray(meta?.tags)
+                ? meta.tags
+                : []
+          };
+        })
+        .filter((entry) => {
+          if (!entry.id) {
+            return false;
+          }
+
+          if (seen.has(entry.id)) {
+            return false;
+          }
+
+          seen.add(entry.id);
+          return true;
+        });
+
+      if (!seen.has('generic')) {
+        entries.push({
+          id: 'generic',
+          name: t('projects.presets.genericName'),
+          description: t('projects.presets.genericDescription'),
+          version: '0.0.0',
+          checksum: null,
+          industry: null,
+          updatedAt: null,
+          tags: []
+        });
+      }
+
+      entries.sort((a, b) => a.name.localeCompare(b.name, language === 'ru' ? 'ru' : 'en'));
+      setPresets(entries);
+      return entries;
+    } catch (error) {
+      console.error('Failed to load preset options', error);
+      const fallbackEntry = {
+        id: 'generic',
+        name: t('projects.presets.genericName'),
+        description: t('projects.presets.genericDescription'),
+        version: '0.0.0',
+        checksum: null,
+        industry: null,
+        updatedAt: null,
+        tags: []
+      };
+      setPresets([fallbackEntry]);
+      return [fallbackEntry];
+    } finally {
+      setPresetsLoading(false);
+    }
+  }, [language, t]);
 
   const loadTelegramContacts = useCallback(
     async (projectId = selectedProjectId) => {
@@ -586,15 +670,128 @@ function App() {
         };
       }
     },
+  [
+    selectedProjectId,
+    loadTelegramContacts,
+    refreshProjects,
+    loadInviteHistory,
+    resolveMessage,
+    showToast,
+    t
+  ]
+);
+
+  const handleApplyPreset = useCallback(
+    async (projectId, presetId, options = {}) => {
+      const targetProjectId = projectId || selectedProjectId;
+      const targetPresetId = presetId || selectedProject?.presetId || 'generic';
+
+      if (!targetProjectId) {
+        showToast(t('projects.toast.projectRequired'), 'error', { source: 'preset' });
+        return false;
+      }
+
+      setPresetActionBusy(true);
+
+      try {
+        const response = await applyPreset(targetProjectId, targetPresetId);
+
+        if (response?.ok === false) {
+          throw new Error(response?.error || 'Preset apply failed');
+        }
+
+        if (options?.clearDraft) {
+          try {
+            await upsertProject({ id: targetProjectId, presetDraft: {} });
+          } catch (draftError) {
+            console.warn('Failed to clear preset draft after apply', draftError);
+          }
+        }
+
+        await Promise.all([refreshProjects(), refreshAgents(), refreshPipelines()]);
+
+        const appliedVersion =
+          response?.project?.presetVersion || response?.preset?.version || selectedProject?.presetVersion || null;
+
+        await refreshPresetDiff({
+          id: targetProjectId,
+          presetId: targetPresetId,
+          presetVersion: appliedVersion
+        }).catch(() => {});
+
+        const presetMeta = response?.preset?.meta || {};
+        const presetName =
+          presetMeta.name || presets.find((preset) => preset.id === targetPresetId)?.name || targetPresetId;
+
+        showToast(
+          t('projects.toast.presetApplied', {
+            name: presetName,
+            version: appliedVersion || t('projects.presets.versionUnknown')
+          }),
+          'success',
+          { source: 'preset' }
+        );
+
+        return true;
+      } catch (error) {
+        console.error('Failed to apply preset', error);
+        showToast(t('projects.toast.presetApplyError'), 'error', {
+          source: 'preset',
+          details: { message: error?.message }
+        });
+        return false;
+      } finally {
+        setPresetActionBusy(false);
+      }
+    },
     [
       selectedProjectId,
-      loadTelegramContacts,
+      selectedProject,
+      presets,
       refreshProjects,
-      loadInviteHistory,
-      resolveMessage,
+      refreshAgents,
+      refreshPipelines,
+      refreshPresetDiff,
       showToast,
       t
     ]
+  );
+
+  const handleClearPresetDraft = useCallback(
+    async (projectId) => {
+      const targetProjectId = projectId || selectedProjectId;
+
+      if (!targetProjectId) {
+        showToast(t('projects.toast.projectRequired'), 'error', { source: 'preset' });
+        return false;
+      }
+
+      try {
+        const response = await upsertProject({ id: targetProjectId, presetDraft: {} });
+
+        if (response?.ok === false) {
+          throw new Error(response?.error || 'Preset draft clear failed');
+        }
+
+        await refreshProjects();
+        await refreshPresetDiff({
+          id: targetProjectId,
+          presetId: response?.project?.presetId || selectedProject?.presetId || 'generic',
+          presetVersion: response?.project?.presetVersion || selectedProject?.presetVersion || null
+        }).catch(() => {});
+
+        showToast(t('projects.toast.presetDraftCleared'), 'info', { source: 'preset' });
+        return true;
+      } catch (error) {
+        console.error('Failed to clear preset draft', error);
+        showToast(t('projects.toast.presetDraftClearError'), 'error', {
+          source: 'preset',
+          details: { message: error?.message }
+        });
+        return false;
+      }
+    },
+    [selectedProjectId, selectedProject, refreshProjects, refreshPresetDiff, showToast, t]
   );
 
   const handleApproveBrief = useCallback(async () => {
@@ -652,6 +849,10 @@ function App() {
       console.error('Failed to hydrate projects', error);
     });
   }, [refreshProjects]);
+
+  useEffect(() => {
+    loadPresetOptions().catch(() => {});
+  }, [loadPresetOptions]);
 
   useEffect(() => {
     if (!selectedProjectId) {
@@ -731,6 +932,37 @@ function App() {
     [projects, selectedProjectId]
   );
 
+  const refreshPresetDiff = useCallback(
+    async (projectOverride) => {
+      const project = projectOverride || selectedProject;
+
+      if (!project) {
+        setPresetDiffState(null);
+        return null;
+      }
+
+      const targetPresetId = project.presetId || 'generic';
+      setPresetDiffLoading(true);
+
+      try {
+        const diff = await diffPreset(targetPresetId, project.presetVersion ?? null);
+        setPresetDiffState(diff);
+        return diff;
+      } catch (error) {
+        console.error('Failed to diff preset', error);
+        setPresetDiffState(null);
+        showToast(t('projects.toast.presetDiffError'), 'error', {
+          source: 'preset',
+          details: { projectId: project.id, message: error?.message }
+        });
+        return null;
+      } finally {
+        setPresetDiffLoading(false);
+      }
+    },
+    [selectedProject, showToast, t]
+  );
+
   useEffect(() => {
     if (!selectedProjectId) {
       return;
@@ -738,6 +970,15 @@ function App() {
 
     loadInviteHistory(selectedProjectId).catch(() => {});
   }, [selectedProjectId, selectedProject?.tgLastInvitation, loadInviteHistory]);
+
+  useEffect(() => {
+    if (!selectedProject) {
+      setPresetDiffState(null);
+      return;
+    }
+
+    refreshPresetDiff(selectedProject).catch(() => {});
+  }, [selectedProject?.id, selectedProject?.presetId, selectedProject?.presetVersion, refreshPresetDiff]);
 
   useEffect(() => {
     if (projects.length === 0) {
@@ -1520,6 +1761,15 @@ function App() {
             onApproveBrief={handleApproveBrief}
             inviteHistory={inviteHistoryMap[selectedProjectId] || []}
             onRefreshInviteHistory={handleRefreshInviteHistory}
+            presetOptions={presets}
+            presetsLoading={presetsLoading}
+            presetDiff={presetDiffState}
+            presetBusy={presetActionBusy}
+            presetDiffLoading={presetDiffLoading}
+            onApplyPreset={handleApplyPreset}
+            onClearPresetDraft={handleClearPresetDraft}
+            onRefreshPresetDiff={refreshPresetDiff}
+            onOpenBrief={() => setActiveSection('brief')}
           />
         );
       case 'brief':
