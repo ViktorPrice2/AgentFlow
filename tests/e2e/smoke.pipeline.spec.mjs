@@ -210,7 +210,19 @@ test.describe('Electron smoke', () => {
       await page.goto(url);
       await page.waitForSelector('[data-testid="app-root"]');
 
+      await page.evaluate((bridgeChannel) => {
+        const message = { bridge: bridgeChannel, type: 'SET_LANG', lang: 'en' };
+
+        if (window.e2e?.setLang) {
+          window.e2e.setLang('en');
+        } else {
+          window.postMessage(message, '*');
+        }
+      }, E2E_BRIDGE_CHANNEL);
+      await page.waitForTimeout(200);
+
       // Project creation unlocks dependent forms
+      await expect(page.getByLabel('Name').first()).toBeVisible();
       await page.getByLabel('Name').first().fill('QA Project');
       await page.getByRole('button', { name: 'Save', exact: true }).first().click();
       await expect(page.locator('.toast')).toContainText('Project saved');
