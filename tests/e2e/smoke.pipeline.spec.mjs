@@ -18,6 +18,60 @@ const E2E_BRIDGE_CHANNEL = 'af:e2e:bridge';
 
 const requireFromApp = createRequire(path.join(APP_ROOT, 'package.json'));
 const { test, expect } = requireFromApp('@playwright/test');
+const enTranslations = requireFromApp('./renderer/src/i18n/en.json');
+const ruTranslations = requireFromApp('./renderer/src/i18n/ru.json');
+
+const DICTIONARIES = [enTranslations, ruTranslations];
+
+function resolveTranslation(dictionary, keyPath) {
+  return keyPath.split('.').reduce((acc, segment) => {
+    if (acc && typeof acc === 'object') {
+      return acc[segment];
+    }
+
+    return undefined;
+  }, dictionary);
+}
+
+function formatTemplate(template, values = {}) {
+  if (typeof template !== 'string') {
+    return template;
+  }
+
+  return template.replace(/\{(\w+)\}/g, (match, token) => {
+    if (Object.prototype.hasOwnProperty.call(values, token)) {
+      const value = values[token];
+      return value === undefined || value === null ? '' : String(value);
+    }
+
+    return match;
+  });
+}
+
+function escapeForRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildTranslationVariants(keyPath, values) {
+  const variants = DICTIONARIES.map((dictionary) => {
+    const template = resolveTranslation(dictionary, keyPath);
+    return formatTemplate(template, values);
+  })
+    .filter((variant) => typeof variant === 'string' && variant.trim().length > 0);
+
+  if (variants.length === 0) {
+    throw new Error(`Missing translations for key: ${keyPath}`);
+  }
+
+  return Array.from(new Set(variants));
+}
+
+function translationRegex(keyPath, values, { partial = false } = {}) {
+  const variants = buildTranslationVariants(keyPath, values).map(escapeForRegex);
+  const pattern = variants.join('|');
+
+  return partial ? new RegExp(pattern, 'i') : new RegExp(`^(?:${pattern})$`, 'i');
+}
 
 async function resetStartupLog() {
   await fs.mkdir(path.dirname(LOG_FILE), { recursive: true });
@@ -226,21 +280,27 @@ test.describe('Electron smoke', () => {
           window.postMessage(message, '*');
         }
       }, E2E_BRIDGE_CHANNEL);
-      await expect(page.getByRole('button', { name: 'Projects', exact: true })).toBeVisible();
+      await expect(
+        page.getByRole('button', { name: translationRegex('app.nav.projects') })
+      ).toBeVisible();
 
       // Project creation unlocks dependent forms
       const projectForm = page.locator('.page-grid .form').first();
       const projectNameInput = projectForm.locator('input[name="name"]').first();
       await expect(projectNameInput).toBeVisible();
       await projectNameInput.fill('QA Project');
-      await projectForm.getByRole('button', { name: 'Save', exact: true }).click();
-      await expect(page.locator('.toast')).toContainText('Project saved');
+      await projectForm
+        .getByRole('button', { name: translationRegex('common.saveProject') })
+        .click();
+      await expect(page.locator('.toast')).toContainText(
+        translationRegex('projects.toast.saved', undefined, { partial: true })
+      );
       await expect(
         page.getByRole('heading', { level: 4, name: 'QA Project' })
       ).toBeVisible();
 
       // Manage agent JSON config via fallback API
-      await page.getByRole('button', { name: 'Agents' }).click();
+      await page.getByRole('button', { name: translationRegex('app.nav.agents') }).click();
       await page.waitForSelector('.agent-editor');
 
       const agentPayload = JSON.stringify(
@@ -256,35 +316,47 @@ test.describe('Electron smoke', () => {
       );
 
       const agentForm = page.locator('.agent-editor .form');
-      await agentForm.getByLabel('Agent payload (JSON)').fill(agentPayload);
-      await agentForm.getByRole('button', { name: 'Save', exact: true }).click();
-      await expect(page.locator('.toast')).toContainText('Agent QA Agent saved');
+      await agentForm.getByLabel(translationRegex('agents.form.jsonLabel')).fill(agentPayload);
+      await agentForm
+        .getByRole('button', { name: translationRegex('common.save') })
+        .click();
+      await expect(page.locator('.toast')).toContainText(
+        translationRegex('app.toasts.agentSaved', { name: 'QA Agent' }, { partial: true })
+      );
 
       const agentRow = page.locator('tbody tr').filter({ hasText: 'QA Agent' });
       await expect(agentRow).toHaveCount(1);
 
       await page.once('dialog', (dialog) => dialog.accept());
-      await agentRow.getByRole('button', { name: 'Delete' }).click();
-      await expect(page.locator('.toast')).toContainText('Agent QA Agent removed');
+      await agentRow
+        .getByRole('button', { name: translationRegex('common.delete') })
+        .click();
+      await expect(page.locator('.toast')).toContainText(
+        translationRegex('app.toasts.agentDeleted', { name: 'QA Agent' }, { partial: true })
+      );
       await expect(agentRow).toHaveCount(0);
 
       // Create and delete a pipeline using fallback storage
-      await page.getByRole('button', { name: 'Pipelines' }).click();
+      await page.getByRole('button', { name: translationRegex('app.nav.pipelines') }).click();
       await page.waitForSelector('.pipeline-steps');
 
       const pipelineForm = page.locator('form').filter({
         has: page.locator('.pipeline-steps')
       });
 
-      await pipelineForm.getByLabel('Identifier').fill('qa-pipeline');
-      await pipelineForm.getByLabel('Name').fill('QA Pipeline');
       await pipelineForm
-        .getByLabel('Description')
+        .getByLabel(translationRegex('pipelines.form.identifier'))
+        .fill('qa-pipeline');
+      await pipelineForm.getByLabel(translationRegex('pipelines.form.name')).fill('QA Pipeline');
+      await pipelineForm
+        .getByLabel(translationRegex('pipelines.form.description'))
         .fill('Playwright generated pipeline');
 
-      await pipelineForm.getByRole('button', { name: 'Save pipeline' }).click();
+      await pipelineForm
+        .getByRole('button', { name: translationRegex('pipelines.form.submit') })
+        .click();
       await expect(page.locator('.toast')).toContainText(
-        'Pipeline "QA Pipeline" saved'
+        translationRegex('app.toasts.pipelineSaved', { name: 'QA Pipeline' }, { partial: true })
       );
 
       const pipelineCard = page
@@ -293,9 +365,11 @@ test.describe('Electron smoke', () => {
       await expect(pipelineCard).toHaveCount(1);
 
       await page.once('dialog', (dialog) => dialog.accept());
-      await pipelineCard.getByRole('button', { name: 'Delete' }).click();
+      await pipelineCard
+        .getByRole('button', { name: translationRegex('pipelines.list.delete') })
+        .click();
       await expect(page.locator('.toast')).toContainText(
-        'Pipeline "QA Pipeline" removed'
+        translationRegex('app.toasts.pipelineDeleted', { name: 'QA Pipeline' }, { partial: true })
       );
       await expect(pipelineCard).toHaveCount(0);
     } finally {
