@@ -4,13 +4,51 @@ import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
 import { useI18n } from '../i18n/useI18n.jsx';
 
+function normalizeChannelList(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === 'string') {
+          return item.trim();
+        }
+
+        if (item && typeof item === 'object' && typeof item.id === 'string') {
+          return item.id.trim();
+        }
+
+        return null;
+      })
+      .filter((item) => item && item.length > 0);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      return normalizeChannelList(parsed);
+    } catch {
+      return trimmed
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+    }
+  }
+
+  return [];
+}
+
 function createProjectPayload(formState) {
   const payload = {
     name: formState.name.trim(),
     industry: formState.industry.trim(),
     description: formState.description.trim(),
     deeplink: formState.deeplink.trim(),
-    channels: formState.channels.trim()
+    channels: normalizeChannelList(formState.channels)
   };
 
   if (formState.id) {
@@ -48,6 +86,10 @@ export function ProjectsPage({
     () => projects.find((project) => project.id === selectedProjectId) || null,
     [projects, selectedProjectId]
   );
+
+  const selectedProjectChannels = normalizeChannelList(selectedProject?.channels);
+  const selectedProjectChannelsLabel =
+    selectedProjectChannels.length > 0 ? selectedProjectChannels.join(', ') : t('common.notAvailable');
 
   const handleInputChange = (event) => {
     const { name, value } = event.target;
@@ -247,7 +289,7 @@ export function ProjectsPage({
             </div>
             <div>
               <dt>{t('projects.details.channels')}</dt>
-              <dd>{selectedProject.channels || t('common.notAvailable')}</dd>
+              <dd>{selectedProjectChannelsLabel}</dd>
             </div>
             <div>
               <dt>{t('projects.details.deeplink')}</dt>
@@ -276,7 +318,7 @@ ProjectsPage.propTypes = {
       industry: PropTypes.string,
       description: PropTypes.string,
       deeplink: PropTypes.string,
-      channels: PropTypes.string,
+      channels: PropTypes.oneOfType([PropTypes.string, PropTypes.arrayOf(PropTypes.string)]),
       updatedAt: PropTypes.string.isRequired
     })
   ).isRequired,
