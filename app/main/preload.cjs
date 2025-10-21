@@ -1,5 +1,50 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+let cachedAppVersion;
+
+function resolveAppVersion() {
+  if (cachedAppVersion) {
+    return cachedAppVersion;
+  }
+
+  const envCandidates = [
+    process?.env?.AGENTFLOW_VERSION,
+    process?.env?.APP_VERSION,
+    process?.env?.npm_package_version
+  ];
+
+  for (const candidate of envCandidates) {
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      if (trimmed) {
+        cachedAppVersion = trimmed;
+        return cachedAppVersion;
+      }
+    }
+  }
+
+  if (process?.versions && typeof process.versions.app === 'string' && process.versions.app) {
+    cachedAppVersion = process.versions.app;
+    return cachedAppVersion;
+  }
+
+  try {
+    const packageJson = require('../package.json');
+    if (packageJson && typeof packageJson.version === 'string') {
+      const trimmed = packageJson.version.trim();
+      if (trimmed) {
+        cachedAppVersion = trimmed;
+        return cachedAppVersion;
+      }
+    }
+  } catch (error) {
+    // Ignore missing package metadata and fall back to default tag below.
+  }
+
+  cachedAppVersion = '0.0.0-dev';
+  return cachedAppVersion;
+}
+
 let registerE2EBridge = () => false;
 let e2eBridgeChannel = 'af:e2e:bridge';
 let e2eStorageKey = 'af:e2e:mode';
@@ -70,7 +115,7 @@ const ERROR_EVENT_CHANNEL = 'AgentFlow:error-bus:event';
 const ERROR_REPORT_CHANNEL = 'AgentFlow:error-bus:report';
 
 contextBridge.exposeInMainWorld('AgentAPI', {
-  version: () => 'Phase 3 stub',
+  version: () => resolveAppVersion(),
   listAgents: () => ipcRenderer.invoke('AgentFlow:agents:list'),
   upsertAgent: (agent) => ipcRenderer.invoke('AgentFlow:agents:upsert', agent),
   deleteAgent: (agentId) => ipcRenderer.invoke('AgentFlow:agents:delete', agentId),
