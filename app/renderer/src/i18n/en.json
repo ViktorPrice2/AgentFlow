@@ -128,7 +128,12 @@
       "chatIdRequired": "Enter the chat ID or username",
       "projectRequired": "Select a project first",
       "briefApproved": "Brief approved",
-      "briefApproveError": "Failed to approve brief"
+      "briefApproveError": "Failed to approve brief",
+      "presetApplied": "Preset {{name}} applied ({{version}})",
+      "presetApplyError": "Failed to apply preset",
+      "presetDiffError": "Unable to compare preset versions",
+      "presetDraftCleared": "Preset suggestions archived",
+      "presetDraftClearError": "Failed to archive preset suggestions"
     },
     "status": {
       "pending": "Pending",
@@ -152,6 +157,8 @@
       "industryPlaceholder": "SaaS, e-commerce, education...",
       "description": "Description",
       "descriptionPlaceholder": "Goals, product and unique value",
+      "preset": "Preset",
+      "presetHint": "Choose an industry template. Generic is applied if nothing is selected.",
       "channels": "Channels",
       "channelsPlaceholder": "Telegram, VK, Email, Ads...",
       "deeplink": "Deeplink / URL",
@@ -175,7 +182,23 @@
       "approveBrief": "Approve brief",
       "approveUnavailable": "Complete the brief to approve",
       "alreadyApproved": "Brief already approved",
-      "briefApprovedLabel": "Brief approved"
+      "briefApprovedLabel": "Brief approved",
+      "openBrief": "Open brief",
+      "openBriefDisabled": "Finish collecting the brief to access this tab",
+      "presetHeading": "Preset",
+      "presetSubtitle": "Applied preset: {{preset}}",
+      "presetStatusUpdate": "Update available (latest: {{latest}}, current: {{current}})",
+      "presetStatusUpToDate": "Up to date ({{version}})",
+      "presetName": "Preset name",
+      "presetVersion": "Current version",
+      "presetLatest": "Latest version",
+      "presetUpdatedAt": "Preset updated",
+      "refreshPreset": "Check updates",
+      "applyPreset": "Apply preset",
+      "presetLoading": "Applying...",
+      "presetDraftSummary": "Review the suggestions from BriefMaster before applying.",
+      "reviewPresetDraft": "Review suggestions",
+      "presetDraftMissing": "No suggestions to review"
     },
     "telegram": {
       "title": "Telegram contacts",
@@ -221,6 +244,31 @@
         "completed": "Completed",
         "unknown": "Unknown"
       }
+    },
+    "presets": {
+      "genericName": "Generic",
+      "genericDescription": "Default preset applied when no industry template is available.",
+      "versionUnknown": "n/a"
+    },
+    "approveModal": {
+      "title": "Approve brief",
+      "subtitle": "Check the remaining items before approving",
+      "progress": "Completion: {{percent}}%",
+      "needsAttentionTitle": "Missing fields",
+      "noIssues": "No issues detected",
+      "cancel": "Cancel",
+      "confirm": "Approve"
+    },
+    "presetModal": {
+      "title": "Preset suggestions",
+      "subtitle": "Review the updates proposed for {{preset}}",
+      "meta": "Preset ID: {{id}}, Industry: {{industry}}",
+      "suggestions": "Automation",
+      "questions": "Additional questions",
+      "updatedAt": "Generated {{date}}",
+      "dismiss": "Archive",
+      "apply": "Apply update",
+      "close": "Close"
     }
   },
   "brief": {
