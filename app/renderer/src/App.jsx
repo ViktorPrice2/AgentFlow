@@ -686,6 +686,37 @@ function App() {
   ]
 );
 
+  const refreshPresetDiff = useCallback(
+    async (projectOverride) => {
+      const project = projectOverride || selectedProject;
+
+      if (!project) {
+        setPresetDiffState(null);
+        return null;
+      }
+
+      const targetPresetId = project.presetId || 'generic';
+      setPresetDiffLoading(true);
+
+      try {
+        const diff = await diffPreset(targetPresetId, project.presetVersion ?? null);
+        setPresetDiffState(diff);
+        return diff;
+      } catch (error) {
+        console.error('Failed to diff preset', error);
+        setPresetDiffState(null);
+        showToast(t('projects.toast.presetDiffError'), 'error', {
+          source: 'preset',
+          details: { projectId: project.id, message: error?.message }
+        });
+        return null;
+      } finally {
+        setPresetDiffLoading(false);
+      }
+    },
+    [selectedProject, showToast, t]
+  );
+
   const handleApplyPreset = useCallback(
     async (projectId, presetId, options = {}) => {
       const targetProjectId = projectId || selectedProjectId;
@@ -931,68 +962,6 @@ function App() {
 
     return [...pluginOptions, ...configOptions];
   }, [agentsData]);
-
-  const refreshPresetDiff = useCallback(
-    async (projectOverride) => {
-      const project = projectOverride || selectedProject;
-
-      if (!project) {
-        setPresetDiffState(null);
-        return null;
-      }
-
-      const targetPresetId = project.presetId || 'generic';
-      setPresetDiffLoading(true);
-
-      try {
-        const diff = await diffPreset(targetPresetId, project.presetVersion ?? null);
-        setPresetDiffState(diff);
-        return diff;
-      } catch (error) {
-        console.error('Failed to diff preset', error);
-        setPresetDiffState(null);
-        showToast(t('projects.toast.presetDiffError'), 'error', {
-          source: 'preset',
-          details: { projectId: project.id, message: error?.message }
-        });
-        return null;
-      } finally {
-        setPresetDiffLoading(false);
-      }
-    },
-    [selectedProject, showToast, t]
-  );
-
-  const refreshPresetDiff = useCallback(
-    async (projectOverride) => {
-      const project = projectOverride || selectedProject;
-
-      if (!project) {
-        setPresetDiffState(null);
-        return null;
-      }
-
-      const targetPresetId = project.presetId || 'generic';
-      setPresetDiffLoading(true);
-
-      try {
-        const diff = await diffPreset(targetPresetId, project.presetVersion ?? null);
-        setPresetDiffState(diff);
-        return diff;
-      } catch (error) {
-        console.error('Failed to diff preset', error);
-        setPresetDiffState(null);
-        showToast(t('projects.toast.presetDiffError'), 'error', {
-          source: 'preset',
-          details: { projectId: project.id, message: error?.message }
-        });
-        return null;
-      } finally {
-        setPresetDiffLoading(false);
-      }
-    },
-    [selectedProject, showToast, t]
-  );
 
   useEffect(() => {
     if (!selectedProjectId) {
