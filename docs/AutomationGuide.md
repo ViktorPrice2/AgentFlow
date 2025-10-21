@@ -60,6 +60,9 @@ This guide describes the orchestrated automation that drives AgentFlow Desktop: 
 - `reports/verify.json` - Raw verification outcomes (scheduler, i18n, telegram structures).
 - `docs/VerificationReport.md` - Human-readable verification status; keep committed to document the latest run.
 - `reports/e2e/` - Playwright outputs (`smoke.xml` + HTML в `reports/e2e/html/index.html`).
+- `app/data/reports/<project>/<runId>.md` - Markdown narrative produced by the orchestrator when a preset pipeline finishes.
+  The renderer fetches metadata through `AgentFlow:reports:list/get` IPC endpoints which read/write `Reports` rows via
+  `app/core/storage/entityStore.js`.
 
 ## Operational Tips
 - When adding new nodes, ensure corresponding workitems exist and update CI scripts if additional checks are required.
