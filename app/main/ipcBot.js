@@ -509,12 +509,27 @@ function ensureDepsConfigured() {
 }
 
 function sanitizeChatId(chatId) {
-  const digitsOnly = String(chatId ?? '')
-    .split('')
-    .filter((char) => /\d/.test(char))
-    .join('');
+  const raw = String(chatId ?? '').trim();
 
-  return digitsOnly.length > 0 ? digitsOnly : 'chat';
+  if (!raw) {
+    return 'chat';
+  }
+
+  if (/^-?\d+$/.test(raw)) {
+    return raw;
+  }
+
+  const normalized = raw
+    .normalize('NFKD')
+    .replace(/[^\w@.:-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  if (!normalized) {
+    return 'chat';
+  }
+
+  return normalized;
 }
 
 function sanitizeProjectId(projectId) {
@@ -1760,11 +1775,24 @@ async function sendProjectInvite(_projectId, _chatId, _options = {}) {
   } catch (error) {
     await log(
       'telegram.invite.send_error',
-      { projectId, chatId: sanitizeChatId(chatIdRaw), error: error.message },
+      {
+        projectId,
+        chatId: sanitizeChatId(chatIdRaw),
+        rawChatId: chatIdRaw,
+        error: error.message
+      },
       'error'
     );
-    const friendly = new Error(error?.message || 'Failed to send Telegram invite');
+    const fallbackMessage = 'Failed to send Telegram invite';
+    const friendlyMessage = typeof error?.message === 'string' && error.message ? error.message : fallbackMessage;
+    const friendly = new Error(friendlyMessage);
     friendly.code = 'TELEGRAM_SEND_FAILED';
+
+    if (typeof error?.message === 'string' && /chat not found/i.test(error.message)) {
+      friendly.message =
+        'Telegram could not find the specified chat. Make sure the bot is not blocked and that the contact has started a conversation with it or provide a numeric chat ID.';
+    }
+
     throw friendly;
   }
 
@@ -1786,12 +1814,14 @@ async function sendProjectInvite(_projectId, _chatId, _options = {}) {
   await log('telegram.invite.sent', {
     projectId,
     chatId: sanitizedChatId,
+    rawChatId: chatIdRaw,
     link: inviteLink
   });
 
   return {
     projectId,
     chatId: sanitizedChatId,
+    rawChatId: chatIdRaw,
     sentAt: now,
     link: inviteLink,
     message
