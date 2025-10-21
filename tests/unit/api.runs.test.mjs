@@ -29,7 +29,19 @@ describe('AgentFlow pipeline run IPC handlers', () => {
       buildAgentConfigMap: vi.fn(() => new Map()),
       listAgentRecords: vi.fn(() => []),
       saveRun: vi.fn((run) => ({ ...run })),
-      listRuns: vi.fn(() => [])
+      listRuns: vi.fn(() => []),
+      saveReport: vi.fn((report) => ({
+        id: report.id || 'report-1',
+        projectId: report.projectId,
+        pipelineId: report.pipelineId,
+        status: report.status,
+        title: report.title || null,
+        summary: report.summary ?? null,
+        content: report.content ?? null,
+        artifacts: Array.isArray(report.artifacts) ? report.artifacts : [],
+        createdAt: '2025-10-20T23:30:00.000Z',
+        updatedAt: '2025-10-20T23:30:00.000Z'
+      }))
     };
 
     createEntityStoreMock.mockReturnValue(storeMock);
@@ -85,7 +97,31 @@ describe('AgentFlow pipeline run IPC handlers', () => {
         output: result
       })
     );
-    expect(response).toEqual({ ok: true, result, run: savedRecord });
+    expect(storeMock.saveReport).toHaveBeenCalledTimes(1);
+    expect(storeMock.saveReport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: 'proj-1',
+        pipelineId: 'pipe-1',
+        status: 'completed'
+      })
+    );
+    expect(response).toEqual({
+      ok: true,
+      result,
+      run: savedRecord,
+      report: {
+        id: 'report-1',
+        projectId: 'proj-1',
+        pipelineId: 'pipe-1',
+        status: 'completed',
+        title: 'Pipeline',
+        summary: null,
+        content: null,
+        artifacts: [],
+        createdAt: '2025-10-20T23:30:00.000Z',
+        updatedAt: '2025-10-20T23:30:00.000Z'
+      }
+    });
   });
 
   it('records failed pipeline runs when execution throws', async () => {
@@ -105,6 +141,14 @@ describe('AgentFlow pipeline run IPC handlers', () => {
     expect(saved.pipelineId).toBe('pipe-2');
     expect(saved.status).toBe('error');
     expect(saved.output).toEqual({ error: 'boom' });
+    expect(storeMock.saveReport).toHaveBeenCalledTimes(1);
+    expect(storeMock.saveReport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: 'proj-2',
+        pipelineId: 'pipe-2',
+        status: 'error'
+      })
+    );
   });
 
   it('lists runs through IPC handler', async () => {

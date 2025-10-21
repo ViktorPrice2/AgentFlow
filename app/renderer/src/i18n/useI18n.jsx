@@ -43,7 +43,8 @@ function isE2ETestMode() {
 }
 
 export function I18nProvider({ children }) {
-  const [language, setLanguage] = usePersistentState('af.language', 'ru');
+  const defaultLanguage = isE2ETestMode() ? 'en' : 'ru';
+  const [language, setLanguage] = usePersistentState('af.language', defaultLanguage);
 
   useEffect(() => {
     if (!isE2ETestMode()) {

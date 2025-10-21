@@ -94,6 +94,55 @@ const fallbackProxyConfig = {
 
 const fallbackRuns = [];
 
+function normalizeFallbackChannelList(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === 'string') {
+          return item.trim();
+        }
+
+        if (item && typeof item === 'object' && typeof item.id === 'string') {
+          return item.id.trim();
+        }
+
+        return null;
+      })
+      .filter((item) => item && item.length > 0);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      return normalizeFallbackChannelList(parsed);
+    } catch {
+      return trimmed
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+    }
+  }
+
+  return [];
+}
+
+function cloneFallbackProject(project) {
+  if (!project) {
+    return null;
+  }
+
+  const normalizedChannels = normalizeFallbackChannelList(project.channels);
+  const copy = { ...project, channels: normalizedChannels };
+
+  return JSON.parse(JSON.stringify(copy));
+}
+
 function sortByUpdatedAtDesc(list = []) {
   return list
     .slice()
@@ -192,7 +241,7 @@ export async function listProjects(filter) {
   }
 
   await fallbackDelay();
-  return sortByUpdatedAtDesc(fallbackProjects).map((project) => JSON.parse(JSON.stringify(project)));
+  return sortByUpdatedAtDesc(fallbackProjects).map((project) => cloneFallbackProject(project));
 }
 
 export async function getProject(projectId) {
@@ -213,7 +262,7 @@ export async function getProject(projectId) {
   }
 
   const project = fallbackProjects.find((item) => item.id === projectId);
-  return project ? JSON.parse(JSON.stringify(project)) : null;
+  return project ? cloneFallbackProject(project) : null;
 }
 
 export async function upsertProject(project) {
@@ -229,6 +278,8 @@ export async function upsertProject(project) {
   const existingIndex = fallbackProjects.findIndex((item) => item.id === id);
   const previous = existingIndex >= 0 ? fallbackProjects[existingIndex] : null;
   const createdAt = previous?.createdAt || now;
+  const channelsInput = input.channels === undefined ? previous?.channels : input.channels;
+  const channels = normalizeFallbackChannelList(channelsInput);
 
   const record = {
     ...previous,
@@ -238,7 +289,7 @@ export async function upsertProject(project) {
     industry: typeof input.industry === 'string' ? input.industry.trim() : previous?.industry || '',
     description:
       typeof input.description === 'string' ? input.description.trim() : previous?.description || '',
-    channels: typeof input.channels === 'string' ? input.channels.trim() : previous?.channels || '',
+    channels,
     deeplink: typeof input.deeplink === 'string' ? input.deeplink.trim() : previous?.deeplink || '',
     createdAt,
     updatedAt: now
@@ -258,7 +309,7 @@ export async function upsertProject(project) {
 
   return {
     ok: true,
-    project: JSON.parse(JSON.stringify(record))
+    project: cloneFallbackProject(record)
   };
 }
 
@@ -396,9 +447,28 @@ function matchesReportFilter(report, filter = {}) {
 export async function listReports(filter = {}) {
   if (hasWindowAPI && typeof agentApi.listReports === 'function') {
     try {
-      const reports = await agentApi.listReports(filter);
-      if (Array.isArray(reports)) {
-        return reports;
+      const response = await agentApi.listReports(filter ?? {});
+
+      if (Array.isArray(response)) {
+        return response
+          .map(cloneReport)
+          .filter(Boolean)
+          .filter((report) => matchesReportFilter(report, filter));
+      }
+
+      if (response?.ok === false) {
+        throw new Error(response?.error || 'Failed to load reports');
+      }
+
+      if (response && typeof response === 'object') {
+        const data = Array.isArray(response.reports) ? response.reports : [];
+
+        if (response.ok === true || data.length > 0) {
+          return data
+            .map(cloneReport)
+            .filter(Boolean)
+            .filter((report) => matchesReportFilter(report, filter));
+        }
       }
     } catch (error) {
       console.warn('Failed to load reports via AgentAPI, using fallback data', error);
@@ -406,15 +476,37 @@ export async function listReports(filter = {}) {
   }
 
   await fallbackDelay();
-  return fallbackReports.filter((report) => matchesReportFilter(report, filter)).map(cloneReport);
+  return fallbackReports
+    .filter((report) => matchesReportFilter(report, filter))
+    .map(cloneReport)
+    .filter(Boolean);
 }
 
 export async function getReport(reportId) {
   if (hasWindowAPI && typeof agentApi.getReport === 'function') {
     try {
-      const report = await agentApi.getReport(reportId);
-      if (report) {
-        return report;
+      const response = await agentApi.getReport(reportId);
+
+      if (!response) {
+        return null;
+      }
+
+      if (response?.ok === false) {
+        throw new Error(response?.error || 'Failed to fetch report');
+      }
+
+      if (response?.ok === true) {
+        return cloneReport(response.report) ?? null;
+      }
+
+      if (response && typeof response === 'object') {
+        if (response.report) {
+          return cloneReport(response.report) ?? null;
+        }
+
+        if (response.id || response.projectId) {
+          return cloneReport(response) ?? null;
+        }
       }
     } catch (error) {
       console.warn('Failed to fetch report via AgentAPI, using fallback data', error);
