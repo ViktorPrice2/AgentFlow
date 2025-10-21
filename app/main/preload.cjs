@@ -189,6 +189,7 @@ contextBridge.exposeInMainWorld('AgentAPI', {
 
     const updateChannel = 'brief:updated';
     const errorChannel = 'brief:error';
+    const statusChannel = 'brief:statusChanged';
 
     const updateListener = (_event, payload) => {
       handler(payload);
@@ -198,12 +199,18 @@ contextBridge.exposeInMainWorld('AgentAPI', {
       handler({ ...(payload || {}), error: true });
     };
 
+    const statusListener = (_event, payload) => {
+      handler({ ...(payload || {}), statusUpdate: true });
+    };
+
     ipcRenderer.on(updateChannel, updateListener);
     ipcRenderer.on(errorChannel, errorListener);
+    ipcRenderer.on(statusChannel, statusListener);
 
     return () => {
       ipcRenderer.removeListener(updateChannel, updateListener);
       ipcRenderer.removeListener(errorChannel, errorListener);
+      ipcRenderer.removeListener(statusChannel, statusListener);
     };
   }
 });

@@ -119,7 +119,22 @@
   "projects": {
     "toast": {
       "nameRequired": "Enter a project name",
-      "saved": "Project saved"
+      "saved": "Project saved",
+      "contactsLoadError": "Failed to load Telegram contacts",
+      "contactSaved": "Contact saved",
+      "contactSaveError": "Failed to save contact",
+      "inviteSent": "Invite sent",
+      "inviteError": "Failed to send invite",
+      "chatIdRequired": "Enter the chat ID or username",
+      "projectRequired": "Select a project first",
+      "briefApproved": "Brief approved",
+      "briefApproveError": "Failed to approve brief"
+    },
+    "status": {
+      "pending": "Pending",
+      "collecting": "Collecting",
+      "review": "Ready for review",
+      "approved": "Approved"
     },
     "list": {
       "title": "Projects",
@@ -152,7 +167,60 @@
       "industry": "Industry",
       "description": "Description",
       "channels": "Channels",
-      "deeplink": "Deeplink"
+      "deeplink": "Deeplink",
+      "briefStatus": "Brief status",
+      "briefProgress": "Brief progress",
+      "needsAttention": "Needs attention",
+      "needsAttentionNone": "All sections are filled",
+      "approveBrief": "Approve brief",
+      "approveUnavailable": "Complete the brief to approve",
+      "alreadyApproved": "Brief already approved",
+      "briefApprovedLabel": "Brief approved"
+    },
+    "telegram": {
+      "title": "Telegram contacts",
+      "subtitle": "Assign a contact, send invites and track responses.",
+      "contactSelect": "Saved contacts",
+      "contactPlaceholder": "Select a contact",
+      "refresh": "Refresh",
+      "refreshing": "Refreshing...",
+      "chatIdLabel": "Chat ID",
+      "contactStatusLabel": "Status",
+      "lastContactAt": "Last replied",
+      "newContactChatId": "Chat ID or @username",
+      "chatIdPlaceholder": "e.g. @briefmanager or 123456789",
+      "newContactLabel": "Contact label",
+      "labelPlaceholder": "Marketing team, Account manager...",
+      "saveContact": "Save contact",
+      "sendInvite": "Send invite",
+      "statusLabel": "Contact status",
+      "lastInvitation": "Last invitation",
+      "lastInviteAt": "Last invite sent {date}",
+      "noInvites": "Invite has not been sent yet",
+      "inviteInlineSuccess": "Invite sent to {chatId}.",
+      "inviteInlineSuccessWithDate": "Invite sent to {chatId} at {date}.",
+      "inviteInlineError": "Failed to send invite.",
+      "inviteInlineErrorWithReason": "Failed to send invite: {reason}.",
+      "inviteHistory": {
+        "title": "Invite history",
+        "empty": "No invite events recorded yet.",
+        "refresh": "Refresh history",
+        "status": {
+          "sent": "Sent",
+          "error": "Error",
+          "send_error": "Send error"
+        },
+        "chat": "Chat",
+        "link": "Link",
+        "message": "Message",
+        "error": "Error"
+      },
+      "status": {
+        "invited": "Invited",
+        "collecting": "Collecting",
+        "completed": "Completed",
+        "unknown": "Unknown"
+      }
     }
   },
   "brief": {
