@@ -1835,7 +1835,8 @@ const handleContactSave = async (_event, payload = {}) => {
 const handleSendInvite = async (_event, payload = {}) => {
   try {
     const projectId = sanitizeProjectId(payload?.projectId);
-    const chatId = sanitizeChatId(payload?.chatId);
+    const chatIdRaw = payload?.chatId ?? '';
+    const chatId = typeof chatIdRaw === 'string' ? chatIdRaw.trim() : chatIdRaw;
 
     if (!projectId) {
       throw new Error('projectId is required');
