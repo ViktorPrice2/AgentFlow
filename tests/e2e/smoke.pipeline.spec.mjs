@@ -125,14 +125,21 @@ test.beforeEach(async ({ page }) => {
   }
 
   await page.addInitScript(
-    (storageKey) => {
+    (storageKey, languageKey) => {
       try {
         window.sessionStorage.setItem(storageKey, '1');
       } catch (error) {
         // Storage might be disabled; ignore in that case.
       }
+
+      try {
+        window.localStorage.setItem(languageKey, JSON.stringify('en'));
+      } catch (error) {
+        // Ignore storage errors (disabled storage, quota issues, etc.).
+      }
     },
-    E2E_STORAGE_KEY
+    E2E_STORAGE_KEY,
+    'af.language'
   );
 });
 
@@ -210,9 +217,23 @@ test.describe('Electron smoke', () => {
       await page.goto(url);
       await page.waitForSelector('[data-testid="app-root"]');
 
+      await page.evaluate((bridgeChannel) => {
+        const message = { bridge: bridgeChannel, type: 'SET_LANG', lang: 'en' };
+
+        if (window.e2e?.setLang) {
+          window.e2e.setLang('en');
+        } else {
+          window.postMessage(message, '*');
+        }
+      }, E2E_BRIDGE_CHANNEL);
+      await expect(page.getByRole('button', { name: 'Projects', exact: true })).toBeVisible();
+
       // Project creation unlocks dependent forms
-      await page.getByLabel('Name').first().fill('QA Project');
-      await page.getByRole('button', { name: 'Save', exact: true }).first().click();
+      const projectForm = page.locator('.page-grid .form').first();
+      const projectNameInput = projectForm.locator('input[name="name"]').first();
+      await expect(projectNameInput).toBeVisible();
+      await projectNameInput.fill('QA Project');
+      await projectForm.getByRole('button', { name: 'Save', exact: true }).click();
       await expect(page.locator('.toast')).toContainText('Project saved');
       await expect(
         page.getByRole('heading', { level: 4, name: 'QA Project' })
