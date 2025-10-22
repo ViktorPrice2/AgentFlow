@@ -14,6 +14,8 @@ import {
   listPipelines,
   getProject,
   listProviderStatus,
+  saveProviderKey,
+  clearProviderKey,
   listSchedules,
   listRuns,
   runPipeline,
@@ -1256,6 +1258,57 @@ function App() {
     [resolveMessage, showToast, t]
   );
 
+  const handleSaveProviderKey = useCallback(
+    async (ref, value) => {
+      if (!ref) {
+        showToast(t('settings.providers.toast.refMissing'), 'error', { source: 'providers' });
+        return;
+      }
+
+      const trimmed = typeof value === 'string' ? value.trim() : '';
+
+      if (!trimmed) {
+        showToast(t('settings.providers.toast.valueRequired'), 'warn', { source: 'providers' });
+        throw new Error('value is required');
+      }
+
+      try {
+        await saveProviderKey(ref, trimmed);
+        await refreshAgents();
+        showToast(t('settings.providers.toast.saved'), 'success', { source: 'providers' });
+      } catch (error) {
+        console.error('Failed to save provider key', error);
+        showToast(resolveMessage(error.message) || t('settings.providers.toast.saveError'), 'error', {
+          source: 'providers'
+        });
+        throw error;
+      }
+    },
+    [refreshAgents, resolveMessage, showToast, t]
+  );
+
+  const handleClearProviderKey = useCallback(
+    async (ref) => {
+      if (!ref) {
+        showToast(t('settings.providers.toast.refMissing'), 'error', { source: 'providers' });
+        return;
+      }
+
+      try {
+        await clearProviderKey(ref);
+        await refreshAgents();
+        showToast(t('settings.providers.toast.cleared'), 'info', { source: 'providers' });
+      } catch (error) {
+        console.error('Failed to clear provider key', error);
+        showToast(resolveMessage(error.message) || t('settings.providers.toast.clearError'), 'error', {
+          source: 'providers'
+        });
+        throw error;
+      }
+    },
+    [refreshAgents, resolveMessage, showToast, t]
+  );
+
   const handleTailBotLog = useCallback(async () => {
     setBotLogLoading(true);
 
@@ -1867,6 +1920,8 @@ function App() {
             proxyValue={proxyValue}
             proxyBusy={proxyBusy}
             onSaveProxy={handleSaveProxy}
+            onSaveProviderKey={handleSaveProviderKey}
+            onClearProviderKey={handleClearProviderKey}
             botLogEntries={botLogEntries}
             botLogLoading={botLogLoading}
             botBusy={botBusy}
@@ -1907,6 +1962,8 @@ function App() {
     handleSavePipeline,
     handleDeletePipeline,
     handleRunPipeline,
+    handleSaveProviderKey,
+    handleClearProviderKey,
     refreshAgents,
     refreshPipelines,
     handleShowAgentHistory,

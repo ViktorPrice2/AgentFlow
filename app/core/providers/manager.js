@@ -9,6 +9,7 @@ import {
   assertAllowedPath,
   redactSensitive
 } from '../utils/security.js';
+import { loadProviderSecretEntries, maskSecret as maskSecretValue } from './secretsStore.js';
 
 const CONFIG_PATH = resolveConfigPath('providers.json');
 const DEFAULT_TIMEOUT = 30_000;
@@ -45,6 +46,7 @@ class ProviderManager {
     this.rateLimiterState = new Map();
     this.breakerState = new Map();
     this.mockDiagnostics = new Map();
+    this.secretOverrides = new Map();
   }
 
   ensureEnvLoaded() {
@@ -65,14 +67,23 @@ class ProviderManager {
 
     if (!this.statusCache) {
       this.statusCache = this.providers.map((provider) => {
-        const apiKey = provider.apiKeyRef ? process.env[provider.apiKeyRef] : null;
+        const secretEntry = provider.apiKeyRef ? this.secretOverrides.get(provider.apiKeyRef) : null;
+        const secretValue = secretEntry?.value || null;
+        const envValue = provider.apiKeyRef ? process.env[provider.apiKeyRef] : null;
+        const hasSecret = typeof secretValue === 'string' && secretValue.length > 0;
+        const hasEnv = typeof envValue === 'string' && envValue.trim().length > 0;
+        const keySource = hasSecret ? 'secret' : hasEnv ? 'env' : null;
+        const apiKey = hasSecret ? secretValue : envValue;
 
         return {
           id: provider.id,
           type: provider.type,
           hasKey: Boolean(apiKey),
           apiKeyRef: provider.apiKeyRef || null,
-          models: provider.models || []
+          models: provider.models || [],
+          keySource,
+          maskedKey: hasSecret ? maskSecretValue(secretValue) : null,
+          secretUpdatedAt: secretEntry?.updatedAt || null
         };
       });
     }
@@ -140,7 +151,10 @@ class ProviderManager {
           ? candidate.models[0]
           : provider.models?.[0]);
 
-      const apiKey = provider.apiKeyRef ? process.env[provider.apiKeyRef] : undefined;
+      const secretEntry = provider.apiKeyRef ? this.secretOverrides.get(provider.apiKeyRef) : null;
+      const secretValue = secretEntry?.value || null;
+      const envValue = provider.apiKeyRef ? process.env[provider.apiKeyRef] : undefined;
+      const apiKey = secretValue || envValue;
       const hasKey = Boolean(apiKey) || !provider.apiKeyRef;
 
       if (hasKey) {
@@ -1000,11 +1014,100 @@ class ProviderManager {
       // Ignore logging errors to avoid side effects in provider flows.
     }
   }
+
+  resetStatusCache() {
+    this.statusCache = null;
+  }
+
+  applySecretOverrides(entries) {
+    this.secretOverrides.clear();
+
+    if (!entries) {
+      this.resetStatusCache();
+      return;
+    }
+
+    if (entries instanceof Map) {
+      entries.forEach((entry, ref) => {
+        const normalized = this.normalizeSecretEntry(entry);
+        if (normalized) {
+          this.secretOverrides.set(ref, normalized);
+        }
+      });
+    } else if (typeof entries === 'object') {
+      Object.entries(entries).forEach(([ref, entry]) => {
+        const normalized = this.normalizeSecretEntry(entry);
+        if (normalized) {
+          this.secretOverrides.set(ref, normalized);
+        }
+      });
+    }
+
+    this.resetStatusCache();
+  }
+
+  normalizeSecretEntry(entry) {
+    if (!entry) {
+      return null;
+    }
+
+    if (typeof entry === 'string') {
+      const trimmed = entry.trim();
+      return trimmed ? { value: trimmed, updatedAt: null } : null;
+    }
+
+    if (typeof entry.value === 'string') {
+      const trimmed = entry.value.trim();
+      if (!trimmed) {
+        return null;
+      }
+
+      return {
+        value: trimmed,
+        updatedAt: entry.updatedAt ? String(entry.updatedAt) : null
+      };
+    }
+
+    return null;
+  }
+
+  setSecretOverride(ref, value, metadata = {}) {
+    if (!ref || typeof ref !== 'string') {
+      return;
+    }
+
+    const trimmed = typeof value === 'string' ? value.trim() : '';
+
+    if (!trimmed) {
+      this.secretOverrides.delete(ref);
+      this.resetStatusCache();
+      return;
+    }
+
+    this.secretOverrides.set(ref, {
+      value: trimmed,
+      updatedAt: metadata.updatedAt ? String(metadata.updatedAt) : new Date().toISOString()
+    });
+    this.resetStatusCache();
+  }
 }
 
 export async function createProviderManager() {
   const raw = await fs.readFile(CONFIG_PATH, 'utf8');
   const config = JSON.parse(raw);
+  const manager = new ProviderManager(config);
 
-  return new ProviderManager(config);
+  try {
+    const entries = await loadProviderSecretEntries();
+    manager.applySecretOverrides(entries);
+  } catch (error) {
+    // If secrets cannot be loaded we still return manager with env-based configuration.
+    await manager.logEvent({
+      level: 'warn',
+      event: 'secrets.load.error',
+      message: error?.message
+    });
+  }
+
+  return manager;
 }
