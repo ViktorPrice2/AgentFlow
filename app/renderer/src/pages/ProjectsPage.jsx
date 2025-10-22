@@ -1,9 +1,68 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
 import TelegramInviteModal from '../components/TelegramInviteModal.jsx';
 import { useI18n } from '../i18n/useI18n.jsx';
+
+function getAdditionalQuestionKey(question, index) {
+  if (!question || typeof question !== 'object') {
+    return `question-${index}`;
+  }
+
+  const idCandidates = [question.id, question.key, question.field, question.name];
+  for (const candidate of idCandidates) {
+    if (candidate === undefined || candidate === null) {
+      continue;
+    }
+    const normalized = String(candidate).trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  const textCandidates = [
+    question.prompt,
+    question.question,
+    question.title,
+    question.message,
+    question.label,
+    question.summary
+  ];
+
+  for (const candidate of textCandidates) {
+    if (typeof candidate !== 'string') {
+      continue;
+    }
+    const normalized = candidate.trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return `question-${index}`;
+}
+
+function buildQuestionState(questions) {
+  const state = {};
+  (Array.isArray(questions) ? questions : []).forEach((item, index) => {
+    const key = getAdditionalQuestionKey(item, index);
+    state[key] = typeof item.answer === 'string' ? item.answer : '';
+  });
+  return state;
+}
+
+function hasQuestionDifferences(current = {}, initial = {}) {
+  const keys = new Set([...Object.keys(current), ...Object.keys(initial)]);
+  for (const key of keys) {
+    const currentValue = current[key] ?? '';
+    const initialValue = initial[key] ?? '';
+    if (currentValue !== initialValue) {
+      return true;
+    }
+  }
+  return false;
+}
 
 function normalizeChannelList(value) {
   if (Array.isArray(value)) {
@@ -103,6 +162,8 @@ export function ProjectsPage({
   onApplyPreset = async () => false,
   onClearPresetDraft = async () => false,
   onRefreshPresetDiff = async () => {},
+  onSavePresetQuestions = async () => false,
+  presetQuestionSaving = false,
   onOpenBrief = () => {}
 }) {
   const { t, language } = useI18n();
@@ -118,6 +179,9 @@ export function ProjectsPage({
   const [approveLoading, setApproveLoading] = useState(false);
   const [presetModalOpen, setPresetModalOpen] = useState(false);
   const [presetReviewLoading, setPresetReviewLoading] = useState(false);
+  const [questionAnswers, setQuestionAnswers] = useState({});
+  const [initialQuestionAnswers, setInitialQuestionAnswers] = useState({});
+  const initialQuestionAnswersRef = useRef(initialQuestionAnswers);
   const selectedProject = useMemo(
     () => selectedProjectProp || projects.find((project) => project.id === selectedProjectId) || null,
     [projects, selectedProjectId, selectedProjectProp]
@@ -194,8 +258,31 @@ export function ProjectsPage({
   const presetDraftQuestions = Array.isArray(presetDraft?.additionalQuestions)
     ? presetDraft.additionalQuestions
     : [];
+  const followUpPendingCount = useMemo(
+    () =>
+      presetDraftQuestions.filter((item, index) => {
+        if (!item || typeof item !== 'object') {
+          return false;
+        }
+
+        if (item.skipped === true) {
+          return false;
+        }
+
+        const key = getAdditionalQuestionKey(item, index);
+        const currentAnswer = (questionAnswers[key] ?? '').trim();
+        const storedAnswer = typeof item.answer === 'string' ? item.answer.trim() : '';
+
+        return !currentAnswer && !storedAnswer;
+      }).length,
+    [presetDraftQuestions, questionAnswers]
+  );
   const hasPresetDraft = Boolean(
     presetDraftSummary || presetDraftSuggestions.length > 0 || presetDraftQuestions.length > 0
+  );
+  const hasQuestionChanges = useMemo(
+    () => hasQuestionDifferences(questionAnswers, initialQuestionAnswers),
+    [questionAnswers, initialQuestionAnswers]
   );
   const presetDraftMeta = presetDraft?.presetMeta || null;
   const presetDraftGeneratedAt = presetDraft?.generatedAt || null;
@@ -212,7 +299,13 @@ export function ProjectsPage({
     setApproveLoading(false);
     setPresetModalOpen(false);
     setPresetReviewLoading(false);
+    setQuestionAnswers({});
+    setInitialQuestionAnswers({});
   }, [selectedProjectId]);
+
+  useEffect(() => {
+    initialQuestionAnswersRef.current = initialQuestionAnswers;
+  }, [initialQuestionAnswers]);
 
   useEffect(() => {
     if (selectedContactId && !contacts.some((contact) => contact.id === selectedContactId)) {
@@ -220,6 +313,38 @@ export function ProjectsPage({
       setInviteFeedback(null);
     }
   }, [contacts, selectedContactId]);
+
+  useEffect(() => {
+    if (!selectedProject || !Array.isArray(presetDraftQuestions) || presetDraftQuestions.length === 0) {
+      setQuestionAnswers({});
+      setInitialQuestionAnswers({});
+      return;
+    }
+
+    const nextState = buildQuestionState(presetDraftQuestions);
+
+    setQuestionAnswers((previous) => {
+      if (!previous || Object.keys(previous).length === 0) {
+        return nextState;
+      }
+
+      const previousInitial = initialQuestionAnswersRef.current || {};
+      const merged = { ...nextState };
+
+      Object.keys(previous).forEach((key) => {
+        const previousValue = previous[key] ?? '';
+        const initialValue = previousInitial[key] ?? '';
+
+        if (previousValue !== initialValue) {
+          merged[key] = previousValue;
+        }
+      });
+
+      return merged;
+    });
+
+    setInitialQuestionAnswers(nextState);
+  }, [selectedProject, selectedProjectId, presetDraftQuestions]);
 
   useEffect(() => {
     if (!Array.isArray(presetOptions) || presetOptions.length === 0) {
@@ -454,6 +579,37 @@ export function ProjectsPage({
     }
 
     setPresetModalOpen(true);
+  };
+
+  const handleQuestionAnswerChange = (key, value) => {
+    setQuestionAnswers((previous) => ({ ...previous, [key]: value }));
+  };
+
+  const handleSaveQuestionAnswers = async () => {
+    if (!selectedProject || !hasPresetDraft) {
+      onNotify(t('projects.toast.projectRequired'), 'error');
+      return;
+    }
+
+    const payload = presetDraftQuestions.map((item, index) => {
+      const key = getAdditionalQuestionKey(item, index);
+      const answer = (questionAnswers[key] ?? '').trim();
+      return {
+        ...item,
+        answer,
+        answeredAt: item.answeredAt || null,
+        answerSource: item.answerSource || 'app',
+        skipped: answer ? false : item.skipped ?? false
+      };
+    });
+
+    const result = await onSavePresetQuestions(selectedProject.id, payload);
+
+    if (result) {
+      const nextState = buildQuestionState(payload);
+      setInitialQuestionAnswers(nextState);
+      setQuestionAnswers(nextState);
+    }
   };
 
   const handleApplyPresetDraft = async () => {
@@ -780,6 +936,79 @@ export function ProjectsPage({
                   : t('projects.details.approveBrief')}
             </button>
           </div>
+          {presetDraftQuestions.length > 0 ? (
+            <section className="followup-section">
+              <header className="followup-section__header">
+                <div>
+                  <h4>{t('projects.followups.title')}</h4>
+                  <p>{t('projects.followups.subtitle')}</p>
+                </div>
+                <span
+                  className={`followup-section__badge ${
+                    followUpPendingCount === 0 ? 'followup-section__badge--done' : ''
+                  }`}
+                >
+                  {t('projects.followups.count', { count: followUpPendingCount })}
+                </span>
+              </header>
+              <p className="followup-section__hint">{t('projects.followups.help')}</p>
+              <div className="preset-draft-questions followup-section__questions">
+                {presetDraftQuestions.map((item, index) => {
+                  const key = getAdditionalQuestionKey(item, index);
+                  const answerValue = questionAnswers[key] ?? '';
+                  const metaParts = [];
+
+                  if (item.skipped) {
+                    metaParts.push(t('projects.presetModal.questionSkipped'));
+                  }
+
+                  if (item.answeredAt) {
+                    metaParts.push(
+                      t('projects.presetModal.questionMeta', {
+                        date: new Date(item.answeredAt).toLocaleString(locale)
+                      })
+                    );
+                  }
+
+                  return (
+                    <div key={`followup-${key}`} className="preset-draft-question">
+                      <p className="preset-draft-question__prompt">
+                        {item.prompt || item.question || JSON.stringify(item)}
+                      </p>
+                      {metaParts.length > 0 ? (
+                        <p className="preset-draft-question__meta">{metaParts.join(' · ')}</p>
+                      ) : null}
+                      <textarea
+                        rows={3}
+                        value={answerValue}
+                        onChange={(event) => handleQuestionAnswerChange(key, event.target.value)}
+                        placeholder={t('projects.presetModal.questionPlaceholder')}
+                        disabled={presetQuestionSaving || presetReviewLoading}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="button-row followup-section__actions">
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={handleSaveQuestionAnswers}
+                  disabled={presetQuestionSaving || !hasQuestionChanges}
+                >
+                  {presetQuestionSaving ? t('common.loading') : t('projects.followups.save')}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={handleReviewPresetDraft}
+                  disabled={presetQuestionSaving || presetReviewLoading}
+                >
+                  {t('projects.followups.openModal')}
+                </button>
+              </div>
+            </section>
+          ) : null}
           <section className="preset-section">
             <header className="preset-section__header">
               <div>
@@ -1101,11 +1330,43 @@ export function ProjectsPage({
               {presetDraftQuestions.length > 0 ? (
                 <section>
                   <h4>{t('projects.presetModal.questions')}</h4>
-                  <ul className="preset-draft-list">
-                    {presetDraftQuestions.map((item, index) => (
-                      <li key={`question-${index}`}>{item.prompt || item.question || JSON.stringify(item)}</li>
-                    ))}
-                  </ul>
+                  <div className="preset-draft-questions">
+                    {presetDraftQuestions.map((item, index) => {
+                      const key = getAdditionalQuestionKey(item, index);
+                      const answerValue = questionAnswers[key] ?? '';
+                      const metaParts = [];
+
+                      if (item.skipped) {
+                        metaParts.push(t('projects.presetModal.questionSkipped'));
+                      }
+
+                      if (item.answeredAt) {
+                        metaParts.push(
+                          t('projects.presetModal.questionMeta', {
+                            date: new Date(item.answeredAt).toLocaleString(locale)
+                          })
+                        );
+                      }
+
+                      return (
+                        <div key={`question-${key}`} className="preset-draft-question">
+                          <p className="preset-draft-question__prompt">
+                            {item.prompt || item.question || JSON.stringify(item)}
+                          </p>
+                          {metaParts.length > 0 ? (
+                            <p className="preset-draft-question__meta">{metaParts.join(' · ')}</p>
+                          ) : null}
+                          <textarea
+                            rows={3}
+                            value={answerValue}
+                            onChange={(event) => handleQuestionAnswerChange(key, event.target.value)}
+                            placeholder={t('projects.presetModal.questionPlaceholder')}
+                            disabled={presetQuestionSaving || presetReviewLoading}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
                 </section>
               ) : null}
             </div>
@@ -1120,9 +1381,17 @@ export function ProjectsPage({
               <div className="modal-actions">
                 <button
                   type="button"
+                  className="primary-button"
+                  onClick={handleSaveQuestionAnswers}
+                  disabled={presetQuestionSaving || !hasQuestionChanges}
+                >
+                  {presetQuestionSaving ? t('common.loading') : t('projects.presetModal.saveQuestions')}
+                </button>
+                <button
+                  type="button"
                   className="secondary-button"
                   onClick={handleDismissPresetDraft}
-                  disabled={presetReviewLoading}
+                  disabled={presetReviewLoading || presetQuestionSaving}
                 >
                   {presetReviewLoading ? t('common.loading') : t('projects.presetModal.dismiss')}
                 </button>
@@ -1130,7 +1399,7 @@ export function ProjectsPage({
                   type="button"
                   className="primary-button"
                   onClick={handleApplyPresetDraft}
-                  disabled={presetReviewLoading || isPresetLoading}
+                  disabled={presetReviewLoading || isPresetLoading || presetQuestionSaving}
                 >
                   {presetReviewLoading ? t('common.loading') : t('projects.presetModal.apply')}
                 </button>
@@ -1138,7 +1407,7 @@ export function ProjectsPage({
                   type="button"
                   className="link-button"
                   onClick={() => !presetReviewLoading && setPresetModalOpen(false)}
-                  disabled={presetReviewLoading}
+                  disabled={presetReviewLoading || presetQuestionSaving}
                 >
                   {t('projects.presetModal.close')}
                 </button>
@@ -1241,5 +1510,7 @@ ProjectsPage.propTypes = {
   onApplyPreset: PropTypes.func,
   onClearPresetDraft: PropTypes.func,
   onRefreshPresetDiff: PropTypes.func,
+  onSavePresetQuestions: PropTypes.func,
+  presetQuestionSaving: PropTypes.bool,
   onOpenBrief: PropTypes.func
 };

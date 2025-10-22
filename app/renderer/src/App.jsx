@@ -147,6 +147,95 @@ function mapBriefDetails(details = {}) {
   }, {});
 }
 
+function getAdditionalQuestionKey(question, fallbackIndex = 0) {
+  if (!question || typeof question !== 'object') {
+    return `question-${fallbackIndex}`;
+  }
+
+  const idCandidates = [question.id, question.key, question.field, question.name];
+  for (const candidate of idCandidates) {
+    if (candidate === undefined || candidate === null) {
+      continue;
+    }
+    const normalized = String(candidate).trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  const textCandidates = [
+    question.prompt,
+    question.question,
+    question.title,
+    question.message,
+    question.label,
+    question.summary
+  ];
+
+  for (const candidate of textCandidates) {
+    if (typeof candidate !== 'string') {
+      continue;
+    }
+    const normalized = candidate.trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return `question-${fallbackIndex}`;
+}
+
+function normalizeQuestionAnswer(value) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+
+  return String(value).trim();
+}
+
+function mergeAdditionalQuestionAnswers(existing = [], updates = [], { source = 'app' } = {}) {
+  const merged = updates.map((item, index) => {
+    const key = getAdditionalQuestionKey(item, index);
+    const existingMatch = existing.find(
+      (candidate, candidateIndex) => getAdditionalQuestionKey(candidate, candidateIndex) === key
+    );
+    const base = existingMatch ? { ...existingMatch } : {};
+    const hasAnswer = Object.prototype.hasOwnProperty.call(item, 'answer');
+    const answerValue = hasAnswer ? item.answer : base.answer;
+    const normalizedAnswer = normalizeQuestionAnswer(answerValue);
+    const answerChanged = hasAnswer && normalizedAnswer !== normalizeQuestionAnswer(base.answer);
+    const answeredAt = item.answeredAt
+      ? item.answeredAt
+      : answerChanged
+        ? new Date().toISOString()
+        : base.answeredAt ?? null;
+
+    return {
+      ...base,
+      ...item,
+      answer: normalizedAnswer,
+      answeredAt,
+      answerSource: item.answerSource || (answerChanged ? source : base.answerSource ?? null),
+      skipped: item.skipped ?? base.skipped ?? false
+    };
+  });
+
+  const nextKeys = new Set(merged.map((item, index) => getAdditionalQuestionKey(item, index)));
+
+  existing.forEach((item, index) => {
+    const key = getAdditionalQuestionKey(item, index);
+    if (!nextKeys.has(key)) {
+      merged.push({ ...item });
+    }
+  });
+
+  return merged;
+}
+
 function buildPlanFromDetails(details = {}, t) {
   const normalized = mapBriefDetails(details);
   const fields = [
@@ -347,6 +436,7 @@ function App() {
   const [presetDiffState, setPresetDiffState] = useState(null);
   const [presetDiffLoading, setPresetDiffLoading] = useState(false);
   const [presetActionBusy, setPresetActionBusy] = useState(false);
+  const [presetQuestionSaving, setPresetQuestionSaving] = useState(false);
   const [botStatus, setBotStatus] = useState(null);
   const [botBusy, setBotBusy] = useState(false);
   const botBusyRef = useRef(false);
@@ -849,6 +939,63 @@ function App() {
       }
     },
     [selectedProjectId, selectedProject, refreshProjects, refreshPresetDiff, showToast, t]
+  );
+
+  const handleSavePresetQuestions = useCallback(
+    async (projectId, questions) => {
+      const targetProjectId = projectId || selectedProjectId;
+
+      if (!targetProjectId) {
+        showToast(t('projects.toast.projectRequired'), 'error', { source: 'preset' });
+        return false;
+      }
+
+      const targetProject = projects.find((project) => project.id === targetProjectId) || null;
+      const currentDraft =
+        targetProject?.presetDraft && typeof targetProject.presetDraft === 'object'
+          ? targetProject.presetDraft
+          : {};
+      const existingQuestions = Array.isArray(currentDraft.additionalQuestions)
+        ? currentDraft.additionalQuestions
+        : [];
+      const normalizedQuestions = Array.isArray(questions) ? questions : [];
+
+      const mergedQuestions = mergeAdditionalQuestionAnswers(existingQuestions, normalizedQuestions, {
+        source: 'app'
+      });
+
+      const timestamp = new Date().toISOString();
+
+      const updatedDraft = {
+        ...currentDraft,
+        additionalQuestions: mergedQuestions,
+        lastFollowUpAnswerAt: timestamp
+      };
+
+      setPresetQuestionSaving(true);
+
+      try {
+        const response = await upsertProject({ id: targetProjectId, presetDraft: updatedDraft });
+
+        if (response?.ok === false) {
+          throw new Error(response?.error || 'Preset questions save failed');
+        }
+
+        await refreshProjects();
+        showToast(t('projects.toast.presetQuestionsSaved'), 'success', { source: 'preset' });
+        return true;
+      } catch (error) {
+        console.error('Failed to save preset questions', error);
+        showToast(t('projects.toast.presetQuestionsSaveError'), 'error', {
+          source: 'preset',
+          details: { message: error?.message }
+        });
+        return false;
+      } finally {
+        setPresetQuestionSaving(false);
+      }
+    },
+    [projects, selectedProjectId, refreshProjects, showToast, t]
   );
 
   const handleApproveBrief = useCallback(async () => {
@@ -1837,6 +1984,8 @@ function App() {
             onApplyPreset={handleApplyPreset}
             onClearPresetDraft={handleClearPresetDraft}
             onRefreshPresetDiff={refreshPresetDiff}
+            onSavePresetQuestions={handleSavePresetQuestions}
+            presetQuestionSaving={presetQuestionSaving}
             onOpenBrief={() => setActiveSection('brief')}
           />
         );
