@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
+import TelegramInviteModal from '../components/TelegramInviteModal.jsx';
 import { useI18n } from '../i18n/useI18n.jsx';
 
 function normalizeChannelList(value) {
@@ -110,6 +111,8 @@ export function ProjectsPage({
   const [selectedContactId, setSelectedContactId] = useState('');
   const [contactForm, setContactForm] = useState({ chatId: '', label: '' });
   const [inviteFeedback, setInviteFeedback] = useState(null);
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [inviteModalData, setInviteModalData] = useState(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [approveLoading, setApproveLoading] = useState(false);
@@ -202,6 +205,8 @@ export function ProjectsPage({
     setSelectedContactId('');
     setContactForm({ chatId: '', label: '' });
     setInviteFeedback(null);
+    setInviteModalOpen(false);
+    setInviteModalData(null);
     setHistoryLoading(false);
     setApproveModalOpen(false);
     setApproveLoading(false);
@@ -280,12 +285,20 @@ export function ProjectsPage({
     }
 
     setInviteFeedback(null);
+    setInviteModalOpen(false);
+    setInviteModalData(null);
 
     try {
       const result = await onSendInvite(chatId);
       const manualChatId = contactForm.chatId.trim();
+      const responseChatLabel =
+        result?.response?.displayChatId ||
+        result?.response?.resolvedChatId ||
+        result?.response?.chatId ||
+        null;
       const targetLabel =
         selectedContact?.label ||
+        responseChatLabel ||
         (selectedContact?.chatId !== undefined ? String(selectedContact.chatId) : '') ||
         (manualChatId ? manualChatId : '') ||
         String(chatId);
@@ -294,14 +307,23 @@ export function ProjectsPage({
         if (result.ok) {
           const sentAt = result.response?.sentAt;
           const formattedDate = sentAt ? new Date(sentAt).toLocaleString(locale) : null;
-          const successMessage = formattedDate
-            ? t('projects.telegram.inviteInlineSuccessWithDate', {
-                chatId: targetLabel,
-                date: formattedDate
-              })
-            : t('projects.telegram.inviteInlineSuccess', { chatId: targetLabel });
+          const statusKey = (result.response?.status || 'sent').toLowerCase();
 
-          setInviteFeedback({ type: 'success', message: successMessage });
+          if (statusKey === 'awaiting_start') {
+            const manualMessage = t('projects.telegram.inviteInlineManual', { chatId: targetLabel });
+            setInviteFeedback({ type: 'success', message: manualMessage });
+            setInviteModalData(result.response || null);
+            setInviteModalOpen(true);
+          } else {
+            const successMessage = formattedDate
+              ? t('projects.telegram.inviteInlineSuccessWithDate', {
+                  chatId: targetLabel,
+                  date: formattedDate
+                })
+              : t('projects.telegram.inviteInlineSuccess', { chatId: targetLabel });
+
+            setInviteFeedback({ type: 'success', message: successMessage });
+          }
         } else {
           const inlineMessage =
             typeof result.message === 'string' && result.message
@@ -889,20 +911,21 @@ export function ProjectsPage({
                 placeholder={t('projects.telegram.chatIdPlaceholder')}
               />
             </label>
-            <label>
-              {t('projects.telegram.newContactLabel')}
-              <input
-                name="label"
-                value={contactForm.label}
-                onChange={handleContactFormChange}
-                placeholder={t('projects.telegram.labelPlaceholder')}
-              />
-            </label>
-            <div className="button-row">
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={handleSaveContactClick}
+          <label>
+            {t('projects.telegram.newContactLabel')}
+            <input
+              name="label"
+              value={contactForm.label}
+              onChange={handleContactFormChange}
+              placeholder={t('projects.telegram.labelPlaceholder')}
+            />
+          </label>
+          <p className="hint hint--inline">{t('projects.telegram.manualHint')}</p>
+          <div className="button-row">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={handleSaveContactClick}
                 disabled={contactsLoading}
               >
                 {t('projects.telegram.saveContact')}
@@ -1002,6 +1025,11 @@ export function ProjectsPage({
         </InfoCard>
       ) : null}
       </div>
+      <TelegramInviteModal
+        open={inviteModalOpen}
+        invite={inviteModalData}
+        onClose={() => setInviteModalOpen(false)}
+      />
       {approveModalOpen ? (
         <div className="modal-backdrop" role="presentation">
           <div className="modal" role="dialog" aria-modal="true">

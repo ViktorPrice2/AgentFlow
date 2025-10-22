@@ -124,6 +124,7 @@
       "contactSaved": "Контакт сохранён",
       "contactSaveError": "Не удалось сохранить контакт",
       "inviteSent": "Приглашение отправлено",
+      "inviteManual": "Отправьте ссылку вручную. Бот напишет после команды Start.",
       "inviteError": "Не удалось отправить приглашение",
       "chatIdRequired": "Укажите chat ID или @username",
       "projectRequired": "Сначала выберите проект",
@@ -211,7 +212,7 @@
       "contactStatusLabel": "Статус",
       "lastContactAt": "Последний ответ",
       "newContactChatId": "Chat ID или @username",
-      "chatIdPlaceholder": "например, @briefmanager или 123456789",
+      "chatIdPlaceholder": "например, 123456789 (числовой) или @username после Start",
       "newContactLabel": "Подпись контакта",
       "labelPlaceholder": "Команда маркетинга, аккаунт-менеджер...",
       "saveContact": "Сохранить контакт",
@@ -220,8 +221,10 @@
       "lastInvitation": "Последнее приглашение",
       "lastInviteAt": "Последнее приглашение {date}",
       "noInvites": "Приглашение ещё не отправляли",
+      "manualHint": "Бот сможет ответить только после команды Start. Отправьте ссылку, если нет числового chat ID.",
       "inviteInlineSuccess": "Приглашение отправлено контакту {chatId}.",
       "inviteInlineSuccessWithDate": "Приглашение отправлено контакту {chatId} в {date}.",
+      "inviteInlineManual": "Отправьте ссылку контакту {chatId}. После Start бот продолжит диалог.",
       "inviteInlineError": "Не удалось отправить приглашение.",
       "inviteInlineErrorWithReason": "Не удалось отправить приглашение: {reason}.",
       "inviteHistory": {
@@ -230,6 +233,7 @@
         "refresh": "Обновить историю",
         "status": {
           "sent": "Отправлено",
+          "awaiting_start": "Ожидает Start",
           "error": "Ошибка",
           "send_error": "Ошибка отправки"
         },
@@ -240,9 +244,29 @@
       },
       "status": {
         "invited": "Приглашён",
+        "awaiting_start": "Ожидает Start",
         "collecting": "Заполняет бриф",
         "completed": "Заполнил",
         "unknown": "Неизвестно"
+      },
+      "inviteModal": {
+        "title": "Поделитесь ссылкой на бота",
+        "subtitle": "Отправьте ссылку клиенту, чтобы он нажал Start в Telegram.",
+        "contact": "Контакт: {chat}",
+        "primaryLink": "Ссылка на Telegram",
+        "copyHint": "Скопируйте ссылку и отправьте её в Telegram, письмом или любым мессенджером.",
+        "copy": "Скопировать",
+        "copied": "Скопировано!",
+        "openLink": "Открыть ссылку",
+        "openTelegram": "Открыть в Telegram",
+        "webFallback": "Веб-форма",
+        "stepsTitle": "Что нужно сделать",
+        "steps": {
+          "share": "Отправьте ссылку контакту.",
+          "start": "Попросите его нажать Start у бота.",
+          "resume": "После Start бот сможет задавать вопросы и присылать напоминания."
+        },
+        "note": "Формат @username работает только после Start — до этого нужен числовой chat ID."
       }
     },
     "presets": {

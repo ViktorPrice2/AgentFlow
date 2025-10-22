@@ -124,6 +124,7 @@
       "contactSaved": "Contact saved",
       "contactSaveError": "Failed to save contact",
       "inviteSent": "Invite sent",
+      "inviteManual": "Share the link manually. The bot will reply after the contact taps Start.",
       "inviteError": "Failed to send invite",
       "chatIdRequired": "Enter the chat ID or username",
       "projectRequired": "Select a project first",
@@ -211,7 +212,7 @@
       "contactStatusLabel": "Status",
       "lastContactAt": "Last replied",
       "newContactChatId": "Chat ID or @username",
-      "chatIdPlaceholder": "e.g. @briefmanager or 123456789",
+      "chatIdPlaceholder": "e.g. 123456789 (numeric) or @username after Start",
       "newContactLabel": "Contact label",
       "labelPlaceholder": "Marketing team, Account manager...",
       "saveContact": "Save contact",
@@ -220,8 +221,10 @@
       "lastInvitation": "Last invitation",
       "lastInviteAt": "Last invite sent {date}",
       "noInvites": "Invite has not been sent yet",
+      "manualHint": "The bot can reply only after the client taps Start. Share the link if you do not have the numeric ID.",
       "inviteInlineSuccess": "Invite sent to {chatId}.",
       "inviteInlineSuccessWithDate": "Invite sent to {chatId} at {date}.",
+      "inviteInlineManual": "Share the link with {chatId}. The bot will continue after Start.",
       "inviteInlineError": "Failed to send invite.",
       "inviteInlineErrorWithReason": "Failed to send invite: {reason}.",
       "inviteHistory": {
@@ -230,6 +233,7 @@
         "refresh": "Refresh history",
         "status": {
           "sent": "Sent",
+          "awaiting_start": "Awaiting Start",
           "error": "Error",
           "send_error": "Send error"
         },
@@ -240,9 +244,29 @@
       },
       "status": {
         "invited": "Invited",
+        "awaiting_start": "Awaiting Start",
         "collecting": "Collecting",
         "completed": "Completed",
         "unknown": "Unknown"
+      },
+      "inviteModal": {
+        "title": "Share the Telegram link",
+        "subtitle": "Send the link to the client so they can tap Start in the bot.",
+        "contact": "Contact: {chat}",
+        "primaryLink": "Telegram link",
+        "copyHint": "Copy the link and send it in Telegram, email or any messenger.",
+        "copy": "Copy",
+        "copied": "Copied!",
+        "openLink": "Open link",
+        "openTelegram": "Open in Telegram",
+        "webFallback": "Web fallback",
+        "stepsTitle": "What happens next",
+        "steps": {
+          "share": "Share the link with the contact.",
+          "start": "Ask them to tap Start in the bot.",
+          "resume": "Once they tap Start, the bot can deliver the brief and reminders."
+        },
+        "note": "Format @username works only after Start — numeric chat ID is required beforehand."
       }
     },
     "presets": {

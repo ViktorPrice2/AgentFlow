@@ -203,9 +203,11 @@ function normalizeInviteLogEntry(entry, fallbackKey = 0) {
   const status =
     event === 'telegram.invite.sent'
       ? 'sent'
-      : event === 'telegram.invite.send_error'
-        ? 'send_error'
-        : 'error';
+      : event === 'telegram.invite.awaiting_start'
+        ? 'awaiting_start'
+        : event === 'telegram.invite.send_error'
+          ? 'send_error'
+          : 'error';
 
   return {
     id: `${event}:${timestamp || fallbackKey}:${normalizedChatId ?? ''}`,
@@ -648,15 +650,29 @@ function App() {
           loadTelegramContacts(selectedProjectId).catch(() => {}),
           loadInviteHistory(selectedProjectId).catch(() => {})
         ]);
-        showToast(t('projects.toast.inviteSent'), 'success', {
-          source: 'telegram',
-          details: { chatId: response?.chatId, link: response?.link }
-        });
+
+        const status = typeof response?.status === 'string' ? response.status : 'sent';
+        const displayChatId =
+          response?.displayChatId || response?.resolvedChatId || response?.chatId || normalizedChatId;
+
+        if (status === 'awaiting_start') {
+          showToast(t('projects.toast.inviteManual'), 'info', {
+            source: 'telegram',
+            details: { chatId: displayChatId, link: response?.link }
+          });
+        } else {
+          showToast(t('projects.toast.inviteSent'), 'success', {
+            source: 'telegram',
+            details: { chatId: displayChatId, link: response?.link }
+          });
+        }
+
         return {
           ok: true,
           response: {
             ...response,
-            chatId: response?.chatId ?? normalizedChatId
+            chatId: response?.chatId ?? normalizedChatId,
+            displayChatId
           }
         };
       } catch (error) {

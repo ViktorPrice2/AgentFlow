@@ -555,6 +555,79 @@ function isNumericChatId(value) {
   return false;
 }
 
+function deriveBotUsername(baseUrl, fallbackUsername = null) {
+  if (typeof fallbackUsername === 'string' && fallbackUsername.trim()) {
+    return fallbackUsername.trim();
+  }
+
+  if (typeof baseUrl !== 'string' || !baseUrl.trim()) {
+    return null;
+  }
+
+  const trimmed = baseUrl.trim();
+
+  if (trimmed.startsWith('@')) {
+    return trimmed.replace(/^@+/, '').trim();
+  }
+
+  try {
+    const url = new URL(trimmed.startsWith('http') ? trimmed : `https://t.me/${trimmed}`);
+    const path = url.pathname.replace(/^\/+/, '').trim();
+
+    if (path) {
+      return path;
+    }
+  } catch (error) {
+    // ignore malformed URLs – we'll fall back to null
+  }
+
+  return null;
+}
+
+function buildInviteLinks(resolvedBase, startPayload, usernameHint = null) {
+  let inviteLink = null;
+
+  if (resolvedBase) {
+    try {
+      const baseUrl = resolvedBase.startsWith('http')
+        ? resolvedBase
+        : `https://t.me/${resolvedBase.replace(/^@/, '')}`;
+      const url = new URL(baseUrl);
+      url.searchParams.set('start', startPayload);
+      inviteLink = url.toString();
+    } catch {
+      const separator = resolvedBase.includes('?') ? '&' : '?';
+      inviteLink = `${resolvedBase}${separator}start=${encodeURIComponent(startPayload)}`;
+    }
+  }
+
+  const username = deriveBotUsername(resolvedBase, usernameHint);
+  const protocolLink = username
+    ? `tg://resolve?domain=${encodeURIComponent(username)}&start=${encodeURIComponent(startPayload)}`
+    : null;
+
+  return { inviteLink, protocolLink, username };
+}
+
+function resolveNextContactStatus(existingStatus, projectStatus, fallbackStatus) {
+  const normalizedExisting = (existingStatus || '').toLowerCase();
+  const normalizedProject = (projectStatus || '').toLowerCase();
+
+  if (['collecting', 'completed'].includes(normalizedExisting)) {
+    return existingStatus || 'completed';
+  }
+
+  if (['collecting', 'completed'].includes(normalizedProject)) {
+    return projectStatus || normalizedProject;
+  }
+
+  return fallbackStatus;
+}
+
+function isChatNotFoundError(error) {
+  return typeof error?.message === 'string' && /chat not found/i.test(error.message);
+}
+
 function findStoredContactByAlias(store, chatId) {
   const alias = normalizeChatAlias(chatId);
 
@@ -1874,16 +1947,16 @@ async function sendProjectInvite(_projectId, _chatId, _options = {}) {
 
   const startPayload = options.startPayload || `project_${projectId}`;
 
-  let inviteLink;
+  const { inviteLink, protocolLink, username } = buildInviteLinks(
+    resolvedBase,
+    startPayload,
+    statusSnapshot?.username || null
+  );
 
-  try {
-    const baseUrl = resolvedBase.startsWith('http') ? resolvedBase : `https://t.me/${resolvedBase.replace(/^@/, '')}`;
-    const url = new URL(baseUrl);
-    url.searchParams.set('start', startPayload);
-    inviteLink = url.toString();
-  } catch {
-    const separator = resolvedBase.includes('?') ? '&' : '?';
-    inviteLink = `${resolvedBase}${separator}start=${encodeURIComponent(startPayload)}`;
+  if (!inviteLink) {
+    const error = new Error('Telegram deeplink is not available');
+    error.code = 'DEEPLINK_UNAVAILABLE';
+    throw error;
   }
 
   const projectName = project.name || project.id || 'project';
@@ -1892,6 +1965,7 @@ async function sendProjectInvite(_projectId, _chatId, _options = {}) {
     options.message ||
     `Здравствуйте! Чтобы заполнить бриф для проекта "${projectName}", перейдите по ссылке ${inviteLink} и отправьте команду ${command}.`;
 
+  const now = new Date().toISOString();
   let aliasLookup = { contact: null, alias: '' };
 
   if (!isNumericChatId(chatIdValue)) {
@@ -1906,7 +1980,117 @@ async function sendProjectInvite(_projectId, _chatId, _options = {}) {
     targetChatId = String(targetChatId).trim();
   }
 
-  const existingContact = aliasLookup.contact || store.getTelegramContactByChatId(targetChatId) || null;
+  const existingContact = aliasLookup.contact || (targetChatId ? store.getTelegramContactByChatId(targetChatId) : null) || null;
+  const sanitizedTargetChatId = sanitizeChatId(targetChatId ?? chatIdValue ?? '');
+  const inputString = typeof chatIdValue === 'string' ? chatIdValue : String(chatIdValue ?? '');
+  const existingStatus = (existingContact?.status || '').toLowerCase();
+  const previousContactStatus = (project?.tgContactStatus || '').toLowerCase();
+  const resolvedContactStatus = (existingContact?.status || '').toLowerCase();
+  const existingAlias = normalizeChatAlias(existingContact?.label);
+  const inputAlias = normalizeChatAlias(inputString);
+  const shouldUpdateLabel = Boolean(inputString) && (!existingContact?.label || existingAlias === inputAlias);
+  const labelForUpdate = shouldUpdateLabel ? inputString : undefined;
+  const webLink = typeof options?.webLink === 'string' ? options.webLink.trim() || null : null;
+
+  const baseResult = {
+    projectId,
+    chatId: sanitizedTargetChatId,
+    rawChatId: chatIdValue,
+    resolvedChatId: targetChatId ?? null,
+    displayChatId: targetChatId !== undefined && targetChatId !== null ? String(targetChatId) : '',
+    alias: aliasLookup.alias || null,
+    link: inviteLink,
+    protocolLink,
+    webLink,
+    botUsername: username,
+    message
+  };
+
+  const saveContactState = (status, { lastContactAt, labelOverride } = {}) => {
+    const payload = {
+      chatId: targetChatId ?? chatIdValue,
+      projectId,
+      status
+    };
+
+    if (lastContactAt !== undefined) {
+      payload.lastContactAt = lastContactAt;
+    }
+
+    if (labelOverride !== undefined) {
+      payload.label = labelOverride;
+    } else if (labelForUpdate !== undefined) {
+      payload.label = labelForUpdate;
+    }
+
+    store.saveTelegramContact(payload);
+
+    const nextContactStatus = resolveNextContactStatus(resolvedContactStatus, previousContactStatus, status);
+
+    updateProjectBriefState(projectId, {
+      tgLastInvitation: now,
+      tgContactStatus: nextContactStatus
+    });
+
+    return nextContactStatus;
+  };
+
+  const createAwaitingResult = async (reason, extra = {}) => {
+    const contactStatus = saveContactState('awaiting_start', {});
+
+    await log(
+      'telegram.invite.awaiting_start',
+      {
+        projectId,
+        chatId: sanitizedTargetChatId,
+        rawChatId: chatIdValue,
+        resolvedChatId: targetChatId,
+        alias: aliasLookup.alias || null,
+        reason,
+        link: inviteLink,
+        protocolLink,
+        webLink,
+        payload: extra || {}
+      },
+      'info'
+    );
+
+    return {
+      ...baseResult,
+      status: 'awaiting_start',
+      reason,
+      sentAt: null,
+      contactStatus,
+      requiresManualDelivery: true,
+      error: extra?.errorMessage || null
+    };
+  };
+
+  const createSentResult = async () => {
+    const contactStatus = saveContactState(existingContact && !['unknown', 'invited'].includes(existingStatus) ? existingContact.status : 'invited', {
+      lastContactAt: now
+    });
+
+    await log('telegram.invite.sent', {
+      projectId,
+      chatId: sanitizedTargetChatId,
+      rawChatId: chatIdValue,
+      resolvedChatId: targetChatId,
+      alias: aliasLookup.alias || null,
+      link: inviteLink
+    });
+
+    return {
+      ...baseResult,
+      status: 'sent',
+      sentAt: now,
+      contactStatus
+    };
+  };
+
+  if (!isNumericChatId(targetChatId)) {
+    return createAwaitingResult('missing_numeric_chat_id');
+  }
 
   try {
     await bot.telegram.sendMessage(targetChatId, message);
@@ -1915,7 +2099,7 @@ async function sendProjectInvite(_projectId, _chatId, _options = {}) {
       'telegram.invite.send_error',
       {
         projectId,
-        chatId: sanitizeChatId(targetChatId),
+        chatId: sanitizedTargetChatId,
         rawChatId: chatIdValue,
         resolvedChatId: targetChatId,
         alias: aliasLookup.alias || null,
@@ -1923,81 +2107,19 @@ async function sendProjectInvite(_projectId, _chatId, _options = {}) {
       },
       'error'
     );
+
+    if (isChatNotFoundError(error)) {
+      return createAwaitingResult('chat_not_found', { errorMessage: error.message });
+    }
+
     const fallbackMessage = 'Failed to send Telegram invite';
     const friendlyMessage = typeof error?.message === 'string' && error.message ? error.message : fallbackMessage;
     const friendly = new Error(friendlyMessage);
     friendly.code = 'TELEGRAM_SEND_FAILED';
-
-    if (typeof error?.message === 'string' && /chat not found/i.test(error.message)) {
-      friendly.message =
-        'Telegram could not find the specified chat. Make sure the bot is not blocked and that the contact has started a conversation with it or provide a numeric chat ID.';
-    }
-
     throw friendly;
   }
 
-  const now = new Date().toISOString();
-  const sanitizedTargetChatId = sanitizeChatId(targetChatId);
-  const inputString = typeof chatIdValue === 'string' ? chatIdValue : String(chatIdValue);
-  const existingStatus = (existingContact?.status || '').toLowerCase();
-
-  const contactPayload = {
-    chatId: targetChatId,
-    projectId,
-    lastContactAt: now
-  };
-
-  if (!existingContact || ['unknown', 'invited'].includes(existingStatus)) {
-    contactPayload.status = 'invited';
-  }
-
-  if (inputString) {
-    const existingAlias = normalizeChatAlias(existingContact?.label);
-    const inputAlias = normalizeChatAlias(inputString);
-
-    if (!existingContact?.label || existingAlias === inputAlias) {
-      contactPayload.label = inputString;
-    }
-  }
-
-  store.saveTelegramContact(contactPayload);
-
-  const previousContactStatus = (project?.tgContactStatus || '').toLowerCase();
-  const resolvedContactStatus = (existingContact?.status || '').toLowerCase();
-  let nextContactStatus;
-
-  if (['collecting', 'completed'].includes(resolvedContactStatus)) {
-    nextContactStatus = existingContact?.status || 'invited';
-  } else if (['collecting', 'completed'].includes(previousContactStatus)) {
-    nextContactStatus = project.tgContactStatus;
-  } else {
-    nextContactStatus = 'invited';
-  }
-
-  updateProjectBriefState(projectId, {
-    tgLastInvitation: now,
-    tgContactStatus: nextContactStatus
-  });
-
-  await log('telegram.invite.sent', {
-    projectId,
-    chatId: sanitizedTargetChatId,
-    rawChatId: chatIdValue,
-    resolvedChatId: targetChatId,
-    alias: aliasLookup.alias || null,
-    link: inviteLink
-  });
-
-  return {
-    projectId,
-    chatId: sanitizedTargetChatId,
-    rawChatId: chatIdValue,
-    resolvedChatId: targetChatId,
-    alias: aliasLookup.alias || null,
-    sentAt: now,
-    link: inviteLink,
-    message
-  };
+  return createSentResult();
 }
 
 const handleContactsList = async (_event, payload = {}) => {
