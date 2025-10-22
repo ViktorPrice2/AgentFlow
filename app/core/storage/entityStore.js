@@ -237,6 +237,20 @@ function clampProgress(value, fallback = 0) {
   return numeric;
 }
 
+function normalizeMetricValue(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  const numeric = Number(value);
+
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 function buildProjectRecord(row) {
   if (!row) {
     return null;
@@ -313,6 +327,36 @@ function buildReportRecord(row) {
     artifacts: normalizeArtifacts(row.artifacts),
     createdAt: row.createdAt || null,
     updatedAt: row.updatedAt || null
+  };
+}
+
+function buildBriefRecord(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    summary: row.summary || null,
+    details: normalizeJsonValue(row.details, {}),
+    createdAt: row.createdAt || null,
+    updatedAt: row.updatedAt || null
+  };
+}
+
+function buildMetricRecord(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    name: row.name,
+    value: normalizeMetricValue(row.value),
+    unit: row.unit || null,
+    capturedAt: row.capturedAt || null
   };
 }
 
@@ -798,6 +842,291 @@ export function createEntityStore(options = {}) {
 
     try {
       db.prepare('DELETE FROM Reports WHERE id = ?').run(id);
+    } finally {
+      db.close();
+    }
+  }
+
+  function listBriefs(filter = {}) {
+    const db = openDatabase(dbPath);
+
+    try {
+      let query =
+        `SELECT id, projectId, summary, details, createdAt, updatedAt
+           FROM Briefs`;
+      const params = [];
+      const conditions = [];
+
+      if (filter.projectId) {
+        conditions.push('projectId = ?');
+        params.push(filter.projectId);
+      }
+
+      if (conditions.length > 0) {
+        query += ` WHERE ${conditions.join(' AND ')}`;
+      }
+
+      query += ' ORDER BY datetime(COALESCE(updatedAt, createdAt)) DESC';
+
+      if (filter.limit && Number.isInteger(filter.limit) && filter.limit > 0) {
+        query += ' LIMIT ?';
+        params.push(filter.limit);
+      }
+
+      const rows = db.prepare(query).all(...params);
+      return rows.map((row) => buildBriefRecord(row));
+    } finally {
+      db.close();
+    }
+  }
+
+  function getBriefById(id) {
+    if (!id) {
+      throw new Error('Brief id is required');
+    }
+
+    const db = openDatabase(dbPath);
+
+    try {
+      const row = db
+        .prepare(
+          `SELECT id, projectId, summary, details, createdAt, updatedAt
+             FROM Briefs
+            WHERE id = ?`
+        )
+        .get(id);
+
+      return buildBriefRecord(row);
+    } finally {
+      db.close();
+    }
+  }
+
+  function getLatestBrief(projectId) {
+    if (!projectId) {
+      throw new Error('projectId is required to fetch latest brief');
+    }
+
+    const db = openDatabase(dbPath);
+
+    try {
+      const row = db
+        .prepare(
+          `SELECT id, projectId, summary, details, createdAt, updatedAt
+             FROM Briefs
+            WHERE projectId = ?
+         ORDER BY datetime(COALESCE(updatedAt, createdAt)) DESC
+            LIMIT 1`
+        )
+        .get(projectId);
+
+      return buildBriefRecord(row);
+    } finally {
+      db.close();
+    }
+  }
+
+  function saveBrief(brief) {
+    if (!brief?.projectId) {
+      throw new Error('Brief must include projectId');
+    }
+
+    const db = openDatabase(dbPath);
+    const now = new Date().toISOString();
+
+    try {
+      const existing = brief.id
+        ? db
+            .prepare(
+              `SELECT id, projectId, summary, details, createdAt, updatedAt
+                 FROM Briefs
+                WHERE id = ?`
+            )
+            .get(brief.id)
+        : null;
+
+      const id = existing?.id || brief.id || randomUUID();
+      const projectId = brief.projectId ?? existing?.projectId;
+
+      if (!projectId) {
+        throw new Error('Brief projectId cannot be null');
+      }
+
+      const summary = brief.summary ?? existing?.summary ?? null;
+      const detailsFallback = brief.details === null ? null : {};
+      const normalizedDetails =
+        brief.details !== undefined
+          ? normalizeJsonValue(brief.details, detailsFallback)
+          : normalizeJsonValue(existing?.details, null);
+      const detailsJson =
+        normalizedDetails === null ? null : stringifyPayload(normalizedDetails);
+      const createdAt = brief.createdAt || existing?.createdAt || now;
+      const updatedAt = now;
+
+      if (existing) {
+        db.prepare(
+          `UPDATE Briefs
+              SET projectId = ?, summary = ?, details = ?, updatedAt = ?
+            WHERE id = ?`
+        ).run(projectId, summary, detailsJson, updatedAt, id);
+      } else {
+        db.prepare(
+          `INSERT INTO Briefs (id, projectId, summary, details, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).run(id, projectId, summary, detailsJson, createdAt, updatedAt);
+      }
+
+      return buildBriefRecord({
+        id,
+        projectId,
+        summary,
+        details: detailsJson,
+        createdAt,
+        updatedAt
+      });
+    } finally {
+      db.close();
+    }
+  }
+
+  function deleteBrief(id) {
+    if (!id) {
+      throw new Error('Brief id is required');
+    }
+
+    const db = openDatabase(dbPath);
+
+    try {
+      db.prepare('DELETE FROM Briefs WHERE id = ?').run(id);
+    } finally {
+      db.close();
+    }
+  }
+
+  function listMetrics(filter = {}) {
+    const db = openDatabase(dbPath);
+
+    try {
+      let query =
+        `SELECT id, projectId, name, value, unit, capturedAt
+           FROM Metrics`;
+      const params = [];
+      const conditions = [];
+
+      if (filter.projectId) {
+        conditions.push('projectId = ?');
+        params.push(filter.projectId);
+      }
+
+      if (filter.name) {
+        conditions.push('name = ?');
+        params.push(filter.name);
+      }
+
+      if (conditions.length > 0) {
+        query += ` WHERE ${conditions.join(' AND ')}`;
+      }
+
+      query += ' ORDER BY datetime(capturedAt) DESC';
+
+      if (filter.limit && Number.isInteger(filter.limit) && filter.limit > 0) {
+        query += ' LIMIT ?';
+        params.push(filter.limit);
+      }
+
+      const rows = db.prepare(query).all(...params);
+      return rows.map((row) => buildMetricRecord(row));
+    } finally {
+      db.close();
+    }
+  }
+
+  function getMetricById(id) {
+    if (!id) {
+      throw new Error('Metric id is required');
+    }
+
+    const db = openDatabase(dbPath);
+
+    try {
+      const row = db
+        .prepare(
+          `SELECT id, projectId, name, value, unit, capturedAt
+             FROM Metrics
+            WHERE id = ?`
+        )
+        .get(id);
+
+      return buildMetricRecord(row);
+    } finally {
+      db.close();
+    }
+  }
+
+  function saveMetric(metric) {
+    if (!metric?.projectId) {
+      throw new Error('Metric must include projectId');
+    }
+
+    if (!metric?.name) {
+      throw new Error('Metric must include name');
+    }
+
+    const db = openDatabase(dbPath);
+    const now = new Date().toISOString();
+
+    try {
+      const existing = metric.id
+        ? db
+            .prepare(
+              `SELECT id, projectId, name, value, unit, capturedAt
+                 FROM Metrics
+                WHERE id = ?`
+            )
+            .get(metric.id)
+        : null;
+
+      const id = existing?.id || metric.id || randomUUID();
+      const projectId = metric.projectId ?? existing?.projectId;
+      const name = metric.name ?? existing?.name;
+
+      if (!projectId || !name) {
+        throw new Error('Metric projectId and name are required');
+      }
+
+      const value =
+        metric.value !== undefined ? normalizeMetricValue(metric.value) : normalizeMetricValue(existing?.value);
+      const unit = metric.unit ?? existing?.unit ?? null;
+      const capturedAt = metric.capturedAt || existing?.capturedAt || now;
+
+      if (existing) {
+        db.prepare(
+          `UPDATE Metrics
+              SET projectId = ?, name = ?, value = ?, unit = ?, capturedAt = ?
+            WHERE id = ?`
+        ).run(projectId, name, value, unit, capturedAt, id);
+      } else {
+        db.prepare(
+          `INSERT INTO Metrics (id, projectId, name, value, unit, capturedAt)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).run(id, projectId, name, value, unit, capturedAt);
+      }
+
+      return buildMetricRecord({ id, projectId, name, value, unit, capturedAt });
+    } finally {
+      db.close();
+    }
+  }
+
+  function deleteMetric(id) {
+    if (!id) {
+      throw new Error('Metric id is required');
+    }
+
+    const db = openDatabase(dbPath);
+
+    try {
+      db.prepare('DELETE FROM Metrics WHERE id = ?').run(id);
     } finally {
       db.close();
     }
@@ -1648,6 +1977,15 @@ export function createEntityStore(options = {}) {
     getReportById,
     saveReport,
     deleteReport,
+    listBriefs,
+    getBriefById,
+    getLatestBrief,
+    saveBrief,
+    deleteBrief,
+    listMetrics,
+    getMetricById,
+    saveMetric,
+    deleteMetric,
     listTelegramContacts,
     getTelegramContactById,
     getTelegramContactByChatId,

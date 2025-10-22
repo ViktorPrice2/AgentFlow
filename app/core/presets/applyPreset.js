@@ -58,12 +58,19 @@ function normalizePipelineDefinition(pipeline, { project, presetId, presetVersio
   const edges = Array.isArray(pipeline.edges) ? pipeline.edges : [];
 
   const normalizedNodes = nodes.map((node) => {
-    const agentName = node.agentName || node.agentId || node.agent || null;
+    const kind = node.kind || node.type || 'task';
+    const agentName =
+      node.agentName ||
+      node.agentId ||
+      node.agent ||
+      (kind === 'form' ? 'FormCollector' : null);
     const moduleId = agentName || null;
     const scopedAgentId = moduleId ? agentKeyMap.get(moduleId) || composeScopedId(project.id, moduleId) : null;
 
     return {
       ...node,
+      kind,
+      type: kind,
       id: node.id || composeScopedId(project.id, moduleId || pipeline.id, 'node'),
       agentName: moduleId,
       agentConfigId: scopedAgentId,

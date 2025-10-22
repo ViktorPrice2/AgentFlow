@@ -1,11 +1,8 @@
 {
   "scheduler": {
-    "status": "ok",
-    "reason": "Scheduler heartbeat recorded within the 3 minute threshold",
-    "meta": {
-      "lastTimestamp": "2025-10-21T14:09:52.613Z",
-      "secondsSince": 0
-    }
+    "status": "pending",
+    "reason": "scheduler.jsonl not found — scheduler has not run yet",
+    "meta": {}
   },
   "i18n": {
     "status": "ok",

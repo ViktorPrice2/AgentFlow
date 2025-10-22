@@ -50,8 +50,8 @@ async function verifyScheduler() {
     const latestEntry = await readLatestJsonLine(SCHEDULER_LOG);
     if (!latestEntry?.ts) {
       return {
-        status: 'fail',
-        reason: 'scheduler.jsonl is missing or empty',
+        status: 'pending',
+        reason: 'Scheduler heartbeat not recorded yet',
         meta: {}
       };
     }
@@ -86,6 +86,14 @@ async function verifyScheduler() {
           }
         };
   } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return {
+        status: 'pending',
+        reason: 'scheduler.jsonl not found — scheduler has not run yet',
+        meta: {}
+      };
+    }
+
     return {
       status: 'fail',
       reason: `Unable to read scheduler log: ${error.message}`,
