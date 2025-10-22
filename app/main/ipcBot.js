@@ -1164,6 +1164,126 @@ function normalizeFollowUpAnswer(value) {
   return String(value).trim();
 }
 
+function extractFollowUpPrompt(question) {
+  if (!question || typeof question !== 'object') {
+    return null;
+  }
+
+  const candidatePrompts = [
+    question.prompt,
+    question.question,
+    question.title,
+    question.message,
+    question.label,
+    question.summary
+  ];
+
+  for (const candidate of candidatePrompts) {
+    if (typeof candidate !== 'string') {
+      continue;
+    }
+
+    const normalized = candidate.trim();
+
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return null;
+}
+
+function inferProjectNameFromFollowUp(question, answer) {
+  const normalizedAnswer = normalizeFollowUpAnswer(answer);
+
+  if (!normalizedAnswer) {
+    return null;
+  }
+
+  const lowerCaseTokens = [];
+
+  if (typeof question?.id === 'string') {
+    lowerCaseTokens.push(question.id.toLowerCase());
+  }
+
+  if (typeof question?.key === 'string') {
+    lowerCaseTokens.push(question.key.toLowerCase());
+  }
+
+  if (typeof question?.field === 'string') {
+    lowerCaseTokens.push(question.field.toLowerCase());
+  }
+
+  if (typeof question?.target === 'string') {
+    lowerCaseTokens.push(question.target.toLowerCase());
+  }
+
+  const prompt = extractFollowUpPrompt(question);
+
+  if (prompt) {
+    lowerCaseTokens.push(prompt.toLowerCase());
+  }
+
+  const containsNameKeyword = lowerCaseTokens.some((token) => {
+    if (!token) {
+      return false;
+    }
+
+    if (token.includes('company_name')) {
+      return true;
+    }
+
+    if (token.includes('project') && token.includes('name')) {
+      return true;
+    }
+
+    if (token.includes('company') && token.includes('name')) {
+      return true;
+    }
+
+    if (token.includes('название') && (token.includes('компан') || token.includes('продукт'))) {
+      return true;
+    }
+
+    if (token.includes('имя бренда') || token.includes('название бренда')) {
+      return true;
+    }
+
+    return false;
+  });
+
+  if (containsNameKeyword) {
+    return normalizedAnswer;
+  }
+
+  return null;
+}
+
+function deriveProjectNameForUpdate(projectRecord, projectId, fallbackName) {
+  const normalizedProjectId = String(projectId ?? '').trim();
+  const existingName =
+    typeof projectRecord?.name === 'string' && projectRecord.name.trim()
+      ? projectRecord.name.trim()
+      : '';
+  const fallback = typeof fallbackName === 'string' ? fallbackName.trim() : '';
+
+  if (fallback) {
+    if (!existingName || existingName === normalizedProjectId) {
+      return fallback;
+    }
+  }
+
+  if (existingName) {
+    return existingName;
+  }
+
+  if (fallback) {
+    return fallback;
+  }
+
+  return normalizedProjectId || 'project';
+}
+
 function mergeAdditionalQuestionLists(previous = [], next = []) {
   const merged = next.map((item, index) => {
     const existing = findMatchingAdditionalQuestion(previous, item, index);
@@ -1234,25 +1354,6 @@ async function saveFollowUpAnswer(projectId, question, { answer, skipped = false
     projectRecord = store.getProjectById(projectId);
   } catch (error) {
     await log('followup.answer.project_lookup_error', { projectId, error: error.message }, 'warn').catch(() => {});
-    const lookupError = new Error('project_lookup_failed');
-    lookupError.code = 'project_lookup_failed';
-    throw lookupError;
-  }
-
-  if (!projectRecord) {
-    await log('followup.answer.project_missing', { projectId }, 'warn').catch(() => {});
-    const missingError = new Error('project_not_found');
-    missingError.code = 'project_not_found';
-    throw missingError;
-  }
-
-  const projectName = typeof projectRecord.name === 'string' ? projectRecord.name.trim() : '';
-
-  if (!projectName) {
-    await log('followup.answer.project_name_missing', { projectId }, 'warn').catch(() => {});
-    const nameError = new Error('project_missing_name');
-    nameError.code = 'project_missing_name';
-    throw nameError;
   }
 
   const previousDraft =
@@ -1265,6 +1366,7 @@ async function saveFollowUpAnswer(projectId, question, { answer, skipped = false
 
   const timestamp = new Date().toISOString();
   const normalizedAnswer = skipped ? '' : normalizeFollowUpAnswer(answer);
+  const fallbackProjectName = inferProjectNameFromFollowUp(question, normalizedAnswer);
   const updatedQuestions = mergeAdditionalQuestionLists(previousQuestions, [
     {
       ...question,
@@ -1283,7 +1385,7 @@ async function saveFollowUpAnswer(projectId, question, { answer, skipped = false
 
   const payload = {
     id: projectId,
-    name: projectName,
+    name: deriveProjectNameForUpdate(projectRecord, projectId, fallbackProjectName),
     presetDraft: updatedDraft
   };
 
@@ -1627,7 +1729,21 @@ function updateProjectBriefState(projectId, updates = {}) {
 
   try {
     const store = getEntityStore();
-    const saved = store.saveProject({ id: projectId, ...updates });
+    let existing = null;
+
+    try {
+      existing = store.getProjectById(projectId);
+    } catch (lookupError) {
+      log('project.brief.lookup_error', { projectId, error: lookupError.message }, 'warn').catch(() => {});
+    }
+
+    const payload = { id: projectId, ...updates };
+
+    if (!payload.name) {
+      payload.name = deriveProjectNameForUpdate(existing, projectId, updates?.name);
+    }
+
+    const saved = store.saveProject(payload);
     emitBriefStatusChange(saved);
     return saved;
   } catch (error) {
@@ -3123,6 +3239,9 @@ export const __test__ = {
   ensureBot,
   shutdownBot,
   tailLog: readLogTail,
+  deriveProjectNameForUpdate,
+  inferProjectNameFromFollowUp,
+  saveFollowUpAnswer,
   selfTest: async () => {
     const { token, source } = await getToken({ allowMissing: true });
     if (!token) {
