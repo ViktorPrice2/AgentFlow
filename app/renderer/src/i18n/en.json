@@ -134,7 +134,9 @@
       "presetApplyError": "Failed to apply preset",
       "presetDiffError": "Unable to compare preset versions",
       "presetDraftCleared": "Preset suggestions archived",
-      "presetDraftClearError": "Failed to archive preset suggestions"
+      "presetDraftClearError": "Failed to archive preset suggestions",
+      "presetQuestionsSaved": "Follow-up answers saved",
+      "presetQuestionsSaveError": "Failed to save follow-up answers"
     },
     "status": {
       "pending": "Pending",
@@ -200,6 +202,14 @@
       "presetDraftSummary": "Review the suggestions from BriefMaster before applying.",
       "reviewPresetDraft": "Review suggestions",
       "presetDraftMissing": "No suggestions to review"
+    },
+    "followups": {
+      "title": "BriefMaster follow-ups",
+      "subtitle": "Clarify the remaining details so the brief stays complete.",
+      "count": "{count, plural, =0 {No pending questions} one {# pending question} other {# pending questions}}",
+      "help": "Answers sync with the Telegram bot and update the preset draft instantly.",
+      "save": "Save answers",
+      "openModal": "Open full suggestions"
     },
     "telegram": {
       "title": "Telegram contacts",
@@ -292,7 +302,11 @@
       "updatedAt": "Generated {{date}}",
       "dismiss": "Archive",
       "apply": "Apply update",
-      "close": "Close"
+      "close": "Close",
+      "saveQuestions": "Save answers",
+      "questionPlaceholder": "Answer here or leave blank to keep pending",
+      "questionMeta": "Last updated: {{date}}",
+      "questionSkipped": "Marked as skipped"
     }
   },
   "brief": {
@@ -353,7 +367,13 @@
       "noBriefs": "No Telegram briefs for this project yet.",
       "planTitle": "Campaign plan",
       "planSubtitle": "Generator output based on the latest brief.",
-      "planEmpty": "Generate a plan after receiving a Telegram brief to see the steps."
+      "planEmpty": "Generate a plan after receiving a Telegram brief to see the steps.",
+      "status": {
+        "unknown": "Not synced",
+        "collecting": "Collecting responses",
+        "completed": "Brief complete",
+        "followup": "Awaiting follow-up answers"
+      }
     }
   },
   "agents": {
@@ -527,9 +547,31 @@
       "type": "Type",
       "models": "Models",
       "key": "Key",
+      "actions": "Controls",
       "keyPresent": "present",
       "keyMissing": "missing ({ref})",
-      "keyNotRequired": "not required"
+      "keyNotRequired": "not required",
+      "keyStored": "stored ({mask})",
+      "keyFromEnv": "env var {ref}",
+      "envHint": "The value comes from environment variable <code>{ref}</code>.",
+      "updatedAt": "Updated {date}",
+      "inputPlaceholder": "Paste the key and press save",
+      "saveButton": "Save",
+      "clearButton": "Remove",
+      "saving": "Saving…",
+      "clearing": "Removing…",
+      "currentKey": "Current key: {mask}",
+      "valueRequired": "Enter a key value",
+      "saveErrorShort": "Failed to save the key",
+      "clearErrorShort": "Failed to remove the key",
+      "toast": {
+        "refMissing": "Provider key id is missing",
+        "valueRequired": "Enter a key before saving",
+        "saved": "Provider key saved",
+        "saveError": "Failed to save the provider key",
+        "cleared": "Provider key removed",
+        "clearError": "Failed to remove the provider key"
+      }
     },
     "telegram": {
       "title": "Telegram bot",
