@@ -1,12 +1,32 @@
-import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const AGENTS_DIR = path.join(process.cwd(), 'core', 'agents');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const DEFAULT_AGENT_DIR_CANDIDATES = [
+  path.join(process.cwd(), 'core', 'agents'),
+  path.join(process.cwd(), 'app', 'core', 'agents'),
+  path.join(__dirname, 'agents')
+];
+
+function resolveDefaultAgentsDir() {
+  for (const candidate of DEFAULT_AGENT_DIR_CANDIDATES) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return DEFAULT_AGENT_DIR_CANDIDATES[DEFAULT_AGENT_DIR_CANDIDATES.length - 1];
+}
+
+const AGENTS_DIR = resolveDefaultAgentsDir();
 
 class PluginRegistry {
   constructor(baseDir = AGENTS_DIR) {
-    this.baseDir = baseDir;
+    this.baseDir = baseDir || AGENTS_DIR;
     this.agents = new Map();
   }
 
@@ -33,6 +53,31 @@ class PluginRegistry {
   }
 
   async registerBuiltInStubs() {
+    if (!this.agents.has('FormCollector')) {
+      this.agents.set('FormCollector', {
+        id: 'FormCollector',
+        manifest: {
+          name: 'FormCollector',
+          version: '0.1.0',
+          description: 'Captures submitted brief data and hands it to downstream nodes.'
+        },
+        async execute(payload = {}) {
+          const submittedAt = new Date().toISOString();
+          const normalized = payload && typeof payload === 'object' ? { ...payload } : {};
+          const form = normalized.form && typeof normalized.form === 'object' ? { ...normalized.form } : {};
+
+          return {
+            ...normalized,
+            form: {
+              ...form,
+              status: form.status || 'submitted',
+              submittedAt: form.submittedAt || submittedAt
+            }
+          };
+        }
+      });
+    }
+
     if (!this.agents.has('WriterStub')) {
       this.agents.set('WriterStub', {
         id: 'WriterStub',
