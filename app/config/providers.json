@@ -1,86 +1,26 @@
-{
-  "providers": [
-    {
-      "id": "openai",
-      "type": "llm",
-      "models": ["gpt-4o-mini", "gpt-4o"],
-      "apiKeyRef": "OPENAI_API_KEY",
-      "baseUrl": "https://api.openai.com/v1",
-      "limits": {
-        "rateLimit": {
-          "rps": 3,
-          "burst": 6
-        }
-      }
-    },
-    {
-      "id": "gemini",
-      "type": "llm",
-      "models": ["gemini-2.0-flash"],
-      "apiKeyRef": "GOOGLE_API_KEY",
-      "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
-      "limits": {
-        "rateLimit": {
-          "rps": 2,
-          "burst": 4
-        }
-      }
-    },
-    {
-      "id": "ollama",
-      "type": "llm",
-      "models": ["llama3.1:8b"],
-      "baseUrl": "http://localhost:11434",
-      "limits": {
-        "rateLimit": {
-          "rps": 1,
-          "burst": 2
-        }
-      }
-    },
-    {
-      "id": "stability",
-      "type": "image",
-      "models": ["sd3.5"],
-      "apiKeyRef": "STABILITY_API_KEY",
-      "baseUrl": "https://api.stability.ai"
-    },
-    {
-      "id": "higgs",
-      "type": "video",
-      "models": ["studio-v"],
-      "apiKeyRef": "HIGGSFIELD_API_KEY",
-      "baseUrl": "https://api.higgsfield.ai"
-    }
-  ],
-  "defaults": {
-    "llm": {
-      "provider": "openai",
-      "model": "gpt-4o-mini"
-    },
-    "image": {
-      "provider": "stability",
-      "model": "sd3.5"
-    },
-    "video": {
-      "provider": "higgs",
-      "model": "studio-v"
-    }
+[
+  {
+    "id": "openai",
+    "name": "OpenAI",
+    "enabled": false,
+    "priority": 1,
+    "models": ["gpt-4", "gpt-4o-mini"],
+    "mock": true
   },
-  "limits": {
-    "rateLimit": {
-      "rps": 3,
-      "burst": 6
-    },
-    "retry": {
-      "maxRetries": 3,
-      "baseDelayMs": 200,
-      "maxDelayMs": 1600
-    },
-    "breaker": {
-      "threshold": 5,
-      "intervalMs": 60000,
-      "cooldownMs": 30000
-    }
+  {
+    "id": "stability",
+    "name": "Stability",
+    "enabled": false,
+    "priority": 2,
+    "models": ["stable-diffusion-xl"],
+    "mock": true
+  },
+  {
+    "id": "local-llm",
+    "name": "Local LLM",
+    "enabled": true,
+    "priority": 3,
+    "models": ["local-writer"],
+    "mock": true
   }
-}
+]

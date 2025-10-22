@@ -1,0 +1,18 @@
+{
+  "forbidden": [
+    {
+      "pattern": "(?i)free money",
+      "message": "Avoid unrealistic claims like 'free money'."
+    },
+    {
+      "pattern": "(?i)virus",
+      "message": "Do not mention viruses in marketing copy."
+    }
+  ],
+  "required": [
+    {
+      "pattern": "(?i)call to action",
+      "message": "Encourage adding a call to action."
+    }
+  ]
+}

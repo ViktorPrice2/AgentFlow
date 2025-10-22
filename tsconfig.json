@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "NodeNext",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "jsx": "react-jsx",
+    "baseUrl": "./",
+    "paths": {
+      "@core/*": ["app/core/*"],
+      "@agents/*": ["app/agents/*"],
+      "@config/*": ["app/config/*"],
+      "@ui/*": ["app/ui/*"],
+      "@db/*": ["app/db/*"],
+      "@scripts/*": ["scripts/*"]
+    },
+    "outDir": "dist"
+  },
+  "include": ["app", "scripts", "tests"],
+  "exclude": ["node_modules", "dist"]
+}

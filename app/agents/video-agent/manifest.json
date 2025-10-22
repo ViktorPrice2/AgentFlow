@@ -1,0 +1,14 @@
+{
+  "name": "video-agent",
+  "version": "2.0.0",
+  "description": "Composes promotional videos",
+  "type": "video",
+  "defaultParams": {
+    "fps": 30
+  },
+  "models": ["mock-video"],
+  "mockOutput": {
+    "videoPath": "/mock/video.mp4"
+  },
+  "entry": "index.ts"
+}
