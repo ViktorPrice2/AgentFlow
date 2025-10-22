@@ -18,6 +18,9 @@ AgentFlow v2 is a modular Electron desktop application that helps marketers plan
    ```bash
    npm install
    ```
+   > ⚠️ Run installation commands from the repository root (`AgentFlow/`).
+   > The legacy `app/` package is kept for reference and does not install the
+   > renderer dependencies automatically.
 2. **Prepare the database**
    ```bash
    npm run migrate

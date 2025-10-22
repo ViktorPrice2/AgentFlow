@@ -23,6 +23,9 @@ docs/              # Developer and API documentation
    ```bash
    npm install
    ```
+   > Run these commands from the repository root (`AgentFlow/`).
+   > The legacy `app/` package is retained for backwards compatibility and
+   > lacks the renderer dependencies required for the Tailwind pipeline.
 2. Run database migrations and seed data:
    ```bash
    npm run migrate
