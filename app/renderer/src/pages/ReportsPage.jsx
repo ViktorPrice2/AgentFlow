@@ -1,4 +1,5 @@
 import PropTypes from 'prop-types';
+import ReactMarkdown from 'react-markdown';
 import { InfoCard } from '../components/InfoCard.jsx';
 import { EmptyState } from '../components/EmptyState.jsx';
 import { useI18n } from '../i18n/useI18n.jsx';
@@ -152,7 +153,7 @@ export function ReportsPage({ reports = [] }) {
                   {report.summary ? (
                     <section className="report-card__section">
                       <h5>{t('reports.summary')}</h5>
-                      <p>{report.summary}</p>
+                      <ReactMarkdown className="report-card__summary">{report.summary}</ReactMarkdown>
                     </section>
                   ) : null}
 

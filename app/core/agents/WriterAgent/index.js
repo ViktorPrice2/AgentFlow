@@ -1,4 +1,5 @@
 import { renderTemplate, renderTemplateWithFallback } from '../../utils/template.js';
+import { enrichWithProjectContext } from '../../utils/project.js';
 
 const DEFAULT_LLM_INSTRUCTIONS =
   'You are an experienced marketing copywriter. Produce concise, engaging assets.';
@@ -35,7 +36,7 @@ function sanitizeJsonBlock(rawContent = '') {
   }
 }
 
-function mergeInputs(payload, config) {
+function mergeInputs(payload, config, ctx) {
   const override = payload?.override && typeof payload.override === 'object' ? payload.override : {};
   const overrideParams =
     override.params && typeof override.params === 'object' ? override.params : {};
@@ -51,6 +52,8 @@ function mergeInputs(payload, config) {
     ...(config?.templates || {}),
     ...(override.templates || {})
   };
+
+  enrichWithProjectContext(merged, ctx, payload);
 
   return { merged, templates };
 }
@@ -118,7 +121,7 @@ export async function execute(payload, ctx) {
     throw new Error('WriterAgent configuration not found');
   }
 
-  const { merged, templates } = mergeInputs(payload, agentConfig);
+  const { merged, templates } = mergeInputs(payload, agentConfig, ctx);
   const outputKeys = selectOutputKeys(agentConfig, templates);
   const generated = {};
   let llmUsed = false;

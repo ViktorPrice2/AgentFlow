@@ -1,19 +1,5 @@
 import { loadPreset } from '../../presets/loader.js';
-
-function normalizeChannels(value) {
-  if (Array.isArray(value)) {
-    return value.filter((item) => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim());
-  }
-
-  if (typeof value === 'string') {
-    return value
-      .split(',')
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0);
-  }
-
-  return [];
-}
+import { normalizeChannels } from '../../utils/channels.js';
 
 function toLowerSet(items) {
   const set = new Set();

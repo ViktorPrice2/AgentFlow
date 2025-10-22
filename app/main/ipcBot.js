@@ -1070,6 +1070,32 @@ function updateProjectBriefState(projectId, updates = {}) {
   }
 }
 
+export function updateBriefStatus(projectId, status, payload = {}) {
+  const normalizedProjectId = sanitizeProjectId(projectId);
+
+  if (!normalizedProjectId) {
+    throw new Error('projectId is required');
+  }
+
+  const updates = { ...(payload || {}) };
+
+  if (typeof status === 'string' && status.trim()) {
+    updates.briefStatus = status.trim();
+  }
+
+  const saved = updateProjectBriefState(normalizedProjectId, updates);
+
+  if (saved) {
+    log('project.brief.status.updated', {
+      projectId: saved.id,
+      status: saved.briefStatus,
+      progress: saved.briefProgress ?? null
+    }).catch(() => {});
+  }
+
+  return saved;
+}
+
 async function persistBriefArtifacts(session, briefId, summary, details) {
   const completedAt = details.completedAt;
   const briefFilePath = resolveBriefFilePath(session.chatId);
@@ -2004,7 +2030,7 @@ function formatContact(contact) {
   };
 }
 
-async function sendProjectInvite(_projectId, _chatId, _options = {}) {
+export async function sendProjectInvite(_projectId, _chatId, _options = {}) {
   const projectId = sanitizeProjectId(_projectId);
   const chatIdInput = _chatId ?? '';
   const chatIdValue = typeof chatIdInput === 'string' ? chatIdInput.trim() : chatIdInput;
