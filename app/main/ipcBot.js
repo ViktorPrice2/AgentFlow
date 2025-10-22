@@ -13,6 +13,7 @@ const __dirname = path.dirname(__filename);
 void __dirname;
 const { ipcMain } = electron;
 let entityStore;
+let entityStoreConfig = null;
 let keytar = null;
 let keytarUnavailable = false;
 
@@ -25,9 +26,36 @@ try {
   console.warn('[telegram] keytar module is unavailable; falling back to file storage', error?.message || error);
 }
 
+function resolveEntityStoreOptions() {
+  if (depsRef?.dbPath) {
+    return { dbPath: depsRef.dbPath };
+  }
+
+  if (depsRef?.appDataDir) {
+    return { dbPath: path.join(depsRef.appDataDir, 'app.db') };
+  }
+
+  return null;
+}
+
 function getEntityStore() {
-  if (!entityStore) {
+  const options = resolveEntityStoreOptions();
+
+  if (entityStore) {
+    if (options && (!entityStoreConfig || entityStoreConfig.dbPath !== options.dbPath)) {
+      entityStore = createEntityStore(options);
+      entityStoreConfig = options;
+    }
+
+    return entityStore;
+  }
+
+  if (options) {
+    entityStore = createEntityStore(options);
+    entityStoreConfig = options;
+  } else {
     entityStore = createEntityStore();
+    entityStoreConfig = null;
   }
 
   return entityStore;
