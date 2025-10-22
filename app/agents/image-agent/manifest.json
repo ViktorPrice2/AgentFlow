@@ -1,0 +1,15 @@
+{
+  "name": "image-agent",
+  "version": "2.0.0",
+  "description": "Generates marketing images",
+  "type": "image",
+  "defaultParams": {
+    "width": 1024,
+    "height": 1024
+  },
+  "models": ["stable-diffusion-xl"],
+  "mockOutput": {
+    "imagePath": "/mock/image.png"
+  },
+  "entry": "index.ts"
+}
