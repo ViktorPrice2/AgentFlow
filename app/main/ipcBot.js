@@ -532,6 +532,59 @@ function sanitizeChatId(chatId) {
   return normalized;
 }
 
+function normalizeChatAlias(value) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+
+  return String(value)
+    .trim()
+    .replace(/^@+/, '')
+    .toLowerCase();
+}
+
+function isNumericChatId(value) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value);
+  }
+
+  if (typeof value === 'string') {
+    return /^-?\d+$/.test(value.trim());
+  }
+
+  return false;
+}
+
+function findStoredContactByAlias(store, chatId) {
+  const alias = normalizeChatAlias(chatId);
+
+  if (!alias) {
+    return { contact: null, alias };
+  }
+
+  try {
+    const contacts = store.listTelegramContacts() || [];
+    const match = contacts.find((candidate) => {
+      if (!candidate) {
+        return false;
+      }
+
+      const candidateChatAlias = normalizeChatAlias(candidate.chatId);
+      if (candidateChatAlias && candidateChatAlias === alias) {
+        return true;
+      }
+
+      const candidateLabelAlias = normalizeChatAlias(candidate.label);
+      return Boolean(candidateLabelAlias) && candidateLabelAlias === alias;
+    });
+
+    return { contact: match || null, alias };
+  } catch (error) {
+    log('telegram.contacts.lookup_error', { alias, error: error.message }, 'error').catch(() => {});
+    return { contact: null, alias };
+  }
+}
+
 function sanitizeProjectId(projectId) {
   return String(projectId ?? '')
     .trim()
@@ -602,6 +655,76 @@ function formatQuestionPrompt(question, index, total) {
   return `${header}:\n${question.question}`;
 }
 
+function deriveContactLabelFromContext(ctx) {
+  const username = ctx?.from?.username;
+
+  if (typeof username === 'string' && username.trim()) {
+    const alias = normalizeChatAlias(username);
+
+    if (alias && !isNumericChatId(alias)) {
+      return `@${alias}`;
+    }
+  }
+
+  const firstName = typeof ctx?.from?.first_name === 'string' ? ctx.from.first_name.trim() : '';
+  const lastName = typeof ctx?.from?.last_name === 'string' ? ctx.from.last_name.trim() : '';
+  const fullName = `${firstName} ${lastName}`.trim();
+
+  if (fullName) {
+    return fullName;
+  }
+
+  const title = typeof ctx?.chat?.title === 'string' ? ctx.chat.title.trim() : '';
+
+  return title || null;
+}
+
+function syncTelegramContactFromSession(session, ctx) {
+  const chatId = ctx?.chat?.id ?? session?.chatId ?? null;
+
+  if (chatId === undefined || chatId === null) {
+    return;
+  }
+
+  try {
+    const store = getEntityStore();
+    const existing = store.getTelegramContactByChatId(chatId) || null;
+    const now = new Date().toISOString();
+    const existingStatus = (existing?.status || '').toLowerCase();
+    let nextStatus = session?.completedAt ? 'completed' : 'collecting';
+
+    if (nextStatus === 'collecting') {
+      if (existingStatus === 'completed') {
+        nextStatus = 'completed';
+      } else if (existingStatus && !['unknown', 'invited', 'collecting'].includes(existingStatus)) {
+        nextStatus = existing?.status || 'collecting';
+      }
+    }
+
+    const payload = {
+      chatId,
+      projectId: session?.projectId ?? existing?.projectId ?? null,
+      status: nextStatus,
+      lastContactAt: now
+    };
+
+    const derivedLabel = deriveContactLabelFromContext(ctx);
+
+    if (derivedLabel) {
+      const existingAlias = normalizeChatAlias(existing?.label);
+      const derivedAlias = normalizeChatAlias(derivedLabel);
+
+      if (!existingAlias || existingAlias !== derivedAlias) {
+        payload.label = derivedLabel;
+      }
+    }
+
+    store.saveTelegramContact(payload);
+  } catch (error) {
+    log('telegram.contacts.sync_error', { chatId: session?.chatId ?? null, error: error.message }, 'error').catch(() => {});
+  }
+}
+
 async function persistSessionMeta(session, ctx) {
   try {
     const metaPath = resolveMetaFilePath(session.chatId);
@@ -634,6 +757,7 @@ async function persistSessionMeta(session, ctx) {
 
     await writeJsonFile(metaPath, payload);
     session.metaPath = metaPath;
+    syncTelegramContactFromSession(session, ctx);
   } catch (error) {
     await log('session.meta.error', { error: error.message, chatId: session.chatId }, 'error');
   }
@@ -1690,7 +1814,8 @@ function formatContact(contact) {
 
 async function sendProjectInvite(_projectId, _chatId, _options = {}) {
   const projectId = sanitizeProjectId(_projectId);
-  const chatIdRaw = _chatId ?? '';
+  const chatIdInput = _chatId ?? '';
+  const chatIdValue = typeof chatIdInput === 'string' ? chatIdInput.trim() : chatIdInput;
   const options = _options || {};
 
   if (!projectId) {
@@ -1699,7 +1824,7 @@ async function sendProjectInvite(_projectId, _chatId, _options = {}) {
     throw error;
   }
 
-  if (!chatIdRaw) {
+  if (!chatIdValue) {
     const error = new Error('chatId is required');
     error.code = 'CHAT_ID_REQUIRED';
     throw error;
@@ -1767,8 +1892,21 @@ async function sendProjectInvite(_projectId, _chatId, _options = {}) {
     options.message ||
     `Здравствуйте! Чтобы заполнить бриф для проекта "${projectName}", перейдите по ссылке ${inviteLink} и отправьте команду ${command}.`;
 
-  const numericChatId = Number(chatIdRaw);
-  const targetChatId = Number.isFinite(numericChatId) && !Number.isNaN(numericChatId) ? numericChatId : chatIdRaw;
+  let aliasLookup = { contact: null, alias: '' };
+
+  if (!isNumericChatId(chatIdValue)) {
+    aliasLookup = findStoredContactByAlias(store, chatIdValue);
+  } else {
+    aliasLookup = { contact: null, alias: normalizeChatAlias(chatIdValue) };
+  }
+
+  let targetChatId = aliasLookup.contact?.chatId ?? chatIdValue;
+
+  if (isNumericChatId(targetChatId)) {
+    targetChatId = String(targetChatId).trim();
+  }
+
+  const existingContact = aliasLookup.contact || store.getTelegramContactByChatId(targetChatId) || null;
 
   try {
     await bot.telegram.sendMessage(targetChatId, message);
@@ -1777,8 +1915,10 @@ async function sendProjectInvite(_projectId, _chatId, _options = {}) {
       'telegram.invite.send_error',
       {
         projectId,
-        chatId: sanitizeChatId(chatIdRaw),
-        rawChatId: chatIdRaw,
+        chatId: sanitizeChatId(targetChatId),
+        rawChatId: chatIdValue,
+        resolvedChatId: targetChatId,
+        alias: aliasLookup.alias || null,
         error: error.message
       },
       'error'
@@ -1797,31 +1937,63 @@ async function sendProjectInvite(_projectId, _chatId, _options = {}) {
   }
 
   const now = new Date().toISOString();
-  const sanitizedChatId = sanitizeChatId(chatIdRaw);
+  const sanitizedTargetChatId = sanitizeChatId(targetChatId);
+  const inputString = typeof chatIdValue === 'string' ? chatIdValue : String(chatIdValue);
+  const existingStatus = (existingContact?.status || '').toLowerCase();
 
-  store.saveTelegramContact({
-    chatId: chatIdRaw,
+  const contactPayload = {
+    chatId: targetChatId,
     projectId,
-    status: 'invited',
     lastContactAt: now
-  });
+  };
+
+  if (!existingContact || ['unknown', 'invited'].includes(existingStatus)) {
+    contactPayload.status = 'invited';
+  }
+
+  if (inputString) {
+    const existingAlias = normalizeChatAlias(existingContact?.label);
+    const inputAlias = normalizeChatAlias(inputString);
+
+    if (!existingContact?.label || existingAlias === inputAlias) {
+      contactPayload.label = inputString;
+    }
+  }
+
+  store.saveTelegramContact(contactPayload);
+
+  const previousContactStatus = (project?.tgContactStatus || '').toLowerCase();
+  const resolvedContactStatus = (existingContact?.status || '').toLowerCase();
+  let nextContactStatus;
+
+  if (['collecting', 'completed'].includes(resolvedContactStatus)) {
+    nextContactStatus = existingContact?.status || 'invited';
+  } else if (['collecting', 'completed'].includes(previousContactStatus)) {
+    nextContactStatus = project.tgContactStatus;
+  } else {
+    nextContactStatus = 'invited';
+  }
 
   updateProjectBriefState(projectId, {
     tgLastInvitation: now,
-    tgContactStatus: 'invited'
+    tgContactStatus: nextContactStatus
   });
 
   await log('telegram.invite.sent', {
     projectId,
-    chatId: sanitizedChatId,
-    rawChatId: chatIdRaw,
+    chatId: sanitizedTargetChatId,
+    rawChatId: chatIdValue,
+    resolvedChatId: targetChatId,
+    alias: aliasLookup.alias || null,
     link: inviteLink
   });
 
   return {
     projectId,
-    chatId: sanitizedChatId,
-    rawChatId: chatIdRaw,
+    chatId: sanitizedTargetChatId,
+    rawChatId: chatIdValue,
+    resolvedChatId: targetChatId,
+    alias: aliasLookup.alias || null,
     sentAt: now,
     link: inviteLink,
     message

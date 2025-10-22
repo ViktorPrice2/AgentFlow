@@ -921,13 +921,12 @@ function App() {
 
   const sections = useMemo(() => {
     const activeProject = projects.find((item) => item.id === selectedProjectId) || null;
-    const briefStatus = (activeProject?.briefStatus || '').toLowerCase();
 
     return SECTION_CONFIG.map((section) => {
       const entry = { id: section.id, label: t(section.labelKey) };
 
       if (section.id === 'brief') {
-        entry.disabled = !['review', 'approved'].includes(briefStatus);
+        entry.disabled = !activeProject;
       }
 
       return entry;
