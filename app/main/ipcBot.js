@@ -2,7 +2,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import electron from 'electron';
-import keytar from 'keytar';
 import { Telegraf } from 'telegraf';
 import { bootstrap as bootstrapGlobalAgent } from 'global-agent';
 import { createBriefSurvey, summarizeAnswers, buildExecutionPlan } from '../services/tg-bot/survey.js';
@@ -14,6 +13,17 @@ const __dirname = path.dirname(__filename);
 void __dirname;
 const { ipcMain } = electron;
 let entityStore;
+let keytar = null;
+let keytarUnavailable = false;
+
+try {
+  const keytarModule = await import('keytar');
+  keytar = keytarModule?.default ?? keytarModule ?? null;
+  keytarUnavailable = !keytar;
+} catch (error) {
+  keytarUnavailable = true;
+  console.warn('[telegram] keytar module is unavailable; falling back to file storage', error?.message || error);
+}
 
 function getEntityStore() {
   if (!entityStore) {
@@ -89,7 +99,6 @@ let loggerRef = createLoggerFacade(console);
 let logFilePath = null;
 let configFilePath = null;
 let networkConfigPath = null;
-let keytarUnavailable = false;
 let handlersRegistered = false;
 let botInstance = null;
 let botLaunchPromise = null;
@@ -1506,30 +1515,16 @@ async function recordFollowUpAnswer(session, answer, ctx) {
   }
 }
 
-async function upsertBriefRecord({ id, projectId, summary, details, createdAt }) {
-  const db = getDbConnection();
-  const payload = {
+function upsertBriefRecord({ id, projectId, summary, details, createdAt }) {
+  const store = getEntityStore();
+
+  return store.saveBrief({
     id,
     projectId,
     summary,
-    details: JSON.stringify(details),
-    createdAt,
-    updatedAt: new Date().toISOString()
-  };
-
-  try {
-    db.prepare(
-      `INSERT INTO Briefs (id, projectId, summary, details, createdAt, updatedAt)
-       VALUES (@id, @projectId, @summary, @details, @createdAt, @updatedAt)
-       ON CONFLICT(id) DO UPDATE SET
-         projectId = excluded.projectId,
-         summary = excluded.summary,
-         details = excluded.details,
-         updatedAt = excluded.updatedAt`
-    ).run(payload);
-  } finally {
-    db.close();
-  }
+    details,
+    createdAt
+  });
 }
 
 function emitBriefUpdate(projectId, briefId) {
@@ -2197,47 +2192,16 @@ async function fetchLatestBrief(projectId) {
     throw new Error('projectId is required');
   }
 
-  const db = getDbConnection({ readonly: true });
+  const store = getEntityStore();
 
   try {
-    const statement = db.prepare(
-      `SELECT id, projectId, summary, details, createdAt, updatedAt
-         FROM Briefs
-        WHERE projectId = ?
-        ORDER BY datetime(createdAt) DESC
-        LIMIT 1`
-    );
-
-    const row = statement.get(projectId);
-
-    if (!row) {
-      return null;
-    }
-
-    let details = row.details;
-
-    if (typeof details === 'string' && details.length) {
-      try {
-        details = JSON.parse(details);
-      } catch (error) {
-        details = {};
-        getLogger().warn('[telegram] Failed to parse brief details JSON', {
-          message: error?.message,
-          projectId
-        });
-      }
-    }
-
-    return {
-      id: row.id,
-      projectId: row.projectId,
-      summary: row.summary,
-      details: details && typeof details === 'object' ? details : {},
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt
-    };
-  } finally {
-    db.close();
+    return store.getLatestBrief(projectId);
+  } catch (error) {
+    getLogger().warn('[telegram] Failed to load latest brief from entity store', {
+      message: error?.message,
+      projectId
+    });
+    throw error;
   }
 }
 
