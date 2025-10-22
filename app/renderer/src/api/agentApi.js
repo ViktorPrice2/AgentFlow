@@ -128,6 +128,29 @@ function sanitizeFallbackChatId(chatId) {
   return normalized || 'chat';
 }
 
+function normalizeFallbackAlias(value) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+
+  return String(value)
+    .trim()
+    .replace(/^@+/, '')
+    .toLowerCase();
+}
+
+function isNumericFallbackChatId(value) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value);
+  }
+
+  if (typeof value === 'string') {
+    return /^-?\d+$/.test(value.trim());
+  }
+
+  return false;
+}
+
 function normalizeFallbackChannelList(value) {
   if (Array.isArray(value)) {
     return value
@@ -1289,16 +1312,55 @@ export async function saveTelegramContact(contact) {
   }
 
   const now = new Date().toISOString();
-  const existingIndex = fallbackTelegramContacts.findIndex((item) => item.chatId === contact.chatId);
+  let existingIndex = fallbackTelegramContacts.findIndex((item) => item.chatId === contact.chatId);
+
+  if (existingIndex < 0) {
+    const aliasCandidates = [];
+    const chatAlias = normalizeFallbackAlias(contact.chatId);
+    const labelAlias = normalizeFallbackAlias(contact.label);
+
+    if (chatAlias && !isNumericFallbackChatId(chatAlias)) {
+      aliasCandidates.push(chatAlias);
+    }
+
+    if (labelAlias && !isNumericFallbackChatId(labelAlias) && !aliasCandidates.includes(labelAlias)) {
+      aliasCandidates.push(labelAlias);
+    }
+
+    if (aliasCandidates.length > 0) {
+      existingIndex = fallbackTelegramContacts.findIndex((candidate) => {
+        const candidateChatAlias = normalizeFallbackAlias(candidate.chatId);
+        const candidateLabelAlias = normalizeFallbackAlias(candidate.label);
+
+        return aliasCandidates.some((alias) => {
+          if (!alias) {
+            return false;
+          }
+
+          return (
+            (!isNumericFallbackChatId(candidateChatAlias) && candidateChatAlias === alias) ||
+            (!isNumericFallbackChatId(candidateLabelAlias) && candidateLabelAlias === alias)
+          );
+        });
+      });
+    }
+  }
+
   const previous = existingIndex >= 0 ? fallbackTelegramContacts[existingIndex] : null;
   const id = contact.id || previous?.id || `contact-${Date.now()}`;
+  const chatIdValue = contact.chatId || previous?.chatId;
+
+  if (!chatIdValue) {
+    throw new Error('chatId is required');
+  }
 
   const record = {
     id,
-    chatId: contact.chatId,
-    label: contact.label || previous?.label || null,
+    chatId: chatIdValue,
+    label: contact.label === undefined ? previous?.label ?? null : contact.label || null,
     status: contact.status || previous?.status || 'unknown',
-    lastContactAt: contact.lastContactAt || previous?.lastContactAt || null,
+    lastContactAt:
+      contact.lastContactAt === undefined ? previous?.lastContactAt ?? null : contact.lastContactAt || null,
     projectId: contact.projectId === undefined ? previous?.projectId ?? null : contact.projectId ?? null,
     createdAt: previous?.createdAt || now,
     updatedAt: now
@@ -1335,12 +1397,79 @@ export async function sendTelegramInvite(projectId, chatId) {
   }
 
   const now = new Date().toISOString();
-  const link = `https://t.me/fallback-bot?start=project_${encodeURIComponent(projectId)}`;
-  const sanitizedChatId = sanitizeFallbackChatId(chatId);
+  const normalizedChatId = typeof chatId === 'string' ? chatId.trim() : chatId;
+  const sanitizedChatId = sanitizeFallbackChatId(normalizedChatId ?? chatId);
+  const deeplinkBase = fallbackBotState.deeplinkBase || fallbackBotStatus.deeplinkBase || 'https://t.me/fallback-bot';
+  const startPayload = `project_${encodeURIComponent(projectId)}`;
+  let inviteLink = deeplinkBase;
 
-  await saveTelegramContact({ chatId, projectId, status: 'invited', lastContactAt: now }).catch(() => {});
+  try {
+    const baseUrl = deeplinkBase.startsWith('http') ? deeplinkBase : `https://t.me/${deeplinkBase.replace(/^@/, '')}`;
+    const url = new URL(baseUrl);
+    url.searchParams.set('start', startPayload);
+    inviteLink = url.toString();
+  } catch {
+    const separator = deeplinkBase.includes('?') ? '&' : '?';
+    inviteLink = `${deeplinkBase}${separator}start=${startPayload}`;
+  }
 
+  const botUsername = fallbackBotState.username || fallbackBotStatus.username;
+  const protocolLink = botUsername
+    ? `tg://resolve?domain=${encodeURIComponent(botUsername)}&start=${encodeURIComponent(startPayload)}`
+    : null;
+  const alias = normalizeFallbackAlias(chatId);
+  const isNumeric = isNumericFallbackChatId(normalizedChatId);
   const project = fallbackProjects.find((item) => item.id === projectId);
+  const baseResult = {
+    ok: true,
+    projectId,
+    chatId: sanitizedChatId,
+    rawChatId: chatId,
+    resolvedChatId: normalizedChatId,
+    displayChatId: normalizedChatId !== undefined && normalizedChatId !== null ? String(normalizedChatId) : '',
+    link: inviteLink,
+    protocolLink,
+    webLink: null
+  };
+
+  if (!isNumeric) {
+    await saveTelegramContact({ chatId, projectId, status: 'awaiting_start' }).catch(() => {});
+
+    if (project) {
+      project.tgLastInvitation = now;
+      project.tgContactStatus = 'awaiting_start';
+      project.updatedAt = now;
+    }
+
+    fallbackBotLog.push({
+      ts: now,
+      level: 'info',
+      event: 'telegram.invite.awaiting_start',
+      data: {
+        projectId,
+        chatId: sanitizedChatId,
+        rawChatId: chatId,
+        resolvedChatId: normalizedChatId,
+        alias,
+        link: inviteLink,
+        protocolLink,
+        payload: { reason: 'missing_numeric_chat_id' }
+      }
+    });
+
+    return {
+      ...baseResult,
+      status: 'awaiting_start',
+      reason: 'missing_numeric_chat_id',
+      sentAt: null,
+      requiresManualDelivery: true,
+      message:
+        `Fallback invite: share ${inviteLink} and ask the contact to run /start project=${projectId} before the bot can reply.`
+    };
+  }
+
+  await saveTelegramContact({ chatId: normalizedChatId, projectId, status: 'invited', lastContactAt: now }).catch(() => {});
+
   if (project) {
     project.tgLastInvitation = now;
     project.tgContactStatus = 'invited';
@@ -1351,18 +1480,24 @@ export async function sendTelegramInvite(projectId, chatId) {
     ts: now,
     level: 'info',
     event: 'telegram.invite.sent',
-    data: { projectId, chatId: sanitizedChatId, rawChatId: chatId, link }
+    data: {
+      projectId,
+      chatId: sanitizedChatId,
+      rawChatId: chatId,
+      resolvedChatId: normalizedChatId,
+      alias,
+      link: inviteLink,
+      protocolLink
+    }
   });
 
   return {
-    ok: true,
-    projectId,
-    chatId: sanitizedChatId,
-    rawChatId: chatId,
+    ...baseResult,
+    status: 'sent',
     sentAt: now,
-    link,
+    contactStatus: 'invited',
     message:
-      `Fallback invite: open ${link} and run /start project=${projectId} to begin the survey.`
+      `Fallback invite: open ${inviteLink} and run /start project=${projectId} to begin the survey.`
   };
 }
 

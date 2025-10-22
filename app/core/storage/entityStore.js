@@ -34,6 +34,29 @@ function serializeJson(value) {
   }
 }
 
+function normalizeChatAlias(value) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+
+  return String(value)
+    .trim()
+    .replace(/^@+/, '')
+    .toLowerCase();
+}
+
+function isNumericChatId(value) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value);
+  }
+
+  if (typeof value === 'string') {
+    return /^-?\d+$/.test(value.trim());
+  }
+
+  return false;
+}
+
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -861,21 +884,60 @@ export function createEntityStore(options = {}) {
     const now = new Date().toISOString();
 
     try {
-      const existing = contact.id
-        ? db
+      let existing = null;
+
+      if (contact.id) {
+        existing = db
+          .prepare(
+            `SELECT id, chatId, label, status, lastContactAt, projectId, createdAt, updatedAt
+               FROM TelegramContacts
+              WHERE id = ?`
+          )
+          .get(contact.id);
+      } else if (contact.chatId) {
+        existing = db
+          .prepare(
+            `SELECT id, chatId, label, status, lastContactAt, projectId, createdAt, updatedAt
+               FROM TelegramContacts
+              WHERE chatId = ?`
+          )
+          .get(contact.chatId);
+      }
+
+      if (!existing) {
+        const aliasCandidates = [];
+        const chatAlias = normalizeChatAlias(contact.chatId);
+        const labelAlias = normalizeChatAlias(contact.label);
+
+        if (chatAlias && !isNumericChatId(chatAlias)) {
+          aliasCandidates.push(chatAlias);
+        }
+
+        if (labelAlias && !isNumericChatId(labelAlias) && !aliasCandidates.includes(labelAlias)) {
+          aliasCandidates.push(labelAlias);
+        }
+
+        for (const alias of aliasCandidates) {
+          if (!alias) {
+            continue;
+          }
+
+          const row = db
             .prepare(
               `SELECT id, chatId, label, status, lastContactAt, projectId, createdAt, updatedAt
                  FROM TelegramContacts
-                WHERE id = ?`
+                WHERE lower(replace(chatId, '@', '')) = ?
+                   OR lower(replace(label, '@', '')) = ?
+                LIMIT 1`
             )
-            .get(contact.id)
-        : db
-            .prepare(
-              `SELECT id, chatId, label, status, lastContactAt, projectId, createdAt, updatedAt
-                 FROM TelegramContacts
-                WHERE chatId = ?`
-            )
-            .get(contact.chatId);
+            .get(alias, alias);
+
+          if (row) {
+            existing = row;
+            break;
+          }
+        }
+      }
 
       const id = existing?.id || contact.id || randomUUID();
       const chatId = contact.chatId || existing?.chatId;
