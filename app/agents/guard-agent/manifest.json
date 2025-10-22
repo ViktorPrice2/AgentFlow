@@ -1,0 +1,7 @@
+{
+  "name": "guard-agent",
+  "version": "2.0.0",
+  "description": "Validates generated text against compliance rules",
+  "type": "guard",
+  "entry": "index.ts"
+}

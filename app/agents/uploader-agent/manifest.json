@@ -1,0 +1,7 @@
+{
+  "name": "uploader-agent",
+  "version": "2.0.0",
+  "description": "Collects artifacts and publishes them to output directory",
+  "type": "uploader",
+  "entry": "index.ts"
+}

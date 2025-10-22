@@ -1,0 +1,7 @@
+{
+  "name": "diagnostic-agent",
+  "version": "2.0.0",
+  "description": "Summarizes run diagnostics and writes reports",
+  "type": "diagnostic",
+  "entry": "index.ts"
+}

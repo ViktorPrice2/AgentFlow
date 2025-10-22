@@ -1,0 +1,7 @@
+{
+  "name": "human-gate-agent",
+  "version": "2.0.0",
+  "description": "Requests human feedback when automation fails",
+  "type": "human_gate",
+  "entry": "index.ts"
+}
