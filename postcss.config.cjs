@@ -9,23 +9,23 @@ const SEARCH_PATHS = [
 
 const plugins = {};
 
-function resolveTailwind() {
+function hasModule(name) {
   try {
-    require.resolve('tailwindcss', { paths: SEARCH_PATHS });
+    require.resolve(name, { paths: SEARCH_PATHS });
     return true;
   } catch (error) {
     if (process.env.AGENTFLOW_DEBUG_POSTCSS === '1') {
-      console.warn('[agentflow] tailwindcss not found, skipping PostCSS plugin.');
+      console.warn(`[agentflow] ${name} not found, skipping PostCSS plugin.`);
       console.warn(error.message);
     }
     return false;
   }
 }
 
-if (resolveTailwind()) {
-  plugins.tailwindcss = {};
-}
-
-plugins.autoprefixer = {};
+['tailwindcss', 'autoprefixer'].forEach((pluginName) => {
+  if (hasModule(pluginName)) {
+    plugins[pluginName] = {};
+  }
+});
 
 module.exports = { plugins };

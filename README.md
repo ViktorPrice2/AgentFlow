@@ -30,6 +30,8 @@ AgentFlow v2 is a modular Electron desktop application that helps marketers plan
    ```bash
    npm run dev
    ```
+   This starts both the Electron main process and the Vite renderer.
+
 4. **Execute a mock campaign**
    ```bash
    npm run orchestrate "Spring launch" text,image,video
@@ -38,6 +40,17 @@ AgentFlow v2 is a modular Electron desktop application that helps marketers plan
    ```bash
    npm run test
    ```
+
+### Troubleshooting startup issues
+
+- **"Failed to load PostCSS plugin" errors** – Run `npm install` from the
+  repository root (`AgentFlow/`). This installs both `tailwindcss` and
+  `autoprefixer` which are required by the shared `postcss.config.cjs`. If you
+  previously ran `npm install` from `app/` or `app/renderer/`, remove those
+  `node_modules` folders and reinstall from the root before retrying `npm run dev`.
+- **Electron window does not appear** – Ensure the `npm run dev` command stays
+  running; closing the terminal stops the Electron process. The renderer UI will
+  be available at `http://localhost:5173/` while the command is active.
 
 ## Project Layout
 
