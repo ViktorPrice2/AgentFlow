@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { useI18n } from '../i18n/useI18n.jsx';
 
-export default function TelegramInviteModal({ open, invite, onClose }) {
+export default function TelegramInviteModal({
+  open = false,
+  invite = null,
+  onClose = () => {}
+}) {
   const { t } = useI18n();
   const [copyState, setCopyState] = useState(null);
 
@@ -188,10 +192,4 @@ TelegramInviteModal.propTypes = {
     chatId: PropTypes.oneOfType([PropTypes.string, PropTypes.number])
   }),
   onClose: PropTypes.func
-};
-
-TelegramInviteModal.defaultProps = {
-  open: false,
-  invite: null,
-  onClose: () => {}
 };
