@@ -160,7 +160,8 @@ const createTelegramDependencies = () => {
     getDb,
     logger: createTelegramLogger(),
     enqueueRendererEvent: (channel, payload) => enqueueRendererEvent(channel, payload),
-    getMainWindow: () => mainWindowInstance
+    getMainWindow: () => mainWindowInstance,
+    providerManager
   };
 };
 

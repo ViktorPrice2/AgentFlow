@@ -7,6 +7,7 @@ import { Telegraf } from 'telegraf';
 import { bootstrap as bootstrapGlobalAgent } from 'global-agent';
 import { createBriefSurvey, summarizeAnswers, buildExecutionPlan } from '../services/tg-bot/survey.js';
 import { createEntityStore } from '../core/storage/entityStore.js';
+import { execute as runBriefMasterAgent } from '../core/agents/BriefMaster/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -100,6 +101,7 @@ let networkConfig = {
   httpProxy: ''
 };
 const sessions = new Map();
+const chatBindings = new Map();
 const SURVEY_MIN_LENGTH = 5;
 const LOG_TAIL_LIMIT_MAX = 200;
 
@@ -149,6 +151,7 @@ function normalizeDeps(deps) {
     logger,
     enqueueRendererEvent,
     getMainWindow,
+    providerManager,
     ...rest
   } = deps;
 
@@ -166,6 +169,7 @@ function normalizeDeps(deps) {
     logger: createLoggerFacade(logger),
     enqueueRendererEvent: typeof enqueueRendererEvent === 'function' ? enqueueRendererEvent : null,
     getMainWindow: typeof getMainWindow === 'function' ? getMainWindow : () => mainWindowRef,
+    providerManager: providerManager || null,
     ...rest
   };
 }
@@ -719,6 +723,131 @@ function getSession(chatId) {
   return sessions.get(chatId);
 }
 
+function updateChatBinding(chatId, projectId, options = {}) {
+  if (chatId === undefined || chatId === null) {
+    return;
+  }
+
+  if (!projectId) {
+    chatBindings.delete(chatId);
+    return;
+  }
+
+  const source = options.source || 'session';
+  chatBindings.set(chatId, { projectId, updatedAt: new Date().toISOString(), source });
+}
+
+function getChatBinding(chatId) {
+  if (chatId === undefined || chatId === null) {
+    return null;
+  }
+
+  return chatBindings.get(chatId) || null;
+}
+
+async function readSessionMeta(chatId) {
+  if (chatId === undefined || chatId === null) {
+    return null;
+  }
+
+  const metaPath = resolveMetaFilePath(chatId);
+
+  try {
+    const raw = await fs.readFile(metaPath, 'utf8');
+
+    if (!raw) {
+      return null;
+    }
+
+    return JSON.parse(raw);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return null;
+    }
+
+    await log('session.meta.read_error', { chatId, error: error.message }, 'warn').catch(() => {});
+    return null;
+  }
+}
+
+async function restoreChatBinding(chatId) {
+  if (chatId === undefined || chatId === null) {
+    return null;
+  }
+
+  const existing = getChatBinding(chatId);
+  if (existing?.projectId) {
+    return existing;
+  }
+
+  const store = getEntityStore();
+  const candidates = [];
+
+  if (typeof chatId === 'number') {
+    candidates.push(String(chatId));
+  } else if (typeof chatId === 'string') {
+    candidates.push(chatId);
+    if (/^-?\d+$/.test(chatId)) {
+      candidates.push(String(Number.parseInt(chatId, 10)));
+    }
+  }
+
+  try {
+    for (const candidate of new Set(candidates)) {
+      if (!candidate) {
+        continue;
+      }
+
+      const contact = store.getTelegramContactByChatId(candidate);
+
+      if (contact?.projectId) {
+        updateChatBinding(chatId, contact.projectId, { source: 'contact' });
+        await log('chat.binding.restore.contact', {
+          chatId,
+          projectId: contact.projectId
+        }).catch(() => {});
+        return getChatBinding(chatId);
+      }
+    }
+  } catch (error) {
+    await log('chat.binding.restore.contact_error', { chatId, error: error.message }, 'warn').catch(() => {});
+  }
+
+  try {
+    const alias = normalizeChatAlias(chatId);
+
+    if (alias) {
+      const contacts = store.listTelegramContacts() || [];
+      const match = contacts.find((entry) => {
+        const chatAlias = normalizeChatAlias(entry.chatId);
+        const labelAlias = normalizeChatAlias(entry.label);
+        return chatAlias === alias || (labelAlias && labelAlias === alias);
+      });
+
+      if (match?.projectId) {
+        updateChatBinding(chatId, match.projectId, { source: 'contact-alias' });
+        await log('chat.binding.restore.contact_alias', {
+          chatId,
+          projectId: match.projectId
+        }).catch(() => {});
+        return getChatBinding(chatId);
+      }
+    }
+  } catch (error) {
+    await log('chat.binding.restore.alias_error', { chatId, error: error.message }, 'warn').catch(() => {});
+  }
+
+  const meta = await readSessionMeta(chatId);
+
+  if (meta?.projectId) {
+    updateChatBinding(chatId, meta.projectId, { source: 'meta' });
+    await log('chat.binding.restore.meta', { chatId, projectId: meta.projectId }).catch(() => {});
+    return getChatBinding(chatId);
+  }
+
+  return null;
+}
+
 function formatQuestionPrompt(question, index, total) {
   const header = `Вопрос ${index + 1}/${total}`;
   if (question.hint) {
@@ -810,6 +939,13 @@ async function persistSessionMeta(session, ctx) {
       answersCount: Object.keys(session.answers ?? {}).length,
       completedAt: session.completedAt ?? null,
       briefPath: session.briefPath ?? null,
+      mode: session.mode || 'survey',
+      finalized: Boolean(session.finalized),
+      followUpIndex: session.followUpIndex ?? 0,
+      followUpTotal: Array.isArray(session.followUps) ? session.followUps.length : 0,
+      followUpAnswersCount: session.followUpAnswers
+        ? Object.keys(session.followUpAnswers).length
+        : 0,
       user: ctx?.from
         ? {
             id: ctx.from.id ?? null,
@@ -845,11 +981,18 @@ function initializeSession(chatId, projectId, ctx) {
     if (projectChanged) {
       existing.answers = {};
       existing.stepIndex = 0;
+      existing.mode = 'survey';
+      existing.finalized = false;
+      existing.followUps = [];
+      existing.followUpIndex = 0;
+      existing.followUpAnswers = {};
+      existing.lastFollowUpSentAt = null;
     }
     if (!existing.createdAt) {
       existing.createdAt = now;
     }
     ensureSurveyDefinition(existing);
+    updateChatBinding(chatId, projectId);
     return existing;
   }
 
@@ -860,12 +1003,36 @@ function initializeSession(chatId, projectId, ctx) {
     survey: createBriefSurvey(),
     stepIndex: 0,
     answers: {},
-    lastQuestionSentAt: null
+    lastQuestionSentAt: null,
+    mode: 'survey',
+    finalized: false,
+    followUps: [],
+    followUpIndex: 0,
+    followUpAnswers: {},
+    lastFollowUpSentAt: null
   };
 
   ensureSurveyDefinition(session);
   sessions.set(chatId, session);
+  updateChatBinding(chatId, projectId);
   return session;
+}
+
+function resetSurveySession(session) {
+  if (!session) {
+    return;
+  }
+
+  ensureSurveyDefinition(session);
+  session.answers = {};
+  session.stepIndex = 0;
+  session.mode = 'survey';
+  session.finalized = false;
+  session.lastQuestionSentAt = null;
+  session.followUps = [];
+  session.followUpIndex = 0;
+  session.followUpAnswers = {};
+  session.lastFollowUpSentAt = null;
 }
 
 async function sendNextSurveyQuestion(session, ctx) {
@@ -925,6 +1092,417 @@ async function recordSurveyAnswer(session, answer, ctx) {
       chatId: session.chatId,
       projectId: session.projectId
     });
+  }
+}
+
+function getAdditionalQuestionKey(question, fallbackIndex = 0) {
+  if (!question || typeof question !== 'object') {
+    return `question-${fallbackIndex}`;
+  }
+
+  const candidateIds = [question.id, question.key, question.field, question.name];
+  for (const candidate of candidateIds) {
+    if (candidate === undefined || candidate === null) {
+      continue;
+    }
+    const normalized = String(candidate).trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  const candidatePrompts = [
+    question.prompt,
+    question.question,
+    question.title,
+    question.message,
+    question.label,
+    question.summary
+  ];
+  for (const candidate of candidatePrompts) {
+    if (typeof candidate !== 'string') {
+      continue;
+    }
+    const normalized = candidate.trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return `question-${fallbackIndex}`;
+}
+
+function findMatchingAdditionalQuestion(questions, candidate, fallbackIndex = 0) {
+  if (!Array.isArray(questions) || questions.length === 0) {
+    return null;
+  }
+
+  const targetKey = getAdditionalQuestionKey(candidate, fallbackIndex);
+  return (
+    questions.find((item, index) => getAdditionalQuestionKey(item, index) === targetKey) || null
+  );
+}
+
+function normalizeFollowUpAnswer(value) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+
+  return String(value).trim();
+}
+
+function mergeAdditionalQuestionLists(previous = [], next = []) {
+  const merged = next.map((item, index) => {
+    const existing = findMatchingAdditionalQuestion(previous, item, index);
+    const base = existing ? { ...existing } : {};
+    const result = { ...base, ...item };
+
+    const hasExplicitAnswer = Object.prototype.hasOwnProperty.call(item, 'answer');
+    const normalizedAnswer = hasExplicitAnswer
+      ? normalizeFollowUpAnswer(item.answer)
+      : typeof base.answer === 'string'
+        ? base.answer
+        : '';
+
+    result.answer = normalizedAnswer;
+
+    if (item.skipped === true) {
+      result.skipped = true;
+    } else if (item.skipped === false) {
+      result.skipped = false;
+    } else if (base.skipped) {
+      result.skipped = true;
+    } else {
+      result.skipped = false;
+    }
+
+    if (item.answerSource) {
+      result.answerSource = item.answerSource;
+    } else if (base.answerSource) {
+      result.answerSource = base.answerSource;
+    } else {
+      result.answerSource = null;
+    }
+
+    if (item.answeredAt) {
+      result.answeredAt = item.answeredAt;
+    } else if (hasExplicitAnswer && normalizedAnswer && normalizedAnswer !== base.answer) {
+      result.answeredAt = new Date().toISOString();
+    } else if (base.answeredAt) {
+      result.answeredAt = base.answeredAt;
+    } else {
+      result.answeredAt = null;
+    }
+
+    return result;
+  });
+
+  const nextKeys = new Set(merged.map((item, index) => getAdditionalQuestionKey(item, index)));
+
+  (previous || []).forEach((item, index) => {
+    const key = getAdditionalQuestionKey(item, index);
+    if (!nextKeys.has(key)) {
+      merged.push({ ...item });
+    }
+  });
+
+  return merged;
+}
+
+async function saveFollowUpAnswer(projectId, question, { answer, skipped = false, source = 'telegram' } = {}) {
+  if (!projectId || !question) {
+    return null;
+  }
+
+  const store = getEntityStore();
+  let projectRecord = null;
+
+  try {
+    projectRecord = store.getProjectById(projectId);
+  } catch (error) {
+    await log('followup.answer.project_lookup_error', { projectId, error: error.message }, 'warn').catch(() => {});
+    const lookupError = new Error('project_lookup_failed');
+    lookupError.code = 'project_lookup_failed';
+    throw lookupError;
+  }
+
+  if (!projectRecord) {
+    await log('followup.answer.project_missing', { projectId }, 'warn').catch(() => {});
+    const missingError = new Error('project_not_found');
+    missingError.code = 'project_not_found';
+    throw missingError;
+  }
+
+  const projectName = typeof projectRecord.name === 'string' ? projectRecord.name.trim() : '';
+
+  if (!projectName) {
+    await log('followup.answer.project_name_missing', { projectId }, 'warn').catch(() => {});
+    const nameError = new Error('project_missing_name');
+    nameError.code = 'project_missing_name';
+    throw nameError;
+  }
+
+  const previousDraft =
+    projectRecord?.presetDraft && typeof projectRecord.presetDraft === 'object'
+      ? projectRecord.presetDraft
+      : {};
+  const previousQuestions = Array.isArray(previousDraft.additionalQuestions)
+    ? previousDraft.additionalQuestions
+    : [];
+
+  const timestamp = new Date().toISOString();
+  const normalizedAnswer = skipped ? '' : normalizeFollowUpAnswer(answer);
+  const updatedQuestions = mergeAdditionalQuestionLists(previousQuestions, [
+    {
+      ...question,
+      answer: normalizedAnswer,
+      answeredAt: timestamp,
+      answerSource: source,
+      skipped: Boolean(skipped)
+    }
+  ]);
+
+  const updatedDraft = {
+    ...previousDraft,
+    additionalQuestions: updatedQuestions,
+    lastFollowUpAnswerAt: timestamp
+  };
+
+  const payload = {
+    id: projectId,
+    name: projectName,
+    presetDraft: updatedDraft
+  };
+
+  try {
+    const saved = store.saveProject(payload);
+    emitBriefStatusChange(saved);
+    await log('followup.answer.saved', {
+      projectId,
+      count: updatedQuestions.length,
+      skipped,
+      source
+    });
+    return saved?.presetDraft?.additionalQuestions || updatedQuestions;
+  } catch (error) {
+    await log('followup.answer.save_failed', { projectId, error: error.message }, 'error').catch(() => {});
+    throw error;
+  }
+}
+
+async function resumeStoredFollowUps(session, ctx) {
+  if (!session || session.mode === 'followup') {
+    return false;
+  }
+
+  const projectId = session.projectId;
+
+  if (!projectId) {
+    return false;
+  }
+
+  try {
+    const store = getEntityStore();
+    const projectRecord = store.getProjectById(projectId);
+    const presetDraft =
+      projectRecord?.presetDraft && typeof projectRecord.presetDraft === 'object'
+        ? projectRecord.presetDraft
+        : null;
+    const allQuestions = Array.isArray(presetDraft?.additionalQuestions)
+      ? presetDraft.additionalQuestions
+      : [];
+
+    if (allQuestions.length === 0) {
+      return false;
+    }
+
+    const pending = allQuestions
+      .filter((item) => item && typeof item === 'object')
+      .filter((item) => {
+        if (item.skipped === true) {
+          return false;
+        }
+
+        const normalizedAnswer = normalizeFollowUpAnswer(item.answer);
+        return !normalizedAnswer;
+      });
+
+    if (pending.length === 0) {
+      return false;
+    }
+
+    const prepared = pending.map((item) => {
+      const payload = { ...item };
+      delete payload.answer;
+      delete payload.answeredAt;
+      delete payload.answerSource;
+      delete payload.skipped;
+      return payload;
+    });
+
+    updateProjectBriefState(projectId, { tgContactStatus: 'followup' });
+    await startFollowUpSequence(session, ctx, prepared);
+    await persistSessionMeta(session, ctx);
+    await log('followup.resume.started', {
+      chatId: session.chatId,
+      projectId,
+      count: prepared.length
+    }).catch(() => {});
+    return true;
+  } catch (error) {
+    await log(
+      'followup.resume.error',
+      { chatId: session?.chatId ?? null, projectId: session?.projectId ?? null, error: error.message },
+      'error'
+    ).catch(() => {});
+    return false;
+  }
+}
+
+function resolveFollowUpPrompt(question, index, total) {
+  const base = question?.prompt || question?.question || question?.message || question?.title;
+  const label = base && typeof base === 'string' ? base.trim() : null;
+  const hint = question?.hint || question?.description;
+  const header = `Дополнительный вопрос ${index + 1}/${total}:`;
+  if (hint && typeof hint === 'string' && hint.trim()) {
+    return `${header}\n${label || 'Уточните детали'}\nПодсказка: ${hint.trim()}`;
+  }
+  return `${header}\n${label || 'Уточните детали'}`;
+}
+
+async function startFollowUpSequence(session, ctx, questions = []) {
+  if (!session || !Array.isArray(questions) || questions.length === 0) {
+    return false;
+  }
+
+  session.mode = 'followup';
+  session.followUps = questions;
+  session.followUpIndex = 0;
+  session.followUpAnswers = {};
+  session.lastFollowUpSentAt = null;
+
+  await log('followup.sequence.started', {
+    chatId: session.chatId,
+    projectId: session.projectId,
+    count: questions.length
+  });
+
+  const ending = questions.length === 1 ? '' : 'ов';
+  await ctx.reply(
+    `BriefMaster подготовил ${questions.length} дополнительный вопрос${ending}. Ответьте на них здесь — мы зададим их по очереди. Чтобы пропустить вопрос, отправьте /skip. Также можно открыть проект в AgentFlow (раздел «Проекты» → «Дополнительные вопросы») и заполнить ответы там.`
+  );
+
+  await askNextFollowUpQuestion(session, ctx);
+  return true;
+}
+
+async function askNextFollowUpQuestion(session, ctx) {
+  if (!session || !Array.isArray(session.followUps) || session.followUps.length === 0) {
+    await completeFollowUpSequence(session, ctx, { reason: 'no-questions' });
+    return;
+  }
+
+  const total = session.followUps.length;
+  const index = Math.min(session.followUpIndex, total - 1);
+
+  if (index >= total) {
+    await completeFollowUpSequence(session, ctx, { reason: 'exhausted' });
+    return;
+  }
+
+  const prompt = resolveFollowUpPrompt(session.followUps[index], index, total);
+
+  await ctx.reply(prompt);
+
+  session.lastFollowUpSentAt = new Date().toISOString();
+}
+
+async function completeFollowUpSequence(session, ctx, { reason = 'answers' } = {}) {
+  if (!session) {
+    return;
+  }
+
+  const answeredCount = Object.keys(session.followUpAnswers || {}).length;
+  const total = Array.isArray(session.followUps) ? session.followUps.length : 0;
+
+  await log('followup.sequence.completed', {
+    chatId: session.chatId,
+    projectId: session.projectId,
+    answered: answeredCount,
+    total,
+    reason
+  });
+
+  session.mode = 'idle';
+  session.followUpIndex = total;
+  session.followUps = [];
+  session.followUpAnswers = {};
+  session.lastFollowUpSentAt = null;
+
+  await persistSessionMeta(session, ctx);
+
+  await ctx.reply(
+    'Дополнительные вопросы BriefMaster завершены. Если нужно обновить бриф, запустите /setup или продолжите работу в приложении.'
+  );
+
+  sessions.delete(session.chatId);
+  updateProjectBriefState(session.projectId, { tgContactStatus: 'completed' });
+}
+
+async function recordFollowUpAnswer(session, answer, ctx) {
+  if (!session || session.mode !== 'followup') {
+    return;
+  }
+
+  const total = Array.isArray(session.followUps) ? session.followUps.length : 0;
+  if (total === 0 || session.followUpIndex >= total) {
+    await ctx.reply('Дополнительных вопросов не осталось. Используйте /setup, чтобы начать новый бриф.');
+    return;
+  }
+
+  const index = session.followUpIndex;
+  const question = session.followUps[index];
+
+  try {
+    await saveFollowUpAnswer(session.projectId, question, {
+      answer,
+      skipped: false,
+      source: 'telegram'
+    });
+    await log('followup.answer.recorded', {
+      chatId: session.chatId,
+      projectId: session.projectId,
+      index
+    });
+  } catch (error) {
+    const code = error?.code;
+    const replyMessage =
+      code === 'project_not_found' || code === 'project_missing_name'
+        ? 'Проект не найден в AgentFlow Desktop. Откройте карточку проекта и повторите попытку.'
+        : 'Не удалось сохранить ответ. Попробуйте позже или заполните уточнения в приложении.';
+    await ctx.reply(replyMessage);
+    await log(
+      'followup.answer.record_error',
+      { chatId: session.chatId, projectId: session.projectId, index, error: error.message, code },
+      'error'
+    );
+    return;
+  }
+
+  const key = getAdditionalQuestionKey(question, index);
+  session.followUpAnswers[key] = answer;
+  session.followUpIndex += 1;
+
+  await ctx.reply('Ответ принят ✅');
+
+  if (session.followUpIndex >= total) {
+    await completeFollowUpSequence(session, ctx, { reason: 'answered' });
+  } else {
+    await askNextFollowUpQuestion(session, ctx);
   }
 }
 
@@ -1084,6 +1662,112 @@ async function persistBriefArtifacts(session, briefId, summary, details) {
   session.briefPath = briefFilePath;
 }
 
+async function runBriefMasterAnalysis(session, needsAttention = {}) {
+  const projectId = session?.projectId;
+
+  if (!projectId) {
+    return null;
+  }
+
+  const store = getEntityStore();
+  let projectRecord = null;
+
+  try {
+    projectRecord = store.getProjectById(projectId);
+  } catch (error) {
+    await log('briefmaster.project_lookup.error', { projectId, error: error.message }, 'warn');
+  }
+
+  if (!projectRecord) {
+    projectRecord = { id: projectId };
+  }
+
+  const providerManager = depsRef?.providerManager || null;
+  const providersCtx = providerManager
+    ? providerManager.createExecutionContext({ getAgentConfig: () => null })
+    : null;
+
+  const agentContext = {
+    project: projectRecord,
+    providers: providersCtx,
+    runId: `briefmaster_${projectId}_${Date.now()}`,
+    updatePresetDraft: async (draft) => {
+      if (!draft || typeof draft !== 'object') {
+        return null;
+      }
+
+      try {
+        let existingDraft = {};
+
+        let latestProjectRecord = null;
+
+        try {
+          latestProjectRecord = store.getProjectById(projectId);
+          existingDraft =
+            latestProjectRecord?.presetDraft && typeof latestProjectRecord.presetDraft === 'object'
+              ? latestProjectRecord.presetDraft
+              : {};
+        } catch (lookupError) {
+          await log('briefmaster.updatePresetDraft.lookup_error', {
+            projectId,
+            error: lookupError.message
+          });
+        }
+
+        const previousQuestions = Array.isArray(existingDraft.additionalQuestions)
+          ? existingDraft.additionalQuestions
+          : [];
+        const nextQuestions = Array.isArray(draft.additionalQuestions) ? draft.additionalQuestions : [];
+
+        const mergedDraft = {
+          ...existingDraft,
+          ...draft,
+          additionalQuestions: mergeAdditionalQuestionLists(previousQuestions, nextQuestions)
+        };
+
+        const projectName = (() => {
+          if (typeof projectRecord?.name === 'string' && projectRecord.name.trim()) {
+            return projectRecord.name.trim();
+          }
+
+          if (typeof latestProjectRecord?.name === 'string' && latestProjectRecord.name.trim()) {
+            return latestProjectRecord.name.trim();
+          }
+
+          return null;
+        })();
+
+        if (!projectName) {
+          await log('briefmaster.updatePresetDraft.name_missing', { projectId }, 'warn');
+          return mergedDraft;
+        }
+
+        const saved = store.saveProject({ id: projectId, name: projectName, presetDraft: mergedDraft });
+        emitBriefStatusChange(saved);
+        return saved.presetDraft ?? mergedDraft;
+      } catch (error) {
+        await log('briefmaster.updatePresetDraft.error', { projectId, error: error.message }, 'error');
+        throw error;
+      }
+    },
+    log: (event, data) => log(event, { projectId, ...data })
+  };
+
+  const payload = {
+    project: projectRecord,
+    answers: session?.answers || {},
+    needsAttention: needsAttention || {}
+  };
+
+  try {
+    const result = await runBriefMasterAgent(payload, agentContext);
+    return result?.briefMaster || null;
+  } catch (error) {
+    await log('briefmaster.execution.error', { projectId, error: error.message }, 'error');
+    return null;
+  }
+}
+
 async function finalizeBriefSession(session, ctx) {
   if (!session.projectId) {
     throw new Error('projectId_not_set');
@@ -1112,6 +1796,10 @@ async function finalizeBriefSession(session, ctx) {
     await persistBriefArtifacts(session, briefId, summary, details);
     session.completedAt = completedAt;
     session.stepIndex = session.survey.length;
+    session.finalized = true;
+    session.mode = 'idle';
+    session.lastQuestionSentAt = null;
+    updateChatBinding(session.chatId, session.projectId);
     await upsertBriefRecord({
       id: briefId,
       projectId: session.projectId,
@@ -1147,23 +1835,81 @@ async function finalizeBriefSession(session, ctx) {
     briefStatus: 'review',
     briefProgress: 1,
     briefVersion: briefId,
-    needsAttention,
-    tgContactStatus: 'completed'
+    needsAttention
   });
 
   emitBriefUpdate(session.projectId, briefId);
-  await persistSessionMeta(session, ctx);
   await log('brief.finish.success', {
     chatId: session.chatId,
     projectId: session.projectId,
     briefId
   });
 
-  sessions.delete(session.chatId);
-
   await ctx.reply(
     `Бриф сохранён ✅\nID: ${briefId}\nМы уведомили AgentFlow Desktop о новом брифе. Спасибо!`
   );
+
+  const briefMasterResult = await runBriefMasterAnalysis(session, needsAttention);
+
+  if (briefMasterResult?.summary) {
+    try {
+      await ctx.reply(`BriefMaster: ${briefMasterResult.summary}`);
+      await log('briefmaster.telegram.summary_sent', {
+        chatId: session.chatId,
+        projectId: session.projectId
+      });
+    } catch (error) {
+      await log(
+        'briefmaster.telegram.summary_error',
+        { chatId: session.chatId, projectId: session.projectId, error: error.message },
+        'error'
+      );
+    }
+  }
+
+  const followUpQuestions = Array.isArray(briefMasterResult?.additionalQuestions)
+    ? briefMasterResult.additionalQuestions
+    : [];
+
+  if (followUpQuestions.length > 0) {
+    session.mode = 'followup';
+    session.followUps = followUpQuestions;
+    session.followUpIndex = 0;
+    session.followUpAnswers = {};
+    session.lastFollowUpSentAt = null;
+
+    updateProjectBriefState(session.projectId, {
+      tgContactStatus: 'followup'
+    });
+
+    await persistSessionMeta(session, ctx);
+
+    try {
+      await startFollowUpSequence(session, ctx, followUpQuestions);
+      await log('briefmaster.telegram.followups_started', {
+        chatId: session.chatId,
+        projectId: session.projectId,
+        count: followUpQuestions.length
+      });
+    } catch (error) {
+      await log(
+        'briefmaster.telegram.followups_error',
+        { chatId: session.chatId, projectId: session.projectId, error: error.message },
+        'error'
+      );
+      await ctx.reply(
+        'BriefMaster подготовил дополнительные вопросы, но не удалось запустить диалог. Заполните ответы в приложении AgentFlow.'
+      );
+    }
+  } else {
+    session.followUps = [];
+    session.followUpIndex = 0;
+    session.followUpAnswers = {};
+    session.lastFollowUpSentAt = null;
+    updateProjectBriefState(session.projectId, { tgContactStatus: 'completed' });
+    await persistSessionMeta(session, ctx);
+    sessions.delete(session.chatId);
+  }
 }
 
 function ensureChatContext(ctx) {
@@ -1252,7 +1998,25 @@ async function handleStartCommand(ctx) {
 async function handleSetupCommand(ctx) {
   touchActivity('command.setup');
   const chatId = ensureChatContext(ctx);
-  const session = getSession(chatId);
+  let session = getSession(chatId);
+
+  if (!session) {
+    let binding = getChatBinding(chatId);
+
+    if (!binding) {
+      binding = await restoreChatBinding(chatId);
+    }
+
+    if (binding?.projectId) {
+      session = initializeSession(chatId, binding.projectId, ctx);
+      resetSurveySession(session);
+      await log('command.setup.restore_session', {
+        chatId,
+        projectId: binding.projectId,
+        source: binding.source || 'binding'
+      });
+    }
+  }
 
   if (!session) {
     await ctx.reply('Сначала привяжите проект: /start project=PROJECT_ID');
@@ -1264,6 +2028,30 @@ async function handleSetupCommand(ctx) {
     await ctx.reply('Проект не привязан. Используйте /start project=PROJECT_ID.');
     await log('command.setup.no_project', { chatId });
     return;
+  }
+
+  if (session.mode !== 'followup') {
+    const resumed = await resumeStoredFollowUps(session, ctx);
+
+    if (resumed) {
+      return;
+    }
+  }
+
+  if (session.mode === 'followup' && session.followUpIndex < (session.followUps?.length || 0)) {
+    await ctx.reply(
+      'Остались дополнительные вопросы BriefMaster. Ответьте на них или используйте /skip, чтобы пропустить текущий вопрос.'
+    );
+    await askNextFollowUpQuestion(session, ctx);
+    return;
+  }
+
+  if (session.finalized || session.stepIndex >= (session.survey?.length || 0)) {
+    resetSurveySession(session);
+    await log('command.setup.restart_after_finalize', {
+      chatId,
+      projectId: session.projectId
+    });
   }
 
   ensureSurveyDefinition(session);
@@ -1287,6 +2075,22 @@ async function handleFinishCommand(ctx) {
     return;
   }
 
+  if (session.finalized) {
+    if (session.mode === 'followup' && session.followUpIndex < (session.followUps?.length || 0)) {
+      await ctx.reply(
+        'Сначала ответьте на дополнительные вопросы BriefMaster или используйте /skip, чтобы завершить без ответа.'
+      );
+    } else {
+      await ctx.reply('Последний бриф уже сохранён. Используйте /setup, чтобы собрать новую версию.');
+    }
+    await log('command.finish.already_finalized', {
+      chatId,
+      projectId: session.projectId,
+      mode: session.mode
+    });
+    return;
+  }
+
   try {
     await finalizeBriefSession(session, ctx);
   } catch (error) {
@@ -1302,6 +2106,54 @@ async function handleFinishCommand(ctx) {
 
     await log('brief.finish.error', { chatId, error: error.message }, 'error');
     await ctx.reply('Не удалось завершить бриф. Попробуйте ещё раз позднее.');
+  }
+}
+
+async function handleSkipCommand(ctx) {
+  touchActivity('command.skip');
+  const chatId = ensureChatContext(ctx);
+  const session = getSession(chatId);
+
+  if (!session || session.mode !== 'followup' || session.followUpIndex >= (session.followUps?.length || 0)) {
+    await ctx.reply('Сейчас нет дополнительных вопросов для пропуска. Используйте /setup, чтобы начать бриф заново.');
+    await log('command.skip.no_followup', { chatId });
+    return;
+  }
+
+  const index = session.followUpIndex;
+  const question = session.followUps[index];
+
+  try {
+    await saveFollowUpAnswer(session.projectId, question, {
+      answer: '',
+      skipped: true,
+      source: 'telegram'
+    });
+    await log('followup.answer.skipped', {
+      chatId,
+      projectId: session.projectId,
+      index
+    });
+  } catch (error) {
+    await ctx.reply('Не удалось пропустить вопрос. Попробуйте позже или заполните ответ в приложении.');
+    await log(
+      'followup.answer.skip_error',
+      { chatId, projectId: session.projectId, index, error: error.message },
+      'error'
+    );
+    return;
+  }
+
+  const key = getAdditionalQuestionKey(question, index);
+  session.followUpAnswers[key] = '';
+  session.followUpIndex += 1;
+
+  if (session.followUpIndex >= (session.followUps?.length || 0)) {
+    await ctx.reply('Вопрос пропущен. Дополнительных вопросов больше нет.');
+    await completeFollowUpSequence(session, ctx, { reason: 'skipped' });
+  } else {
+    await ctx.reply('Вопрос пропущен. Перейдём к следующему.');
+    await askNextFollowUpQuestion(session, ctx);
   }
 }
 
@@ -1321,6 +2173,18 @@ async function handleTextMessage(ctx) {
   const trimmed = text.trim();
   if (!trimmed) {
     await ctx.reply('Ответ не должен быть пустым. Попробуйте ещё раз.');
+    return;
+  }
+
+  if (session.mode === 'followup' && session.followUpIndex < (session.followUps?.length || 0)) {
+    await recordFollowUpAnswer(session, trimmed, ctx);
+    await persistSessionMeta(session, ctx);
+    return;
+  }
+
+  if (session.mode !== 'survey') {
+    await ctx.reply('Сейчас нет активного опроса. Используйте /setup, чтобы начать новый бриф.');
+    await log('text.ignored.inactive', { chatId, mode: session.mode || 'unknown' });
     return;
   }
 
@@ -1415,6 +2279,10 @@ function registerBotHandlers(bot) {
 
   bot.command('finish', async (ctx) => {
     await handleFinishCommand(ctx);
+  });
+
+  bot.command('skip', async (ctx) => {
+    await handleSkipCommand(ctx);
   });
 
   bot.on('text', async (ctx) => {

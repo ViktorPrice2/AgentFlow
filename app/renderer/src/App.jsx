@@ -14,6 +14,8 @@ import {
   listPipelines,
   getProject,
   listProviderStatus,
+  saveProviderKey,
+  clearProviderKey,
   listSchedules,
   listRuns,
   runPipeline,
@@ -143,6 +145,95 @@ function mapBriefDetails(details = {}) {
     acc[key] = value;
     return acc;
   }, {});
+}
+
+function getAdditionalQuestionKey(question, fallbackIndex = 0) {
+  if (!question || typeof question !== 'object') {
+    return `question-${fallbackIndex}`;
+  }
+
+  const idCandidates = [question.id, question.key, question.field, question.name];
+  for (const candidate of idCandidates) {
+    if (candidate === undefined || candidate === null) {
+      continue;
+    }
+    const normalized = String(candidate).trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  const textCandidates = [
+    question.prompt,
+    question.question,
+    question.title,
+    question.message,
+    question.label,
+    question.summary
+  ];
+
+  for (const candidate of textCandidates) {
+    if (typeof candidate !== 'string') {
+      continue;
+    }
+    const normalized = candidate.trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return `question-${fallbackIndex}`;
+}
+
+function normalizeQuestionAnswer(value) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+
+  return String(value).trim();
+}
+
+function mergeAdditionalQuestionAnswers(existing = [], updates = [], { source = 'app' } = {}) {
+  const merged = updates.map((item, index) => {
+    const key = getAdditionalQuestionKey(item, index);
+    const existingMatch = existing.find(
+      (candidate, candidateIndex) => getAdditionalQuestionKey(candidate, candidateIndex) === key
+    );
+    const base = existingMatch ? { ...existingMatch } : {};
+    const hasAnswer = Object.prototype.hasOwnProperty.call(item, 'answer');
+    const answerValue = hasAnswer ? item.answer : base.answer;
+    const normalizedAnswer = normalizeQuestionAnswer(answerValue);
+    const answerChanged = hasAnswer && normalizedAnswer !== normalizeQuestionAnswer(base.answer);
+    const answeredAt = item.answeredAt
+      ? item.answeredAt
+      : answerChanged
+        ? new Date().toISOString()
+        : base.answeredAt ?? null;
+
+    return {
+      ...base,
+      ...item,
+      answer: normalizedAnswer,
+      answeredAt,
+      answerSource: item.answerSource || (answerChanged ? source : base.answerSource ?? null),
+      skipped: item.skipped ?? base.skipped ?? false
+    };
+  });
+
+  const nextKeys = new Set(merged.map((item, index) => getAdditionalQuestionKey(item, index)));
+
+  existing.forEach((item, index) => {
+    const key = getAdditionalQuestionKey(item, index);
+    if (!nextKeys.has(key)) {
+      merged.push({ ...item });
+    }
+  });
+
+  return merged;
 }
 
 function buildPlanFromDetails(details = {}, t) {
@@ -345,19 +436,21 @@ function App() {
   const [presetDiffState, setPresetDiffState] = useState(null);
   const [presetDiffLoading, setPresetDiffLoading] = useState(false);
   const [presetActionBusy, setPresetActionBusy] = useState(false);
+  const [presetQuestionSaving, setPresetQuestionSaving] = useState(false);
   const [botStatus, setBotStatus] = useState(null);
   const [botBusy, setBotBusy] = useState(false);
   const botBusyRef = useRef(false);
   const lastErrorRef = useRef(null);
   const lastStatusRef = useRef(null);
   const statusChangeOriginRef = useRef('external');
+  const hasManualBriefEditsRef = useRef(false);
   const [botLogEntries, setBotLogEntries] = useState([]);
   const [botLogLoading, setBotLogLoading] = useState(false);
   const [proxyValue, setProxyValue] = useState('');
   const [proxyBusy, setProxyBusy] = useState(false);
   const [latestBrief, setLatestBrief] = useState(null);
   const [briefLoading, setBriefLoading] = useState(false);
-  const [planDraft, setPlanDraft] = useState({ text: '', updatedAt: null });
+  const [planDraft, setPlanDraft] = useState({ text: '', updatedAt: null, source: null });
   const [planLoading, setPlanLoading] = useState(false);
   const [schedules, setSchedules] = useState([]);
   const [schedulerStatusState, setSchedulerStatusState] = useState(null);
@@ -436,6 +529,37 @@ function App() {
       }
     },
     [pushLogEntry]
+  );
+
+  const applyBriefDetails = useCallback(
+    (details = {}, { force = false } = {}) => {
+      const mappedBrief = mapBriefDetails(details || {});
+
+      if (force || !hasManualBriefEditsRef.current) {
+        hasManualBriefEditsRef.current = false;
+        setBrief(mappedBrief);
+      }
+
+      setPlanDraft((previous = { text: '', updatedAt: null, source: null }) => {
+        const fallbackPlan = buildPlanFromDetails(details || {}, t);
+        const shouldReplacePlan = force || !previous.text || previous.source === 'telegram';
+
+        if (!shouldReplacePlan) {
+          return previous;
+        }
+
+        if (previous.text === fallbackPlan && previous.source === 'telegram') {
+          return previous;
+        }
+
+        return {
+          text: fallbackPlan,
+          updatedAt: new Date().toISOString(),
+          source: 'telegram'
+        };
+      });
+    },
+    [setBrief, setPlanDraft, t]
   );
 
   const refreshProjects = useCallback(async () => {
@@ -849,6 +973,63 @@ function App() {
     [selectedProjectId, selectedProject, refreshProjects, refreshPresetDiff, showToast, t]
   );
 
+  const handleSavePresetQuestions = useCallback(
+    async (projectId, questions) => {
+      const targetProjectId = projectId || selectedProjectId;
+
+      if (!targetProjectId) {
+        showToast(t('projects.toast.projectRequired'), 'error', { source: 'preset' });
+        return false;
+      }
+
+      const targetProject = projects.find((project) => project.id === targetProjectId) || null;
+      const currentDraft =
+        targetProject?.presetDraft && typeof targetProject.presetDraft === 'object'
+          ? targetProject.presetDraft
+          : {};
+      const existingQuestions = Array.isArray(currentDraft.additionalQuestions)
+        ? currentDraft.additionalQuestions
+        : [];
+      const normalizedQuestions = Array.isArray(questions) ? questions : [];
+
+      const mergedQuestions = mergeAdditionalQuestionAnswers(existingQuestions, normalizedQuestions, {
+        source: 'app'
+      });
+
+      const timestamp = new Date().toISOString();
+
+      const updatedDraft = {
+        ...currentDraft,
+        additionalQuestions: mergedQuestions,
+        lastFollowUpAnswerAt: timestamp
+      };
+
+      setPresetQuestionSaving(true);
+
+      try {
+        const response = await upsertProject({ id: targetProjectId, presetDraft: updatedDraft });
+
+        if (response?.ok === false) {
+          throw new Error(response?.error || 'Preset questions save failed');
+        }
+
+        await refreshProjects();
+        showToast(t('projects.toast.presetQuestionsSaved'), 'success', { source: 'preset' });
+        return true;
+      } catch (error) {
+        console.error('Failed to save preset questions', error);
+        showToast(t('projects.toast.presetQuestionsSaveError'), 'error', {
+          source: 'preset',
+          details: { message: error?.message }
+        });
+        return false;
+      } finally {
+        setPresetQuestionSaving(false);
+      }
+    },
+    [projects, selectedProjectId, refreshProjects, showToast, t]
+  );
+
   const handleApproveBrief = useCallback(async () => {
     if (!selectedProjectId) {
       showToast(t('projects.toast.projectRequired'), 'error', { source: 'brief' });
@@ -1144,8 +1325,9 @@ function App() {
   }, [botStatus, resolveMessage, showToast, t]);
 
   useEffect(() => {
-    setPlanDraft({ text: '', updatedAt: null });
+    setPlanDraft({ text: '', updatedAt: null, source: null });
     setLatestBrief(null);
+    hasManualBriefEditsRef.current = false;
   }, [selectedProjectId]);
 
   useEffect(() => {
@@ -1179,6 +1361,9 @@ function App() {
           const briefData = await fetchLatestBrief(projectId);
           if (active) {
             setLatestBrief(briefData);
+            if (briefData?.details) {
+              applyBriefDetails(briefData.details);
+            }
           }
         } catch (error) {
           if (active) {
@@ -1211,7 +1396,8 @@ function App() {
     t,
     resolveMessage,
     refreshProjects,
-    loadTelegramContacts
+    loadTelegramContacts,
+    applyBriefDetails
   ]);
 
   useEffect(() => {
@@ -1254,6 +1440,57 @@ function App() {
       }
     },
     [resolveMessage, showToast, t]
+  );
+
+  const handleSaveProviderKey = useCallback(
+    async (ref, value) => {
+      if (!ref) {
+        showToast(t('settings.providers.toast.refMissing'), 'error', { source: 'providers' });
+        return;
+      }
+
+      const trimmed = typeof value === 'string' ? value.trim() : '';
+
+      if (!trimmed) {
+        showToast(t('settings.providers.toast.valueRequired'), 'warn', { source: 'providers' });
+        throw new Error('value is required');
+      }
+
+      try {
+        await saveProviderKey(ref, trimmed);
+        await refreshAgents();
+        showToast(t('settings.providers.toast.saved'), 'success', { source: 'providers' });
+      } catch (error) {
+        console.error('Failed to save provider key', error);
+        showToast(resolveMessage(error.message) || t('settings.providers.toast.saveError'), 'error', {
+          source: 'providers'
+        });
+        throw error;
+      }
+    },
+    [refreshAgents, resolveMessage, showToast, t]
+  );
+
+  const handleClearProviderKey = useCallback(
+    async (ref) => {
+      if (!ref) {
+        showToast(t('settings.providers.toast.refMissing'), 'error', { source: 'providers' });
+        return;
+      }
+
+      try {
+        await clearProviderKey(ref);
+        await refreshAgents();
+        showToast(t('settings.providers.toast.cleared'), 'info', { source: 'providers' });
+      } catch (error) {
+        console.error('Failed to clear provider key', error);
+        showToast(resolveMessage(error.message) || t('settings.providers.toast.clearError'), 'error', {
+          source: 'providers'
+        });
+        throw error;
+      }
+    },
+    [refreshAgents, resolveMessage, showToast, t]
   );
 
   const handleTailBotLog = useCallback(async () => {
@@ -1407,6 +1644,7 @@ function App() {
   );
 
   const handleUpdateBrief = (nextBrief) => {
+    hasManualBriefEditsRef.current = true;
     setBrief(nextBrief);
   };
 
@@ -1640,6 +1878,9 @@ function App() {
     try {
       const briefData = await fetchLatestBrief(selectedProject.id);
       setLatestBrief(briefData);
+      if (briefData?.details) {
+        applyBriefDetails(briefData.details, { force: true });
+      }
 
       if (briefData) {
         showToast(t('app.toasts.telegramBriefUpdated'), 'success');
@@ -1660,8 +1901,7 @@ function App() {
       return;
     }
 
-    const normalized = mapBriefDetails(latestBrief.details);
-    setBrief(normalized);
+    applyBriefDetails(latestBrief.details, { force: true });
     showToast(t('app.toasts.telegramApplied'), 'success');
   };
 
@@ -1689,10 +1929,13 @@ function App() {
         result?.plan && !isTemplatePlan ? result.plan : builtPlan?.trim() ? builtPlan : '';
 
       if (planTextValue) {
-        setPlanDraft({ text: planTextValue, updatedAt: new Date().toISOString() });
+        setPlanDraft({ text: planTextValue, updatedAt: new Date().toISOString(), source: 'telegram' });
 
         if (result.brief) {
           setLatestBrief(result.brief);
+          if (result.brief.details) {
+            applyBriefDetails(result.brief.details, { force: true });
+          }
         }
 
         showToast(t('app.toasts.planReady'), 'success');
@@ -1784,6 +2027,8 @@ function App() {
             onApplyPreset={handleApplyPreset}
             onClearPresetDraft={handleClearPresetDraft}
             onRefreshPresetDiff={refreshPresetDiff}
+            onSavePresetQuestions={handleSavePresetQuestions}
+            presetQuestionSaving={presetQuestionSaving}
             onOpenBrief={() => setActiveSection('brief')}
           />
         );
@@ -1867,6 +2112,8 @@ function App() {
             proxyValue={proxyValue}
             proxyBusy={proxyBusy}
             onSaveProxy={handleSaveProxy}
+            onSaveProviderKey={handleSaveProviderKey}
+            onClearProviderKey={handleClearProviderKey}
             botLogEntries={botLogEntries}
             botLogLoading={botLogLoading}
             botBusy={botBusy}
@@ -1907,6 +2154,8 @@ function App() {
     handleSavePipeline,
     handleDeletePipeline,
     handleRunPipeline,
+    handleSaveProviderKey,
+    handleClearProviderKey,
     refreshAgents,
     refreshPipelines,
     handleShowAgentHistory,
