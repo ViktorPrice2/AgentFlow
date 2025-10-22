@@ -1225,6 +1225,25 @@ async function saveFollowUpAnswer(projectId, question, { answer, skipped = false
     projectRecord = store.getProjectById(projectId);
   } catch (error) {
     await log('followup.answer.project_lookup_error', { projectId, error: error.message }, 'warn').catch(() => {});
+    const lookupError = new Error('project_lookup_failed');
+    lookupError.code = 'project_lookup_failed';
+    throw lookupError;
+  }
+
+  if (!projectRecord) {
+    await log('followup.answer.project_missing', { projectId }, 'warn').catch(() => {});
+    const missingError = new Error('project_not_found');
+    missingError.code = 'project_not_found';
+    throw missingError;
+  }
+
+  const projectName = typeof projectRecord.name === 'string' ? projectRecord.name.trim() : '';
+
+  if (!projectName) {
+    await log('followup.answer.project_name_missing', { projectId }, 'warn').catch(() => {});
+    const nameError = new Error('project_missing_name');
+    nameError.code = 'project_missing_name';
+    throw nameError;
   }
 
   const previousDraft =
@@ -1253,8 +1272,14 @@ async function saveFollowUpAnswer(projectId, question, { answer, skipped = false
     lastFollowUpAnswerAt: timestamp
   };
 
+  const payload = {
+    id: projectId,
+    name: projectName,
+    presetDraft: updatedDraft
+  };
+
   try {
-    const saved = store.saveProject({ id: projectId, presetDraft: updatedDraft });
+    const saved = store.saveProject(payload);
     emitBriefStatusChange(saved);
     await log('followup.answer.saved', {
       projectId,
@@ -1454,10 +1479,15 @@ async function recordFollowUpAnswer(session, answer, ctx) {
       index
     });
   } catch (error) {
-    await ctx.reply('Не удалось сохранить ответ. Попробуйте позже или заполните уточнения в приложении.');
+    const code = error?.code;
+    const replyMessage =
+      code === 'project_not_found' || code === 'project_missing_name'
+        ? 'Проект не найден в AgentFlow Desktop. Откройте карточку проекта и повторите попытку.'
+        : 'Не удалось сохранить ответ. Попробуйте позже или заполните уточнения в приложении.';
+    await ctx.reply(replyMessage);
     await log(
       'followup.answer.record_error',
-      { chatId: session.chatId, projectId: session.projectId, index, error: error.message },
+      { chatId: session.chatId, projectId: session.projectId, index, error: error.message, code },
       'error'
     );
     return;
@@ -1669,10 +1699,14 @@ async function runBriefMasterAnalysis(session, needsAttention = {}) {
       try {
         let existingDraft = {};
 
+        let latestProjectRecord = null;
+
         try {
-          const latest = store.getProjectById(projectId);
+          latestProjectRecord = store.getProjectById(projectId);
           existingDraft =
-            latest?.presetDraft && typeof latest.presetDraft === 'object' ? latest.presetDraft : {};
+            latestProjectRecord?.presetDraft && typeof latestProjectRecord.presetDraft === 'object'
+              ? latestProjectRecord.presetDraft
+              : {};
         } catch (lookupError) {
           await log('briefmaster.updatePresetDraft.lookup_error', {
             projectId,
@@ -1691,7 +1725,24 @@ async function runBriefMasterAnalysis(session, needsAttention = {}) {
           additionalQuestions: mergeAdditionalQuestionLists(previousQuestions, nextQuestions)
         };
 
-        const saved = store.saveProject({ id: projectId, presetDraft: mergedDraft });
+        const projectName = (() => {
+          if (typeof projectRecord?.name === 'string' && projectRecord.name.trim()) {
+            return projectRecord.name.trim();
+          }
+
+          if (typeof latestProjectRecord?.name === 'string' && latestProjectRecord.name.trim()) {
+            return latestProjectRecord.name.trim();
+          }
+
+          return null;
+        })();
+
+        if (!projectName) {
+          await log('briefmaster.updatePresetDraft.name_missing', { projectId }, 'warn');
+          return mergedDraft;
+        }
+
+        const saved = store.saveProject({ id: projectId, name: projectName, presetDraft: mergedDraft });
         emitBriefStatusChange(saved);
         return saved.presetDraft ?? mergedDraft;
       } catch (error) {

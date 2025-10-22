@@ -1327,6 +1327,10 @@ th {
   background: #b91c1c;
 }
 
+.toast-warn {
+  background: #b45309;
+}
+
 .toast__close {
   border: none;
   background: transparent;

@@ -443,13 +443,14 @@ function App() {
   const lastErrorRef = useRef(null);
   const lastStatusRef = useRef(null);
   const statusChangeOriginRef = useRef('external');
+  const hasManualBriefEditsRef = useRef(false);
   const [botLogEntries, setBotLogEntries] = useState([]);
   const [botLogLoading, setBotLogLoading] = useState(false);
   const [proxyValue, setProxyValue] = useState('');
   const [proxyBusy, setProxyBusy] = useState(false);
   const [latestBrief, setLatestBrief] = useState(null);
   const [briefLoading, setBriefLoading] = useState(false);
-  const [planDraft, setPlanDraft] = useState({ text: '', updatedAt: null });
+  const [planDraft, setPlanDraft] = useState({ text: '', updatedAt: null, source: null });
   const [planLoading, setPlanLoading] = useState(false);
   const [schedules, setSchedules] = useState([]);
   const [schedulerStatusState, setSchedulerStatusState] = useState(null);
@@ -528,6 +529,37 @@ function App() {
       }
     },
     [pushLogEntry]
+  );
+
+  const applyBriefDetails = useCallback(
+    (details = {}, { force = false } = {}) => {
+      const mappedBrief = mapBriefDetails(details || {});
+
+      if (force || !hasManualBriefEditsRef.current) {
+        hasManualBriefEditsRef.current = false;
+        setBrief(mappedBrief);
+      }
+
+      setPlanDraft((previous = { text: '', updatedAt: null, source: null }) => {
+        const fallbackPlan = buildPlanFromDetails(details || {}, t);
+        const shouldReplacePlan = force || !previous.text || previous.source === 'telegram';
+
+        if (!shouldReplacePlan) {
+          return previous;
+        }
+
+        if (previous.text === fallbackPlan && previous.source === 'telegram') {
+          return previous;
+        }
+
+        return {
+          text: fallbackPlan,
+          updatedAt: new Date().toISOString(),
+          source: 'telegram'
+        };
+      });
+    },
+    [setBrief, setPlanDraft, t]
   );
 
   const refreshProjects = useCallback(async () => {
@@ -1293,8 +1325,9 @@ function App() {
   }, [botStatus, resolveMessage, showToast, t]);
 
   useEffect(() => {
-    setPlanDraft({ text: '', updatedAt: null });
+    setPlanDraft({ text: '', updatedAt: null, source: null });
     setLatestBrief(null);
+    hasManualBriefEditsRef.current = false;
   }, [selectedProjectId]);
 
   useEffect(() => {
@@ -1328,6 +1361,9 @@ function App() {
           const briefData = await fetchLatestBrief(projectId);
           if (active) {
             setLatestBrief(briefData);
+            if (briefData?.details) {
+              applyBriefDetails(briefData.details);
+            }
           }
         } catch (error) {
           if (active) {
@@ -1360,7 +1396,8 @@ function App() {
     t,
     resolveMessage,
     refreshProjects,
-    loadTelegramContacts
+    loadTelegramContacts,
+    applyBriefDetails
   ]);
 
   useEffect(() => {
@@ -1607,6 +1644,7 @@ function App() {
   );
 
   const handleUpdateBrief = (nextBrief) => {
+    hasManualBriefEditsRef.current = true;
     setBrief(nextBrief);
   };
 
@@ -1840,6 +1878,9 @@ function App() {
     try {
       const briefData = await fetchLatestBrief(selectedProject.id);
       setLatestBrief(briefData);
+      if (briefData?.details) {
+        applyBriefDetails(briefData.details, { force: true });
+      }
 
       if (briefData) {
         showToast(t('app.toasts.telegramBriefUpdated'), 'success');
@@ -1860,8 +1901,7 @@ function App() {
       return;
     }
 
-    const normalized = mapBriefDetails(latestBrief.details);
-    setBrief(normalized);
+    applyBriefDetails(latestBrief.details, { force: true });
     showToast(t('app.toasts.telegramApplied'), 'success');
   };
 
@@ -1889,10 +1929,13 @@ function App() {
         result?.plan && !isTemplatePlan ? result.plan : builtPlan?.trim() ? builtPlan : '';
 
       if (planTextValue) {
-        setPlanDraft({ text: planTextValue, updatedAt: new Date().toISOString() });
+        setPlanDraft({ text: planTextValue, updatedAt: new Date().toISOString(), source: 'telegram' });
 
         if (result.brief) {
           setLatestBrief(result.brief);
+          if (result.brief.details) {
+            applyBriefDetails(result.brief.details, { force: true });
+          }
         }
 
         showToast(t('app.toasts.planReady'), 'success');
