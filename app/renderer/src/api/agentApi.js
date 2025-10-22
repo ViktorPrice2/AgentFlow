@@ -108,6 +108,26 @@ const fallbackPresets = [
   }
 ];
 
+function sanitizeFallbackChatId(chatId) {
+  const raw = String(chatId ?? '').trim();
+
+  if (!raw) {
+    return 'chat';
+  }
+
+  if (/^-?\d+$/.test(raw)) {
+    return raw;
+  }
+
+  const normalized = raw
+    .normalize('NFKD')
+    .replace(/[^\w@.:-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  return normalized || 'chat';
+}
+
 function normalizeFallbackChannelList(value) {
   if (Array.isArray(value)) {
     return value
@@ -1316,7 +1336,7 @@ export async function sendTelegramInvite(projectId, chatId) {
 
   const now = new Date().toISOString();
   const link = `https://t.me/fallback-bot?start=project_${encodeURIComponent(projectId)}`;
-  const sanitizedChatId = String(chatId).replace(/[^0-9-]+/g, '');
+  const sanitizedChatId = sanitizeFallbackChatId(chatId);
 
   await saveTelegramContact({ chatId, projectId, status: 'invited', lastContactAt: now }).catch(() => {});
 
@@ -1331,13 +1351,14 @@ export async function sendTelegramInvite(projectId, chatId) {
     ts: now,
     level: 'info',
     event: 'telegram.invite.sent',
-    data: { projectId, chatId: sanitizedChatId, link }
+    data: { projectId, chatId: sanitizedChatId, rawChatId: chatId, link }
   });
 
   return {
     ok: true,
     projectId,
     chatId: sanitizedChatId,
+    rawChatId: chatId,
     sentAt: now,
     link,
     message:

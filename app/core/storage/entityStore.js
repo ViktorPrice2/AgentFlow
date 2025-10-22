@@ -830,6 +830,28 @@ export function createEntityStore(options = {}) {
     }
   }
 
+  function getTelegramContactByChatId(chatId) {
+    if (chatId === undefined || chatId === null || chatId === '') {
+      throw new Error('Telegram contact chatId is required');
+    }
+
+    const db = openDatabase(dbPath);
+
+    try {
+      const row = db
+        .prepare(
+          `SELECT id, chatId, label, status, lastContactAt, projectId, createdAt, updatedAt
+             FROM TelegramContacts
+            WHERE chatId = ?`
+        )
+        .get(chatId);
+
+      return buildTelegramContactRecord(row);
+    } finally {
+      db.close();
+    }
+  }
+
   function saveTelegramContact(contact) {
     if (!contact?.chatId) {
       throw new Error('Telegram contact must include chatId');
@@ -1566,6 +1588,7 @@ export function createEntityStore(options = {}) {
     deleteReport,
     listTelegramContacts,
     getTelegramContactById,
+    getTelegramContactByChatId,
     saveTelegramContact,
     deleteTelegramContact,
     listAgentRecords,

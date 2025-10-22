@@ -196,7 +196,7 @@ export function ProjectsPage({
   );
   const presetDraftMeta = presetDraft?.presetMeta || null;
   const presetDraftGeneratedAt = presetDraft?.generatedAt || null;
-  const canOpenBriefSection = ['review', 'approved'].includes(briefStatusKey);
+  const canOpenBriefSection = Boolean(selectedProject);
 
   useEffect(() => {
     setSelectedContactId('');
@@ -397,11 +397,6 @@ export function ProjectsPage({
   const handleOpenBriefClick = () => {
     if (!selectedProject) {
       onNotify(t('projects.toast.projectRequired'), 'error');
-      return;
-    }
-
-    if (!canOpenBriefSection) {
-      onNotify(t('projects.details.openBriefDisabled'), 'info');
       return;
     }
 
