@@ -134,7 +134,9 @@
       "presetApplyError": "Не удалось применить пресет",
       "presetDiffError": "Не удалось сравнить версии пресета",
       "presetDraftCleared": "Предложения сохранены в архив",
-      "presetDraftClearError": "Не удалось архивировать предложения"
+      "presetDraftClearError": "Не удалось архивировать предложения",
+      "presetQuestionsSaved": "Ответы на уточняющие вопросы сохранены",
+      "presetQuestionsSaveError": "Не удалось сохранить ответы"
     },
     "status": {
       "pending": "Ожидает запуска",
@@ -200,6 +202,14 @@
       "presetDraftSummary": "Изучите предложения BriefMaster перед применением.",
       "reviewPresetDraft": "Посмотреть предложения",
       "presetDraftMissing": "Предложений нет"
+    },
+    "followups": {
+      "title": "Уточнения BriefMaster",
+      "subtitle": "Ответьте, чтобы дополнить бриф и закрыть незаполненные поля.",
+      "count": "{count, plural, =0 {Нет открытых вопросов} one {Остался {count} вопрос} few {Осталось {count} вопроса} many {Осталось {count} вопросов} other {Осталось {count} вопросов}}",
+      "help": "Ответы синхронизируются с Telegram-ботом и сразу обновляют черновик пресета.",
+      "save": "Сохранить ответы",
+      "openModal": "Показать все рекомендации"
     },
     "telegram": {
       "title": "Контакты Telegram",
@@ -292,7 +302,11 @@
       "updatedAt": "Сформировано {{date}}",
       "dismiss": "В архив",
       "apply": "Применить обновление",
-      "close": "Закрыть"
+      "close": "Закрыть",
+      "saveQuestions": "Сохранить ответы",
+      "questionPlaceholder": "Введите ответ или оставьте пустым",
+      "questionMeta": "Последнее обновление: {{date}}",
+      "questionSkipped": "Отмечено как пропущенный вопрос"
     },
     "history": {
       "title": "История версий",
@@ -359,7 +373,13 @@
       "noBriefs": "Для этого проекта ещё нет брифов из Telegram.",
       "planTitle": "План кампании",
       "planSubtitle": "Результат генерации на основе последнего брифа.",
-      "planEmpty": "Получите бриф из Telegram и сгенерируйте план, чтобы увидеть шаги."
+      "planEmpty": "Получите бриф из Telegram и сгенерируйте план, чтобы увидеть шаги.",
+      "status": {
+        "unknown": "Не синхронизирован",
+        "collecting": "Сбор ответов",
+        "completed": "Бриф заполнен",
+        "followup": "Ожидаем уточнения"
+      }
     }
   },
   "agents": {
@@ -533,9 +553,31 @@
       "type": "Тип",
       "models": "Модели",
       "key": "Ключ",
+      "actions": "Управление",
       "keyPresent": "есть",
       "keyMissing": "нет ({ref})",
-      "keyNotRequired": "не требуется"
+      "keyNotRequired": "не требуется",
+      "keyStored": "сохранён ({mask})",
+      "keyFromEnv": "переменная {ref}",
+      "envHint": "Используется значение из переменной окружения <code>{ref}</code>.",
+      "updatedAt": "Обновлён {date}",
+      "inputPlaceholder": "Введите ключ и сохраните",
+      "saveButton": "Сохранить",
+      "clearButton": "Удалить",
+      "saving": "Сохранение…",
+      "clearing": "Удаление…",
+      "currentKey": "Текущий ключ: {mask}",
+      "valueRequired": "Введите значение ключа",
+      "saveErrorShort": "Не удалось сохранить ключ",
+      "clearErrorShort": "Не удалось удалить ключ",
+      "toast": {
+        "refMissing": "Не указан идентификатор ключа",
+        "valueRequired": "Введите ключ перед сохранением",
+        "saved": "Ключ провайдера сохранён",
+        "saveError": "Не удалось сохранить ключ провайдера",
+        "cleared": "Ключ провайдера удалён",
+        "clearError": "Не удалось удалить ключ провайдера"
+      }
     },
     "telegram": {
       "title": "Telegram-бот",
