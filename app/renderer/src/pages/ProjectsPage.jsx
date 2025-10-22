@@ -316,18 +316,24 @@ export function ProjectsPage({
 
   useEffect(() => {
     if (!selectedProject || !Array.isArray(presetDraftQuestions) || presetDraftQuestions.length === 0) {
-      setQuestionAnswers({});
-      setInitialQuestionAnswers({});
+      setQuestionAnswers((previous) => {
+        if (!previous || Object.keys(previous).length === 0) {
+          return previous;
+        }
+        return {};
+      });
+      setInitialQuestionAnswers((previous) => {
+        if (!previous || Object.keys(previous).length === 0) {
+          return previous;
+        }
+        return {};
+      });
       return;
     }
 
     const nextState = buildQuestionState(presetDraftQuestions);
 
-    setQuestionAnswers((previous) => {
-      if (!previous || Object.keys(previous).length === 0) {
-        return nextState;
-      }
-
+    setQuestionAnswers((previous = {}) => {
       const previousInitial = initialQuestionAnswersRef.current || {};
       const merged = { ...nextState };
 
@@ -340,10 +346,19 @@ export function ProjectsPage({
         }
       });
 
+      if (!hasQuestionDifferences(previous, merged)) {
+        return previous;
+      }
+
       return merged;
     });
 
-    setInitialQuestionAnswers(nextState);
+    setInitialQuestionAnswers((previous = {}) => {
+      if (!hasQuestionDifferences(previous, nextState)) {
+        return previous;
+      }
+      return nextState;
+    });
   }, [selectedProject, selectedProjectId, presetDraftQuestions]);
 
   useEffect(() => {
