@@ -6,6 +6,7 @@ import { createEntityStore } from './storage/entityStore.js';
 import { listPresets, loadPreset, diffPreset } from './presets/loader.js';
 import { applyPresetToProject } from './presets/applyPreset.js';
 import { resolveDataPath, assertAllowedPath } from './utils/security.js';
+import { saveProviderSecret, clearProviderSecret } from './providers/secretsStore.js';
 
 const agentConfigs = new Map();
 let entityStore;
@@ -965,6 +966,39 @@ export function registerIpcHandlers({ ipcMain, pluginRegistry, providerManager }
     try {
       const result = providerManager.applyDiagnosticCommand(command);
       return { ok: true, result };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('AgentFlow:providers:secrets:save', async (_event, payload = {}) => {
+    const ref = payload.ref || payload.apiKeyRef;
+    const value = payload.value || payload.key;
+
+    if (!ref) {
+      return { ok: false, error: 'apiKeyRef is required' };
+    }
+
+    try {
+      const { value: storedValue, updatedAt, descriptor } = await saveProviderSecret(ref, value);
+      providerManager.setSecretOverride(ref, storedValue, { updatedAt });
+      return { ok: true, secret: descriptor };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('AgentFlow:providers:secrets:clear', async (_event, payload) => {
+    const ref = typeof payload === 'string' ? payload : payload?.ref || payload?.apiKeyRef;
+
+    if (!ref) {
+      return { ok: false, error: 'apiKeyRef is required' };
+    }
+
+    try {
+      const { descriptor } = await clearProviderSecret(ref);
+      providerManager.setSecretOverride(ref, null);
+      return { ok: true, secret: descriptor };
     } catch (error) {
       return { ok: false, error: error.message };
     }

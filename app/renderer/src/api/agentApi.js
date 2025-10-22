@@ -61,10 +61,14 @@ const fallbackReports = [
 ];
 
 const fallbackProviderStatus = [
-  { id: 'openai', type: 'llm', hasKey: false, apiKeyRef: 'OPENAI_API_KEY', models: ['gpt-4o-mini'] },
-  { id: 'gemini', type: 'llm', hasKey: false, apiKeyRef: 'GOOGLE_API_KEY', models: ['gemini-2.0-flash'] },
-  { id: 'stability', type: 'image', hasKey: false, apiKeyRef: 'STABILITY_API_KEY', models: ['sd3.5'] }
+  { id: 'openai', type: 'llm', apiKeyRef: 'OPENAI_API_KEY', models: ['gpt-4o-mini'] },
+  { id: 'gemini', type: 'llm', apiKeyRef: 'GOOGLE_API_KEY', models: ['gemini-2.0-flash'] },
+  { id: 'ollama', type: 'llm', apiKeyRef: null, models: ['llama3.1:8b'] },
+  { id: 'stability', type: 'image', apiKeyRef: 'STABILITY_API_KEY', models: ['sd3.5'] },
+  { id: 'higgs', type: 'video', apiKeyRef: 'HIGGSFIELD_API_KEY', models: ['studio-v'] }
 ];
+
+const fallbackProviderSecrets = new Map();
 
 const fallbackBotStatus = {
   status: 'stopped',
@@ -203,6 +207,39 @@ function cloneFallbackProject(project) {
   };
 
   return JSON.parse(JSON.stringify(copy));
+}
+
+function maskFallbackSecret(value) {
+  if (!value || typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  if (trimmed.length <= 4) {
+    return '****';
+  }
+
+  return `****${trimmed.slice(-4)}`;
+}
+
+function buildFallbackProviderStatus() {
+  return fallbackProviderStatus.map((provider) => {
+    const secret = provider.apiKeyRef ? fallbackProviderSecrets.get(provider.apiKeyRef) : null;
+    const hasSecret = secret && typeof secret.value === 'string' && secret.value.length > 0;
+    const hasKey = hasSecret || !provider.apiKeyRef;
+
+    return {
+      id: provider.id,
+      type: provider.type,
+      models: provider.models || [],
+      apiKeyRef: provider.apiKeyRef || null,
+      hasKey,
+      keySource: hasSecret ? 'secret' : null,
+      maskedKey: hasSecret ? maskFallbackSecret(secret.value) : null,
+      secretUpdatedAt: secret?.updatedAt || null
+    };
+  });
 }
 
 function cloneFallbackPreset(preset) {
@@ -680,7 +717,74 @@ export async function listProviderStatus() {
   }
 
   await fallbackDelay();
-  return fallbackProviderStatus;
+  return buildFallbackProviderStatus();
+}
+
+export async function saveProviderKey(ref, value) {
+  if (hasWindowAPI && typeof agentApi.saveProviderKey === 'function') {
+    const response = await agentApi.saveProviderKey(ref, value);
+
+    if (response?.ok === false) {
+      throw new Error(response?.error || 'Failed to save provider key');
+    }
+
+    return response;
+  }
+
+  await fallbackDelay();
+
+  if (!ref) {
+    throw new Error('apiKeyRef is required');
+  }
+
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+
+  if (!trimmed) {
+    throw new Error('value is required');
+  }
+
+  const updatedAt = new Date().toISOString();
+  fallbackProviderSecrets.set(ref, { value: trimmed, updatedAt });
+
+  return {
+    ok: true,
+    secret: {
+      ref,
+      stored: true,
+      maskedKey: maskFallbackSecret(trimmed),
+      updatedAt
+    }
+  };
+}
+
+export async function clearProviderKey(ref) {
+  if (hasWindowAPI && typeof agentApi.clearProviderKey === 'function') {
+    const response = await agentApi.clearProviderKey(ref);
+
+    if (response?.ok === false) {
+      throw new Error(response?.error || 'Failed to clear provider key');
+    }
+
+    return response;
+  }
+
+  await fallbackDelay();
+
+  if (!ref) {
+    throw new Error('apiKeyRef is required');
+  }
+
+  fallbackProviderSecrets.delete(ref);
+
+  return {
+    ok: true,
+    secret: {
+      ref,
+      stored: false,
+      maskedKey: null,
+      updatedAt: null
+    }
+  };
 }
 
 export async function deleteAgent(agentId) {

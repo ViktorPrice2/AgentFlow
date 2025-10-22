@@ -533,9 +533,31 @@
       "type": "Тип",
       "models": "Модели",
       "key": "Ключ",
+      "actions": "Управление",
       "keyPresent": "есть",
       "keyMissing": "нет ({ref})",
-      "keyNotRequired": "не требуется"
+      "keyNotRequired": "не требуется",
+      "keyStored": "сохранён ({mask})",
+      "keyFromEnv": "переменная {ref}",
+      "envHint": "Используется значение из переменной окружения <code>{ref}</code>.",
+      "updatedAt": "Обновлён {date}",
+      "inputPlaceholder": "Введите ключ и сохраните",
+      "saveButton": "Сохранить",
+      "clearButton": "Удалить",
+      "saving": "Сохранение…",
+      "clearing": "Удаление…",
+      "currentKey": "Текущий ключ: {mask}",
+      "valueRequired": "Введите значение ключа",
+      "saveErrorShort": "Не удалось сохранить ключ",
+      "clearErrorShort": "Не удалось удалить ключ",
+      "toast": {
+        "refMissing": "Не указан идентификатор ключа",
+        "valueRequired": "Введите ключ перед сохранением",
+        "saved": "Ключ провайдера сохранён",
+        "saveError": "Не удалось сохранить ключ провайдера",
+        "cleared": "Ключ провайдера удалён",
+        "clearError": "Не удалось удалить ключ провайдера"
+      }
     },
     "telegram": {
       "title": "Telegram-бот",

@@ -1168,6 +1168,33 @@ th {
   width: 100%;
 }
 
+.provider-table th,
+.provider-table td {
+  padding: 8px;
+  vertical-align: top;
+}
+
+.provider-key-control {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.provider-key-control input {
+  width: 100%;
+  max-width: 280px;
+}
+
+.provider-key-control .button-row {
+  display: flex;
+  gap: 8px;
+}
+
+.provider-key-control .hint {
+  margin: 0;
+}
+
 .toast {
   position: fixed;
   bottom: 24px;
