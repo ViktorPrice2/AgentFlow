@@ -2,7 +2,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import electron from 'electron';
-import keytar from 'keytar';
 import { Telegraf } from 'telegraf';
 import { bootstrap as bootstrapGlobalAgent } from 'global-agent';
 import { createBriefSurvey, summarizeAnswers, buildExecutionPlan } from '../services/tg-bot/survey.js';
@@ -14,10 +13,49 @@ const __dirname = path.dirname(__filename);
 void __dirname;
 const { ipcMain } = electron;
 let entityStore;
+let entityStoreConfig = null;
+let keytar = null;
+let keytarUnavailable = false;
+
+try {
+  const keytarModule = await import('keytar');
+  keytar = keytarModule?.default ?? keytarModule ?? null;
+  keytarUnavailable = !keytar;
+} catch (error) {
+  keytarUnavailable = true;
+  console.warn('[telegram] keytar module is unavailable; falling back to file storage', error?.message || error);
+}
+
+function resolveEntityStoreOptions() {
+  if (depsRef?.dbPath) {
+    return { dbPath: depsRef.dbPath };
+  }
+
+  if (depsRef?.appDataDir) {
+    return { dbPath: path.join(depsRef.appDataDir, 'app.db') };
+  }
+
+  return null;
+}
 
 function getEntityStore() {
-  if (!entityStore) {
+  const options = resolveEntityStoreOptions();
+
+  if (entityStore) {
+    if (options && (!entityStoreConfig || entityStoreConfig.dbPath !== options.dbPath)) {
+      entityStore = createEntityStore(options);
+      entityStoreConfig = options;
+    }
+
+    return entityStore;
+  }
+
+  if (options) {
+    entityStore = createEntityStore(options);
+    entityStoreConfig = options;
+  } else {
     entityStore = createEntityStore();
+    entityStoreConfig = null;
   }
 
   return entityStore;
@@ -89,7 +127,6 @@ let loggerRef = createLoggerFacade(console);
 let logFilePath = null;
 let configFilePath = null;
 let networkConfigPath = null;
-let keytarUnavailable = false;
 let handlersRegistered = false;
 let botInstance = null;
 let botLaunchPromise = null;
@@ -1155,6 +1192,126 @@ function normalizeFollowUpAnswer(value) {
   return String(value).trim();
 }
 
+function extractFollowUpPrompt(question) {
+  if (!question || typeof question !== 'object') {
+    return null;
+  }
+
+  const candidatePrompts = [
+    question.prompt,
+    question.question,
+    question.title,
+    question.message,
+    question.label,
+    question.summary
+  ];
+
+  for (const candidate of candidatePrompts) {
+    if (typeof candidate !== 'string') {
+      continue;
+    }
+
+    const normalized = candidate.trim();
+
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return null;
+}
+
+function inferProjectNameFromFollowUp(question, answer) {
+  const normalizedAnswer = normalizeFollowUpAnswer(answer);
+
+  if (!normalizedAnswer) {
+    return null;
+  }
+
+  const lowerCaseTokens = [];
+
+  if (typeof question?.id === 'string') {
+    lowerCaseTokens.push(question.id.toLowerCase());
+  }
+
+  if (typeof question?.key === 'string') {
+    lowerCaseTokens.push(question.key.toLowerCase());
+  }
+
+  if (typeof question?.field === 'string') {
+    lowerCaseTokens.push(question.field.toLowerCase());
+  }
+
+  if (typeof question?.target === 'string') {
+    lowerCaseTokens.push(question.target.toLowerCase());
+  }
+
+  const prompt = extractFollowUpPrompt(question);
+
+  if (prompt) {
+    lowerCaseTokens.push(prompt.toLowerCase());
+  }
+
+  const containsNameKeyword = lowerCaseTokens.some((token) => {
+    if (!token) {
+      return false;
+    }
+
+    if (token.includes('company_name')) {
+      return true;
+    }
+
+    if (token.includes('project') && token.includes('name')) {
+      return true;
+    }
+
+    if (token.includes('company') && token.includes('name')) {
+      return true;
+    }
+
+    if (token.includes('название') && (token.includes('компан') || token.includes('продукт'))) {
+      return true;
+    }
+
+    if (token.includes('имя бренда') || token.includes('название бренда')) {
+      return true;
+    }
+
+    return false;
+  });
+
+  if (containsNameKeyword) {
+    return normalizedAnswer;
+  }
+
+  return null;
+}
+
+function deriveProjectNameForUpdate(projectRecord, projectId, fallbackName) {
+  const normalizedProjectId = String(projectId ?? '').trim();
+  const existingName =
+    typeof projectRecord?.name === 'string' && projectRecord.name.trim()
+      ? projectRecord.name.trim()
+      : '';
+  const fallback = typeof fallbackName === 'string' ? fallbackName.trim() : '';
+
+  if (fallback) {
+    if (!existingName || existingName === normalizedProjectId) {
+      return fallback;
+    }
+  }
+
+  if (existingName) {
+    return existingName;
+  }
+
+  if (fallback) {
+    return fallback;
+  }
+
+  return normalizedProjectId || 'project';
+}
+
 function mergeAdditionalQuestionLists(previous = [], next = []) {
   const merged = next.map((item, index) => {
     const existing = findMatchingAdditionalQuestion(previous, item, index);
@@ -1225,25 +1382,6 @@ async function saveFollowUpAnswer(projectId, question, { answer, skipped = false
     projectRecord = store.getProjectById(projectId);
   } catch (error) {
     await log('followup.answer.project_lookup_error', { projectId, error: error.message }, 'warn').catch(() => {});
-    const lookupError = new Error('project_lookup_failed');
-    lookupError.code = 'project_lookup_failed';
-    throw lookupError;
-  }
-
-  if (!projectRecord) {
-    await log('followup.answer.project_missing', { projectId }, 'warn').catch(() => {});
-    const missingError = new Error('project_not_found');
-    missingError.code = 'project_not_found';
-    throw missingError;
-  }
-
-  const projectName = typeof projectRecord.name === 'string' ? projectRecord.name.trim() : '';
-
-  if (!projectName) {
-    await log('followup.answer.project_name_missing', { projectId }, 'warn').catch(() => {});
-    const nameError = new Error('project_missing_name');
-    nameError.code = 'project_missing_name';
-    throw nameError;
   }
 
   const previousDraft =
@@ -1256,6 +1394,7 @@ async function saveFollowUpAnswer(projectId, question, { answer, skipped = false
 
   const timestamp = new Date().toISOString();
   const normalizedAnswer = skipped ? '' : normalizeFollowUpAnswer(answer);
+  const fallbackProjectName = inferProjectNameFromFollowUp(question, normalizedAnswer);
   const updatedQuestions = mergeAdditionalQuestionLists(previousQuestions, [
     {
       ...question,
@@ -1274,7 +1413,7 @@ async function saveFollowUpAnswer(projectId, question, { answer, skipped = false
 
   const payload = {
     id: projectId,
-    name: projectName,
+    name: deriveProjectNameForUpdate(projectRecord, projectId, fallbackProjectName),
     presetDraft: updatedDraft
   };
 
@@ -1506,30 +1645,16 @@ async function recordFollowUpAnswer(session, answer, ctx) {
   }
 }
 
-async function upsertBriefRecord({ id, projectId, summary, details, createdAt }) {
-  const db = getDbConnection();
-  const payload = {
+function upsertBriefRecord({ id, projectId, summary, details, createdAt }) {
+  const store = getEntityStore();
+
+  return store.saveBrief({
     id,
     projectId,
     summary,
-    details: JSON.stringify(details),
-    createdAt,
-    updatedAt: new Date().toISOString()
-  };
-
-  try {
-    db.prepare(
-      `INSERT INTO Briefs (id, projectId, summary, details, createdAt, updatedAt)
-       VALUES (@id, @projectId, @summary, @details, @createdAt, @updatedAt)
-       ON CONFLICT(id) DO UPDATE SET
-         projectId = excluded.projectId,
-         summary = excluded.summary,
-         details = excluded.details,
-         updatedAt = excluded.updatedAt`
-    ).run(payload);
-  } finally {
-    db.close();
-  }
+    details,
+    createdAt
+  });
 }
 
 function emitBriefUpdate(projectId, briefId) {
@@ -1632,7 +1757,21 @@ function updateProjectBriefState(projectId, updates = {}) {
 
   try {
     const store = getEntityStore();
-    const saved = store.saveProject({ id: projectId, ...updates });
+    let existing = null;
+
+    try {
+      existing = store.getProjectById(projectId);
+    } catch (lookupError) {
+      log('project.brief.lookup_error', { projectId, error: lookupError.message }, 'warn').catch(() => {});
+    }
+
+    const payload = { id: projectId, ...updates };
+
+    if (!payload.name) {
+      payload.name = deriveProjectNameForUpdate(existing, projectId, updates?.name);
+    }
+
+    const saved = store.saveProject(payload);
     emitBriefStatusChange(saved);
     return saved;
   } catch (error) {
@@ -2197,47 +2336,16 @@ async function fetchLatestBrief(projectId) {
     throw new Error('projectId is required');
   }
 
-  const db = getDbConnection({ readonly: true });
+  const store = getEntityStore();
 
   try {
-    const statement = db.prepare(
-      `SELECT id, projectId, summary, details, createdAt, updatedAt
-         FROM Briefs
-        WHERE projectId = ?
-        ORDER BY datetime(createdAt) DESC
-        LIMIT 1`
-    );
-
-    const row = statement.get(projectId);
-
-    if (!row) {
-      return null;
-    }
-
-    let details = row.details;
-
-    if (typeof details === 'string' && details.length) {
-      try {
-        details = JSON.parse(details);
-      } catch (error) {
-        details = {};
-        getLogger().warn('[telegram] Failed to parse brief details JSON', {
-          message: error?.message,
-          projectId
-        });
-      }
-    }
-
-    return {
-      id: row.id,
-      projectId: row.projectId,
-      summary: row.summary,
-      details: details && typeof details === 'object' ? details : {},
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt
-    };
-  } finally {
-    db.close();
+    return store.getLatestBrief(projectId);
+  } catch (error) {
+    getLogger().warn('[telegram] Failed to load latest brief from entity store', {
+      message: error?.message,
+      projectId
+    });
+    throw error;
   }
 }
 
@@ -3159,6 +3267,9 @@ export const __test__ = {
   ensureBot,
   shutdownBot,
   tailLog: readLogTail,
+  deriveProjectNameForUpdate,
+  inferProjectNameFromFollowUp,
+  saveFollowUpAnswer,
   selfTest: async () => {
     const { token, source } = await getToken({ allowMissing: true });
     if (!token) {
