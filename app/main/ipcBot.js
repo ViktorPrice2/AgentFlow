@@ -7,6 +7,7 @@ import { Telegraf } from 'telegraf';
 import { bootstrap as bootstrapGlobalAgent } from 'global-agent';
 import { createBriefSurvey, summarizeAnswers, buildExecutionPlan } from '../services/tg-bot/survey.js';
 import { createEntityStore } from '../core/storage/entityStore.js';
+import { execute as runBriefMasterAgent } from '../core/agents/BriefMaster/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -149,6 +150,7 @@ function normalizeDeps(deps) {
     logger,
     enqueueRendererEvent,
     getMainWindow,
+    providerManager,
     ...rest
   } = deps;
 
@@ -166,6 +168,7 @@ function normalizeDeps(deps) {
     logger: createLoggerFacade(logger),
     enqueueRendererEvent: typeof enqueueRendererEvent === 'function' ? enqueueRendererEvent : null,
     getMainWindow: typeof getMainWindow === 'function' ? getMainWindow : () => mainWindowRef,
+    providerManager: providerManager || null,
     ...rest
   };
 }
@@ -1084,6 +1087,67 @@ async function persistBriefArtifacts(session, briefId, summary, details) {
   session.briefPath = briefFilePath;
 }
 
+async function runBriefMasterAnalysis(session, needsAttention = {}) {
+  const projectId = session?.projectId;
+
+  if (!projectId) {
+    return null;
+  }
+
+  const store = getEntityStore();
+  let projectRecord = null;
+
+  try {
+    projectRecord = store.getProjectById(projectId);
+  } catch (error) {
+    await log('briefmaster.project_lookup.error', { projectId, error: error.message }, 'warn');
+  }
+
+  if (!projectRecord) {
+    projectRecord = { id: projectId };
+  }
+
+  const providerManager = depsRef?.providerManager || null;
+  const providersCtx = providerManager
+    ? providerManager.createExecutionContext({ getAgentConfig: () => null })
+    : null;
+
+  const agentContext = {
+    project: projectRecord,
+    providers: providersCtx,
+    runId: `briefmaster_${projectId}_${Date.now()}`,
+    updatePresetDraft: async (draft) => {
+      if (!draft || typeof draft !== 'object') {
+        return null;
+      }
+
+      try {
+        const saved = store.saveProject({ id: projectId, presetDraft: draft });
+        emitBriefStatusChange(saved);
+        return saved.presetDraft ?? draft;
+      } catch (error) {
+        await log('briefmaster.updatePresetDraft.error', { projectId, error: error.message }, 'error');
+        throw error;
+      }
+    },
+    log: (event, data) => log(event, { projectId, ...data })
+  };
+
+  const payload = {
+    project: projectRecord,
+    answers: session?.answers || {},
+    needsAttention: needsAttention || {}
+  };
+
+  try {
+    const result = await runBriefMasterAgent(payload, agentContext);
+    return result?.briefMaster || null;
+  } catch (error) {
+    await log('briefmaster.execution.error', { projectId, error: error.message }, 'error');
+    return null;
+  }
+}
+
 async function finalizeBriefSession(session, ctx) {
   if (!session.projectId) {
     throw new Error('projectId_not_set');
@@ -1164,6 +1228,61 @@ async function finalizeBriefSession(session, ctx) {
   await ctx.reply(
     `Бриф сохранён ✅\nID: ${briefId}\nМы уведомили AgentFlow Desktop о новом брифе. Спасибо!`
   );
+
+  const briefMasterResult = await runBriefMasterAnalysis(session, needsAttention);
+
+  if (briefMasterResult?.summary) {
+    try {
+      await ctx.reply(`BriefMaster: ${briefMasterResult.summary}`);
+      await log('briefmaster.telegram.summary_sent', {
+        chatId: session.chatId,
+        projectId: session.projectId
+      });
+    } catch (error) {
+      await log(
+        'briefmaster.telegram.summary_error',
+        { chatId: session.chatId, projectId: session.projectId, error: error.message },
+        'error'
+      );
+    }
+  }
+
+  const followUps = Array.isArray(briefMasterResult?.additionalQuestions)
+    ? briefMasterResult.additionalQuestions.slice(0, 5)
+    : [];
+
+  if (followUps.length > 0) {
+    const formatted = followUps
+      .map((item, index) => {
+        const label = item?.prompt || item?.message || item?.title || item?.id || 'Уточните детали';
+        return `${index + 1}. ${label}`;
+      })
+      .join('\n');
+
+    const footer =
+      followUps.length < (briefMasterResult.additionalQuestions?.length || 0)
+        ? '\n…показаны первые вопросы, остальные смотрите в приложении.'
+        : '';
+
+    try {
+      await ctx.reply(
+        `Дополнительные вопросы от BriefMaster:\n${formatted}${footer}\n\nОтветьте на них в приложении или пришлите уточнения командой /setup.`
+      );
+      await log('briefmaster.telegram.questions_sent', {
+        chatId: session.chatId,
+        projectId: session.projectId,
+        count: Array.isArray(briefMasterResult?.additionalQuestions)
+          ? briefMasterResult.additionalQuestions.length
+          : followUps.length
+      });
+    } catch (error) {
+      await log(
+        'briefmaster.telegram.questions_error',
+        { chatId: session.chatId, projectId: session.projectId, error: error.message },
+        'error'
+      );
+    }
+  }
 }
 
 function ensureChatContext(ctx) {

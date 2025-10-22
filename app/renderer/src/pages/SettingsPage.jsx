@@ -27,6 +27,8 @@ export function SettingsPage({
   onTailLog,
   proxyValue = '',
   onSaveProxy,
+  onSaveProviderKey,
+  onClearProviderKey,
   proxyBusy = false,
   botLogEntries = [],
   botLogLoading = false,
@@ -41,6 +43,9 @@ export function SettingsPage({
   const [tokenInput, setTokenInput] = useState('');
   const [proxyInput, setProxyInput] = useState(storedProxyValue);
   const [copied, setCopied] = useState(false);
+  const [providerKeyInputs, setProviderKeyInputs] = useState({});
+  const [providerKeyBusy, setProviderKeyBusy] = useState({});
+  const [providerKeyErrors, setProviderKeyErrors] = useState({});
 
   useEffect(() => {
     setTokenInput('');
@@ -81,6 +86,61 @@ export function SettingsPage({
 
     if (typeof onSaveProxy === 'function') {
       await onSaveProxy('');
+    }
+  };
+
+  const handleProviderKeyInputChange = (ref, value) => {
+    setProviderKeyInputs((previous) => ({ ...previous, [ref]: value }));
+    setProviderKeyErrors((previous) => ({ ...previous, [ref]: null }));
+  };
+
+  const handleProviderKeySave = async (ref) => {
+    const inputValue = providerKeyInputs[ref] ?? '';
+    const trimmed = inputValue.trim();
+
+    if (!trimmed) {
+      setProviderKeyErrors((previous) => ({ ...previous, [ref]: t('settings.providers.valueRequired') }));
+      return;
+    }
+
+    if (typeof onSaveProviderKey !== 'function') {
+      return;
+    }
+
+    setProviderKeyBusy((previous) => ({ ...previous, [ref]: true }));
+    setProviderKeyErrors((previous) => ({ ...previous, [ref]: null }));
+
+    try {
+      await onSaveProviderKey(ref, trimmed);
+      setProviderKeyInputs((previous) => ({ ...previous, [ref]: '' }));
+    } catch (error) {
+      setProviderKeyErrors((previous) => ({
+        ...previous,
+        [ref]: error?.message || t('settings.providers.saveErrorShort')
+      }));
+    } finally {
+      setProviderKeyBusy((previous) => ({ ...previous, [ref]: false }));
+    }
+  };
+
+  const handleProviderKeyClear = async (ref) => {
+    if (typeof onClearProviderKey !== 'function') {
+      return;
+    }
+
+    setProviderKeyBusy((previous) => ({ ...previous, [ref]: true }));
+    setProviderKeyErrors((previous) => ({ ...previous, [ref]: null }));
+
+    try {
+      await onClearProviderKey(ref);
+      setProviderKeyInputs((previous) => ({ ...previous, [ref]: '' }));
+    } catch (error) {
+      setProviderKeyErrors((previous) => ({
+        ...previous,
+        [ref]: error?.message || t('settings.providers.clearErrorShort')
+      }));
+    } finally {
+      setProviderKeyBusy((previous) => ({ ...previous, [ref]: false }));
     }
   };
 
@@ -263,6 +323,7 @@ export function SettingsPage({
                 <th>{t('settings.providers.type')}</th>
                 <th>{t('settings.providers.models')}</th>
                 <th>{t('settings.providers.key')}</th>
+                <th>{t('settings.providers.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -272,12 +333,85 @@ export function SettingsPage({
                   <td>{provider.type}</td>
                   <td>{provider.models?.join(', ') || t('common.notAvailable')}</td>
                   <td>
-                    {provider.hasKey ? (
-                      <span className="status-label ok">{t('settings.providers.keyPresent')}</span>
+                    {provider.keySource === 'secret' ? (
+                      <span className="status-label ok">
+                        {t('settings.providers.keyStored', { mask: provider.maskedKey || '****' })}
+                      </span>
+                    ) : provider.keySource === 'env' ? (
+                      <span className="status-label info">
+                        {t('settings.providers.keyFromEnv', { ref: provider.apiKeyRef })}
+                      </span>
                     ) : provider.apiKeyRef ? (
-                      <span className="status-label warn">{t('settings.providers.keyMissing', { ref: provider.apiKeyRef })}</span>
+                      <span className="status-label warn">
+                        {t('settings.providers.keyMissing', { ref: provider.apiKeyRef })}
+                      </span>
                     ) : (
                       <span className="status-label info">{t('settings.providers.keyNotRequired')}</span>
+                    )}
+                    {provider.keySource === 'secret' && provider.secretUpdatedAt ? (
+                      <p className="hint">
+                        {t('settings.providers.updatedAt', {
+                          date: new Date(provider.secretUpdatedAt).toLocaleString(locale)
+                        })}
+                      </p>
+                    ) : null}
+                    {provider.keySource === 'env' ? (
+                      <p className="hint">
+                        {t('settings.providers.envHint', { ref: provider.apiKeyRef })}
+                      </p>
+                    ) : null}
+                  </td>
+                  <td>
+                    {provider.apiKeyRef ? (
+                      <div className="provider-key-control">
+                        <input
+                          type="password"
+                          value={providerKeyInputs[provider.apiKeyRef] ?? ''}
+                          onChange={(event) =>
+                            handleProviderKeyInputChange(provider.apiKeyRef, event.target.value)
+                          }
+                          placeholder={t('settings.providers.inputPlaceholder')}
+                          disabled={Boolean(providerKeyBusy[provider.apiKeyRef])}
+                        />
+                        <div className="button-row">
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => handleProviderKeySave(provider.apiKeyRef)}
+                            disabled={
+                              Boolean(providerKeyBusy[provider.apiKeyRef]) ||
+                              !(providerKeyInputs[provider.apiKeyRef] ?? '').trim()
+                            }
+                          >
+                            {providerKeyBusy[provider.apiKeyRef]
+                              ? t('settings.providers.saving')
+                              : t('settings.providers.saveButton')}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => handleProviderKeyClear(provider.apiKeyRef)}
+                            disabled={
+                              Boolean(providerKeyBusy[provider.apiKeyRef]) ||
+                              provider.keySource !== 'secret'
+                            }
+                          >
+                            {providerKeyBusy[provider.apiKeyRef]
+                              ? t('settings.providers.clearing')
+                              : t('settings.providers.clearButton')}
+                          </button>
+                        </div>
+                        {provider.keySource === 'secret' && provider.maskedKey ? (
+                          <p className="hint">
+                            {t('settings.providers.currentKey', { mask: provider.maskedKey })}
+                          </p>
+                        ) : null}
+                        {providerKeyErrors[provider.apiKeyRef] ? (
+                          <p className="hint warn">{providerKeyErrors[provider.apiKeyRef]}</p>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <span className="hint">{t('settings.providers.keyNotRequired')}</span>
                     )}
                   </td>
                 </tr>
@@ -403,7 +537,10 @@ SettingsPage.propTypes = {
       type: PropTypes.string.isRequired,
       models: PropTypes.arrayOf(PropTypes.string),
       hasKey: PropTypes.bool,
-      apiKeyRef: PropTypes.string
+      apiKeyRef: PropTypes.string,
+      keySource: PropTypes.string,
+      maskedKey: PropTypes.string,
+      secretUpdatedAt: PropTypes.string
     })
   ),
   apiAvailable: PropTypes.bool.isRequired,
@@ -423,6 +560,8 @@ SettingsPage.propTypes = {
   onTailLog: PropTypes.func,
   proxyValue: PropTypes.string,
   onSaveProxy: PropTypes.func,
+  onSaveProviderKey: PropTypes.func,
+  onClearProviderKey: PropTypes.func,
   proxyBusy: PropTypes.bool,
   botLogEntries: PropTypes.arrayOf(PropTypes.oneOfType([PropTypes.string, PropTypes.object])),
   botLogLoading: PropTypes.bool,

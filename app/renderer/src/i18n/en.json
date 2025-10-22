@@ -527,9 +527,31 @@
       "type": "Type",
       "models": "Models",
       "key": "Key",
+      "actions": "Controls",
       "keyPresent": "present",
       "keyMissing": "missing ({ref})",
-      "keyNotRequired": "not required"
+      "keyNotRequired": "not required",
+      "keyStored": "stored ({mask})",
+      "keyFromEnv": "env var {ref}",
+      "envHint": "The value comes from environment variable <code>{ref}</code>.",
+      "updatedAt": "Updated {date}",
+      "inputPlaceholder": "Paste the key and press save",
+      "saveButton": "Save",
+      "clearButton": "Remove",
+      "saving": "Saving…",
+      "clearing": "Removing…",
+      "currentKey": "Current key: {mask}",
+      "valueRequired": "Enter a key value",
+      "saveErrorShort": "Failed to save the key",
+      "clearErrorShort": "Failed to remove the key",
+      "toast": {
+        "refMissing": "Provider key id is missing",
+        "valueRequired": "Enter a key before saving",
+        "saved": "Provider key saved",
+        "saveError": "Failed to save the provider key",
+        "cleared": "Provider key removed",
+        "clearError": "Failed to remove the provider key"
+      }
     },
     "telegram": {
       "title": "Telegram bot",

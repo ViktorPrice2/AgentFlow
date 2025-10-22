@@ -120,6 +120,10 @@ contextBridge.exposeInMainWorld('AgentAPI', {
   upsertAgent: (agent) => ipcRenderer.invoke('AgentFlow:agents:upsert', agent),
   deleteAgent: (agentId) => ipcRenderer.invoke('AgentFlow:agents:delete', agentId),
   listProviderStatus: () => ipcRenderer.invoke('AgentFlow:providers:status'),
+  saveProviderKey: (ref, value) =>
+    ipcRenderer.invoke('AgentFlow:providers:secrets:save', { ref, value }),
+  clearProviderKey: (ref) =>
+    ipcRenderer.invoke('AgentFlow:providers:secrets:clear', { ref }),
   runPipelineSimple: (input) => ipcRenderer.invoke('AgentFlow:pipeline:runSimple', input),
   runPipeline: (pipelineDefinition, payload) =>
     ipcRenderer.invoke('AgentFlow:pipeline:run', pipelineDefinition, payload),
