@@ -281,7 +281,9 @@ test.describe('Electron smoke', () => {
         }
       }, E2E_BRIDGE_CHANNEL);
       await expect(
-        page.getByRole('button', { name: translationRegex('app.nav.projects') })
+        page.getByRole('button', {
+          name: translationRegex('app.nav.projects', undefined, { partial: true })
+        })
       ).toBeVisible();
 
       // Project creation unlocks dependent forms
@@ -300,7 +302,11 @@ test.describe('Electron smoke', () => {
       ).toBeVisible();
 
       // Manage agent JSON config via fallback API
-      await page.getByRole('button', { name: translationRegex('app.nav.agents') }).click();
+      await page
+        .getByRole('button', {
+          name: translationRegex('app.nav.agents', undefined, { partial: true })
+        })
+        .click();
       await page.waitForSelector('.agent-editor');
 
       const agentPayload = JSON.stringify(
@@ -337,7 +343,11 @@ test.describe('Electron smoke', () => {
       await expect(agentRow).toHaveCount(0);
 
       // Create and delete a pipeline using fallback storage
-      await page.getByRole('button', { name: translationRegex('app.nav.pipelines') }).click();
+      await page
+        .getByRole('button', {
+          name: translationRegex('app.nav.pipelines', undefined, { partial: true })
+        })
+        .click();
       await page.waitForSelector('.pipeline-steps');
 
       const pipelineForm = page.locator('form').filter({
